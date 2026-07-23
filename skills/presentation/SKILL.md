@@ -38,7 +38,7 @@ Paths are relative to this skill's directory.
 | Script | What it does |
 |---|---|
 | `scripts/dump.py deck.odp [-o out.md]` | Deck to markdown: per slide the layout, master, text, tables, speaker notes, empty placeholder slots and a hidden flag. Works on every supported format |
-| `scripts/probe.py deck.odp [--slides 4,7-9]` | Every shape's **index**, position, size, fill, line and character formatting. `dump.py` says what a slide *says*; this says what it *is*. Run it before editing any template slide |
+| `scripts/probe.py deck.odp [--slides 4,7-9]` | Every shape's **index**, position, size, fill, line and character formatting, plus a per-slide reading-order block grouping shapes by column. `dump.py` says what a slide *says*; this says what it *is*. Run it before editing any template slide |
 | `scripts/thumbnail.py deck.odp [prefix]` | One labelled contact sheet of all slides, for picking template layouts. Output is named after the deck, so two decks never overwrite each other |
 | `scripts/render.py deck.odp [-o dir] [--dpi N] [--slides 3,7-9]` | One PNG per slide; prints their absolute paths. **This is visual QA** |
 | `scripts/qa.py deck.pptx [--template brand.pptx] [--slides 3,7-9]` | Broken text the renders would show: overflow, mid-word breaks, leftover template wording, placeholders — plus `validate.py` on a `.pptx`. Exit 1 on any finding |
@@ -184,6 +184,22 @@ need the *index* of each shape, not its text, and probe prints exactly that:
       'SPEED'
         Arial 15  ·  bold  ·  #FFFFFF  ·  kern 40  ·  left
 ```
+
+`[i]` is exactly `shapes(page)[i]`. **The table is z-order, not reading
+order** — so each slide is followed by its shapes grouped into columns:
+
+```
+  reading order — 3 columns
+  column 1    [3] 'Background'  [4] 'Set the context first. ...'
+  column 2    [5] 'What we found'  [6] 'Present the...'  [7] 'Two shorter...'
+  column 3    [8] 'What it means'  [9] 'Close with the implicat...'
+  ** columns hold 2, 3, 2 shapes — this is NOT an even grid. **
+```
+
+Read that block before indexing anything. The slide above looks like three
+columns of two in z-order and is not one: column 2 carries a second body box,
+which shifts `[8]` and `[9]`. Assuming the even grid is what puts column 3's
+heading into column 2 and leaves the template's own text on the slide.
 
 Then build every slide in one pass and save once:
 

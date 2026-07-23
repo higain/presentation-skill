@@ -614,9 +614,13 @@ def clone_shape(doc, src, dst_page):
 def clone_slide(doc, src_page, index=None):
     """Copy a template slide to a new page, with its background and notes.
 
-    ``index`` defaults to the end of the deck.  Unlike ``duplicate_slide()``
-    the copy can go anywhere, which is the whole point -- see the module
-    docstring.
+    ``index`` defaults to the end of the deck, and that is how to use it:
+    **clone in final slide order and leave ``index`` alone.**  Unlike
+    ``duplicate_slide()`` the copy can go anywhere, which is the whole point
+    (see the module docstring) -- but inserting at a position while the
+    template slides are still in the deck shifts those too, and what ends up
+    where stops being predictable.  Clone order becomes deck order once the
+    templates are deleted, which is all the control a build needs.
 
     Shapes are rebuilt property by property.  Measured pixel-identical to the
     source on a fixture carrying text, an image, a table and a group; for a

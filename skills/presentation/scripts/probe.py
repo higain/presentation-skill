@@ -17,6 +17,18 @@ Geometry is in 1/100 mm, the unit UNO works in.  Colours are hex RGB.
       [ 2] Shape 2     ooxml-roundRect  2910   6625  22039   9413 #FFFFFF  #ECDFD6/46
       [ 4] Text 4      ooxml-rect       4544   7941   2203    725 -        -
            "SPEED"  ·  Arial 15.0 bold #FFFFFF kern 40 left
+
+      reading order — 3 columns
+      column 1    [3] 'Background'  [4] 'Set the context first. ...'
+      column 2    [5] 'What we found'  [6] 'Present the...'  [7] 'Two shorter...'
+      column 3    [8] 'What it means'  [9] 'Close with the implicat...'
+
+The reading-order block groups the same shapes by column, because the table
+above is in z-order and a column whose body is split across two text boxes
+looks like an even grid there when it is not.  That single mistake -- assuming
+three columns of two shapes on the slide sketched above -- is what puts column
+three's heading into column two and leaves the template's own words on the
+slide.  ``office.template.retext()`` avoids the indices altogether.
 """
 
 import argparse
@@ -92,6 +104,83 @@ def _format_line(cprops, pprops):
     return "  ·  ".join(bits)
 
 
+def _columns(page, slide_width):
+    """Text shapes grouped into columns by horizontal overlap, in reading order.
+
+    ``(full_width, columns)``.  Shapes spanning most of the slide -- eyebrow,
+    title, standfirst -- are not part of any column and come back separately;
+    the rest are clustered by overlapping x-ranges and sorted top to bottom.
+
+    This exists because the shape table above is in z-order, which is the order
+    shapes were added and says nothing about the layout.  A three-column slide
+    whose middle column carries two body boxes rather than one looks like an
+    even grid in z-order and is not one.
+    """
+    items = []
+    for i, shape in enumerate(shapes(page)):
+        try:
+            text = " ".join(shape.getString().split())
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if text:
+            items.append((i, pos.X, pos.Y, size.Width, text))
+
+    # Cluster on the left edge.  A designed column shares one, and every other
+    # signal is worse: overlapping x-ranges let a single wide caption chain a
+    # row of separate bars into one bogus column, whichever way the comparison
+    # is written.  Tolerance is a hair over 1% of the slide, and each shape is
+    # compared with its column's seed so near-misses cannot chain.
+    tolerance = max(slide_width * 0.012, 1)
+    wide = [it for it in items if it[3] > slide_width * 0.55]
+    columns = []
+    for item in sorted((it for it in items if it[3] <= slide_width * 0.55),
+                       key=lambda t: t[1]):
+        for column in columns:
+            if abs(item[1] - column[0][1]) <= tolerance:
+                column.append(item)
+                break
+        else:
+            columns.append([item])
+
+    columns = sorted((sorted(c, key=lambda t: t[2]) for c in columns),
+                     key=lambda c: min(t[1] for t in c))
+    return sorted(wide, key=lambda t: t[2]), columns
+
+
+def _reading_order(page, slide_width):
+    """The columns block printed under a slide's shape table, or ``[]``."""
+    wide, columns = _columns(page, slide_width)
+    if len(columns) < 2:
+        return []
+
+    def row(label, items):
+        cells = "  ".join(
+            f"[{i}] {(text if len(text) <= 26 else text[:23] + '...')!r}"
+            for i, _, _, _, text in items
+        )
+        return f"  {label:<11} {cells}"
+
+    out = ["", f"  reading order — {len(columns)} columns"]
+    if wide:
+        out.append(row("full width", wide))
+    for n, column in enumerate(columns, start=1):
+        out.append(row(f"column {n}", column))
+
+    # Only worth warning about where the slide reads as a repeated block: two
+    # or more columns each holding a stack.  A cover with a title on the left
+    # and a URL on the right is uneven by design and needs no warning.
+    counts = [len(c) for c in columns]
+    stacked = [n for n in counts if n > 1]
+    if len(stacked) > 1 and len(set(stacked)) > 1:
+        out.append(
+            f"  ** columns hold {', '.join(map(str, counts))} shapes — this is "
+            f"NOT an even grid. Take each column's indices from the list above; "
+            f"do not compute them. **"
+        )
+    return out
+
+
 def _background(page):
     bg = page.Background
     if bg is None:
@@ -129,6 +218,10 @@ def probe(path: Path, slide_spec=None) -> str:
             "",
             f"{len(pages)} slide(s), {width} × {height} (1/100 mm)",
             "",
+            "`[i]` is exactly `shapes(page)[i]` — the index set_text() writes to.",
+            "The table is in z-order, which is not reading order; where a slide "
+            "has columns, the block under it groups the same shapes by column.",
+            "",
         ]
         for number, page in enumerate(pages, start=1):
             if number not in want:
@@ -164,6 +257,7 @@ def probe(path: Path, slide_spec=None) -> str:
                     style = _format_line(cprops, pprops)
                     if style:
                         out.append(f"{'':>7} {style}")
+            out += _reading_order(page, width)
             out.append("")
         return "\n".join(out).rstrip() + "\n"
     finally:
