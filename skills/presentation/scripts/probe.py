@@ -32,6 +32,7 @@ slide.  ``office.template.retext()`` avoids the indices altogether.
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -109,7 +110,7 @@ def _columns(page, slide_width):
 
     ``(full_width, columns)``.  Shapes spanning most of the slide -- eyebrow,
     title, standfirst -- are not part of any column and come back separately;
-    the rest are clustered by overlapping x-ranges and sorted top to bottom.
+    the rest are clustered on their left edge and sorted top to bottom.
 
     This exists because the shape table above is in z-order, which is the order
     shapes were added and says nothing about the layout.  A three-column slide
@@ -264,6 +265,72 @@ def probe(path: Path, slide_spec=None) -> str:
         doc.close(False)
 
 
+def probe_data(path: Path, slide_spec=None) -> dict:
+    """The same survey as ``probe()``, as data -- what ``--json`` prints.
+
+    Shapes keep their ``index``, so anything selected here can be written to
+    with ``shapes(page)[index]`` straight away.
+    """
+    doc = load_document(path, read_only=True)
+    try:
+        pages = slides(doc)
+        want = _wanted(slide_spec, len(pages))
+        width, height = pages[0].Width, pages[0].Height
+        out = {
+            "file": path.name,
+            "slide_width": width,
+            "slide_height": height,
+            "slides": [],
+        }
+        for number, page in enumerate(pages, start=1):
+            if number not in want:
+                continue
+            entry = {
+                "number": number,
+                "layout": page.Layout,
+                "master": page.MasterPage.Name,
+                "background": _background(page),
+                "hidden": not getattr(page, "Visible", True),
+                "shapes": [],
+            }
+            for i, shape in enumerate(shapes(page)):
+                pos, size = shape.getPosition(), shape.getSize()
+                try:
+                    paras = read_text(shape)
+                except Exception:
+                    paras = []
+                entry["shapes"].append({
+                    "index": i,
+                    "name": shape.Name,
+                    "type": _geometry_type(shape),
+                    "x": pos.X, "y": pos.Y,
+                    "width": size.Width, "height": size.Height,
+                    "fill": _fill(shape),
+                    "line": _line(shape),
+                    "text": "\n".join(t for t, _, _ in paras),
+                    "paragraphs": [
+                        {
+                            "text": text,
+                            "font": cprops.get("CharFontName"),
+                            "size": cprops.get("CharHeight"),
+                            "bold": (cprops.get("CharWeight") or 100) > 110,
+                            "color": (_hex(cprops["CharColor"])
+                                      if "CharColor" in cprops else None),
+                        }
+                        for text, cprops, _ in paras
+                    ],
+                })
+            wide, columns = _columns(page, width)
+            entry["reading_order"] = {
+                "full_width": [it[0] for it in wide],
+                "columns": [[it[0] for it in column] for column in columns],
+            }
+            out["slides"].append(entry)
+        return out
+    finally:
+        doc.close(False)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Print a deck's shape indices, geometry and formatting"
@@ -271,6 +338,10 @@ def main():
     parser.add_argument("input", help="Presentation to read")
     parser.add_argument("-o", "--output", help="Write here (default: stdout)")
     parser.add_argument("--slides", help="Only these slides, e.g. 4,7-9")
+    parser.add_argument(
+        "--json", action="store_true",
+        help="Emit JSON instead of the table, to pick shapes programmatically",
+    )
     args = parser.parse_args()
 
     path = Path(args.input)
@@ -286,7 +357,11 @@ def main():
         return 2
 
     try:
-        text = probe(path, args.slides)
+        if args.json:
+            text = json.dumps(probe_data(path, args.slides), indent=2,
+                              ensure_ascii=False) + "\n"
+        else:
+            text = probe(path, args.slides)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

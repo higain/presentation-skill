@@ -46,6 +46,12 @@ Paths are relative to this skill's directory.
 | `scripts/office/validate.py deck.pptx [--original src.pptx] [--auto-repair]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** — see [File QA](#file-qa-pptx-only) |
 | `tests/roundtrip_report.py check fixture.odp` | Re-proves the fidelity claims below after a LibreOffice upgrade |
 
+Two references, read only when the job calls for them:
+`references/design.md` (inventing a look — palette, layout, what makes a deck
+look generated) and `references/pptx-xml.md` (hand-editing OOXML).
+`probe.py --json` emits the same survey as data when a script needs to pick
+shapes itself.
+
 `markitdown.sh` is **not** useful here: it rejects `.odp` outright, and on
 `.pptx` it reports text without layouts, masters or notes. Use `dump.py`.
 
@@ -256,21 +262,38 @@ with impress_document("brand.pptx", save=False) as doc:
 - `move(shape, x=, y=)` and `resize(shape, width=, height=)` exist because
   `Position` and `Size` are structs — `shape.Position.X = 5` silently does
   nothing.
-- Retexting a chart is just moving rectangles: set each bar's `y` to
-  `baseline - height` and its `Size.Height`, and probe tells you the baseline.
+### Retexting a chart
+
+A template chart is just rectangles — there is no chart object to talk to.
+`scale_bars` does the arithmetic, reading the baseline and the tallest bar off
+the template so the result keeps the proportions the designer drew:
+
+```python
+bars = [shapes(page)[i] for i in (3, 5, 7, 9)]
+scale_bars(bars, [40, 48, 29, 34])
+retext(page, {"Q1": "Backend", "Q2": "Frontend"})
+```
+
+Bars grow upward, so a bar's `y` is `baseline - height`; `set_bar(shape,
+baseline, height)` is the single-bar version. **Axis labels are the catch** —
+they are sized for "Q1", and a word too wide for its box breaks mid-word
+("BAC / KEND"). Keep them short, or widen the box.
 
 ### Sizing a badge to new text
 
 **A shape's `Size` never re-measures after you retext it** — not even with
 `TextAutoGrowWidth`, which keeps whatever width the shape already had. A pill or
 badge whose label got longer will wrap inside its old width instead of growing.
-`text_width` lays the string out fresh on a throwaway shape to get a real number:
+`fit_pill` relays the label and its backdrop, taking the padding from what the
+template already uses so no constant has to be guessed:
 
 ```python
-w = fit_width(doc, page, tag)              # tag now fits its text
-move(pill, x=tag.Position.X - 424)         # and the pill behind it follows
-resize(pill, width=w + 635)
+retext(page, {"SPEED": "INFRASTRUCTURE"})
+fit_pill(doc, page, pill, label)           # pill and label both grow
 ```
+
+`fit_width(doc, page, shape)` is the primitive under it, and `text_width` lays
+a string out on a throwaway shape when you want the number without resizing.
 
 ## What a round trip preserves
 
@@ -435,34 +458,9 @@ containers with ~10% slack, and do not trust the preview's text fit.
 
 ## Editing .pptx XML directly
 
-Only for OOXML details UNO cannot express. A UNO round trip is lossless for
-everything listed above; reach for raw XML when you need PowerPoint-specific
-markup that Impress has no model for.
-
-```python
-import sys, zipfile; sys.path.insert(0, "scripts")
-from pathlib import Path
-from office.helpers import rezip, safe_extract
-
-with zipfile.ZipFile("deck.pptx") as zf:
-    safe_extract(zf, Path("unpacked"))       # rejects path-traversal entries
-# ... edit unpacked/ppt/slides/slideN.xml ...
-rezip(Path("unpacked"), Path("out.pptx"))
-```
-
-Use `rezip`, not the `zip` command — `zip` is not installed, and `rezip` writes
-the member order and compression a `.pptx` needs.
-
-- **Parse with `defusedxml.minidom`.** Round-tripping OOXML through
-  `xml.etree.ElementTree` rewrites namespace prefixes and corrupts the deck.
-- One `<a:p>` per list item — never concatenate items into one paragraph. Copy
-  the sibling `<a:pPr>` to keep spacing.
-- Let bullets inherit from the layout; add `<a:buChar>`, `<a:buAutoNum>` or
-  `<a:buNone>` only to override. Never a literal `•` in the text.
-- Text with leading or trailing spaces needs `xml:space="preserve"` on `<a:t>`.
-- **Never reorder the children of `<p:presentation>`** — PowerPoint reads the
-  order it wrote; moving an element makes the deck unopenable.
-- Re-run `validate.py` afterwards.
+Only for OOXML details UNO cannot express — a UNO round trip is lossless for
+everything listed above. When you do need it, **`references/pptx-xml.md`** has
+the unpack/rezip recipe and the rules that keep a deck openable.
 
 ## Templates
 
@@ -474,7 +472,7 @@ python3 scripts/probe.py template.odp         # shape indices, geometry, fonts
 
 Map each content section onto a template slide and **vary the layouts** — not
 every section belongs on title-and-bullets. Then build the deck with
-`clone_slide` and `set_text` — see [Adapting a template
+`clone_slide` and `retext` — see [Adapting a template
 deck](#adapting-a-template-deck) for the whole recipe.
 
 - **Template slots ≠ your content.** If the template shows 4 team members and
@@ -489,68 +487,13 @@ deck](#adapting-a-template-deck) for the whole recipe.
 
 ## Design
 
-**Don't create boring slides.** Plain bullets on white won't impress anyone.
+Building a deck from scratch, or restyling one? Read
+**`references/design.md`** before choosing anything: palette, layout variety,
+spacing, and the list of tells that make a deck look generated (accent lines
+under titles, decorative colour bars, text-only slides).
 
-### Before starting
-
-- **Pick a bold, content-informed palette.** If swapping your colors into an
-  unrelated deck would still "work", the choice wasn't specific enough.
-- **Dominance over equality**: one color at 60-70% visual weight, 1-2
-  supporting tones, one sharp accent. Never equal weight.
-- **Dark/light contrast**: dark title and closing slides, light content
-  ("sandwich"), or commit to dark throughout for a premium feel.
-- **Commit to one motif** and repeat it — rounded image frames, icons in
-  colored circles. Not a color bar or accent stripe (see Avoid).
-
-| Theme | Primary | Secondary | Accent |
-|-------|---------|-----------|--------|
-| **Midnight Executive** | `1E2761` (navy) | `CADCFC` (ice blue) | `FFFFFF` (white) |
-| **Forest & Moss** | `2C5F2D` (forest) | `97BC62` (moss) | `F5F5F5` (cream) |
-| **Coral Energy** | `F96167` (coral) | `F9E795` (gold) | `2F3C7E` (navy) |
-| **Warm Terracotta** | `B85042` (terracotta) | `E7E8D1` (sand) | `A7BEAE` (sage) |
-| **Ocean Gradient** | `065A82` (deep blue) | `1C7293` (teal) | `21295C` (midnight) |
-| **Charcoal Minimal** | `36454F` (charcoal) | `F2F2F2` (off-white) | `212121` (black) |
-| **Teal Trust** | `028090` (teal) | `00A896` (seafoam) | `02C39A` (mint) |
-| **Berry & Cream** | `6D2E46` (berry) | `A26769` (dusty rose) | `ECE2D0` (cream) |
-| **Sage Calm** | `84B59F` (sage) | `69A297` (eucalyptus) | `50808E` (slate) |
-| **Cherry Bold** | `990011` (cherry) | `FCF6F5` (off-white) | `2F3C7E` (navy) |
-
-In UNO, colors are integers: `0x1E2761`, not `"1E2761"`.
-
-### For each slide
-
-**Every slide needs a visual element** — image, chart, icon, or shape.
-Text-only slides are forgettable.
-
-- Two-column (text left, illustration right)
-- Icon + text rows (icon in a colored circle, bold header, description below)
-- 2×2 or 2×3 grid of content blocks
-- Half-bleed image down one side with content overlaid
-- Large stat callouts (60-72pt numbers, small labels below)
-- Comparison columns (before/after, pros/cons)
-- Timeline or process flow (numbered steps, arrows)
-
-### Spacing
-
-0.5" minimum margins · 0.3-0.5" between blocks · leave breathing room.
-
-### Avoid
-
-- **Don't repeat one layout** — vary columns, cards and callouts
-- **Don't center body text** — left-align paragraphs and lists; center only titles
-- **Don't skimp on size contrast** — titles 36pt+ against 14-16pt body
-- **Don't default to blue** — pick colors that reflect the topic
-- **Don't mix spacing randomly** — pick 0.3" or 0.5" and hold to it
-- **Don't style one slide and leave the rest plain**
-- **Don't create text-only slides**
-- **Don't use low-contrast elements** — icons *and* text need contrast
-- **NEVER use accent lines under titles** — a hallmark of AI-generated slides;
-  use whitespace or background color instead
-- **NEVER add decorative color bars or accent stripes** — header/footer bars,
-  vertical sidebar stripes, thin stripes along a card edge, single-side borders.
-  To set a card apart use a subtle background tint, a shadow, or an icon
-- **Don't default to cream/beige backgrounds** — use white or the brand palette
-- **Don't ship text that overflows its shape** — shrink, split, or enlarge
+Filling a brand template does not need it — the template already made those
+decisions, and your job is to follow them.
 
 ## Notes on this environment
 

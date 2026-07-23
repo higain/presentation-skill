@@ -152,6 +152,11 @@ column letters**, plus every formula it contains — the only reader here that w
 only one that gives you coordinates to plan an edit from. `--sheet NAME`, `--max-rows`,
 `--max-cols`, `--formulas` (formulas inside the grid) narrow it.
 
+Formulas print in LibreOffice syntax whatever the file's format, so a cross-sheet reference in an
+.xlsx reads `=$'Backend API'.B4`, not Excel's `!`. That is the same formula, correctly read — not
+damage, and nothing to "fix". The syntax rules are under
+[Editing with office.calc](#editing-with-officecalc-libreoffice).
+
 `markitdown.sh book.xlsx /tmp/book.md` (writes to the file you name, second argument required) is
 an alternative quick look for **.xlsx only** — it runs in a container and rejects .ods. It is a
 shell script already on `PATH`, *not* a file in this skill's `scripts/`: run it as

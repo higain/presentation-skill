@@ -244,6 +244,14 @@ def overflowing(doc, page):
       "BACKEND" rendering as "BAC / KEND".
 
     Each reason is a finished sentence, ready to print.
+
+    **A word broken onto exactly two lines is below this check's resolution.**
+    Laying text out on a throwaway shape reproduces the real layout to a few
+    percent, which is not enough to separate a snug one-liner from a two-line
+    break -- "QA" in a box it fills exactly measures the same as "DATA" in a box
+    it just exceeds.  Flagging both would put false alarms on every short label,
+    so the threshold sits above the ambiguity and catches breaks of three lines
+    or more.  Marginal two-line breaks need the render.
     """
     page_height = page.Height
 
@@ -352,6 +360,60 @@ def resize(shape, width=None, height=None):
         size.Height = height
     shape.setSize(size)
     return shape
+
+
+def set_bar(shape, baseline, height):
+    """Set a chart bar's height, keeping its foot on ``baseline``.
+
+    A bar grows upward: its ``y`` is ``baseline - height``, not its ``y``.
+    Setting the height alone leaves the bar hanging from its old top edge.
+    """
+    height = round(height)
+    resize(shape, height=height)
+    move(shape, y=round(baseline) - height)
+
+
+def scale_bars(bars, values, max_height=None):
+    """Rescale a row of template bars to ``values``, on their shared baseline.
+
+    Retexting a template chart is just moving rectangles -- there is no chart
+    object to talk to -- and this is that arithmetic::
+
+        bars = [shapes(page)[i] for i in (3, 5, 7, 9)]
+        scale_bars(bars, [40, 48, 29, 34])
+
+    The baseline and the tallest bar are read off the template, so the new
+    chart keeps the proportions the designer drew.  ``max_height`` overrides
+    what the tallest value maps to.  Negative values are not supported; a bar
+    chart with a zero value gets a zero-height bar, which is what it should be.
+    """
+    if len(bars) != len(values):
+        raise ValueError(f"{len(bars)} bars but {len(values)} values")
+    if not bars:
+        return
+    baseline = max(b.getPosition().Y + b.getSize().Height for b in bars)
+    if max_height is None:
+        max_height = max(b.getSize().Height for b in bars)
+    top = max(values)
+    if top <= 0:
+        raise ValueError("scale_bars needs at least one positive value")
+    for bar, value in zip(bars, values):
+        set_bar(bar, baseline, max(0, value) / top * max_height)
+
+
+def fit_pill(doc, page, pill, label, slack=0):
+    """Grow a pill or badge, and the label inside it, to fit the label's text.
+
+    Padding comes from the template's own geometry -- the difference between
+    the pill's width and the label's -- so nothing has to be guessed.  Both
+    keep their left edge; a longer tag grows to the right.
+
+    Returns the label's new width.
+    """
+    padding = pill.getSize().Width - label.getSize().Width
+    width = fit_width(doc, page, label, slack)
+    resize(pill, width=width + padding)
+    return width
 
 
 def set_char_color(shape, color):
