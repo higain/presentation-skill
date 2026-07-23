@@ -46,8 +46,12 @@ all**, and it rebuilds a file from what it understands — anything it does not 
 
 ## Editing with office.calc (LibreOffice)
 
+Put the skill's `scripts` directory on the path — the one that *contains*
+`office/`, never `office/` itself, which is what produces
+`ModuleNotFoundError: No module named 'office'`:
+
 ```python
-import sys; sys.path.insert(0, "/path/to/this/skill/scripts")
+import sys; sys.path.insert(0, "/absolute/path/to/spreadsheet/scripts")
 from office.calc import calc_document, number_format
 
 with calc_document("budget.ods") as doc:          # save=False to inspect without saving
@@ -149,7 +153,9 @@ only one that gives you coordinates to plan an edit from. `--sheet NAME`, `--max
 `--max-cols`, `--formulas` (formulas inside the grid) narrow it.
 
 `markitdown.sh book.xlsx /tmp/book.md` (writes to the file you name, second argument required) is
-an alternative quick look for **.xlsx only** — it runs in a container and rejects .ods. It renders
+an alternative quick look for **.xlsx only** — it runs in a container and rejects .ods. It is a
+shell script already on `PATH`, *not* a file in this skill's `scripts/`: run it as
+`markitdown.sh ...`, never `python3 .../scripts/markitdown.sh`. It renders
 each sheet as one plain table with no cell coordinates and no formulas, drops empty leading
 columns, and shows cached values, so a file openpyxl just wrote looks empty until `recalc.py`
 runs. Prefer `dump.py` unless you specifically want markitdown's flatter output.

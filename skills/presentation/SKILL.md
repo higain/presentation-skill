@@ -21,6 +21,7 @@ stays OOXML. Nothing here rewrites a file format by hand.
 | **Edit** an existing deck | `impress_document(path)` — saves in place, same format |
 | **Convert** formats | `python3 scripts/convert.py in.odp out.pptx` |
 | **Render** for visual QA | `python3 scripts/render.py deck.odp` |
+| **Check** a finished deck | `python3 scripts/qa.py deck.pptx --template brand.pptx` |
 | **Schema-check** a `.pptx` | `python3 scripts/office/validate.py deck.pptx` |
 
 **Two rules that override anything below:**
@@ -40,12 +41,25 @@ Paths are relative to this skill's directory.
 | `scripts/probe.py deck.odp [--slides 4,7-9]` | Every shape's **index**, position, size, fill, line and character formatting. `dump.py` says what a slide *says*; this says what it *is*. Run it before editing any template slide |
 | `scripts/thumbnail.py deck.odp [prefix]` | One labelled contact sheet of all slides, for picking template layouts. Output is named after the deck, so two decks never overwrite each other |
 | `scripts/render.py deck.odp [-o dir] [--dpi N] [--slides 3,7-9]` | One PNG per slide; prints their absolute paths. **This is visual QA** |
+| `scripts/qa.py deck.pptx [--template brand.pptx] [--slides 3,7-9]` | Broken text the renders would show: overflow, mid-word breaks, leftover template wording, placeholders — plus `validate.py` on a `.pptx`. Exit 1 on any finding |
 | `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx [--original src.pptx] [--auto-repair]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** — see [File QA](#file-qa-pptx-only) |
 | `tests/roundtrip_report.py check fixture.odp` | Re-proves the fidelity claims below after a LibreOffice upgrade |
 
 `markitdown.sh` is **not** useful here: it rejects `.odp` outright, and on
 `.pptx` it reports text without layouts, masters or notes. Use `dump.py`.
+
+**Importing `office.*` from your own build script:** put the skill's `scripts`
+directory on the path — the one that *contains* `office/`, never `office/`
+itself, which is the mistake that produces `ModuleNotFoundError: No module
+named 'office'`. A relative `"scripts"` only works while the shell sits in this
+skill's directory; from anywhere else write the absolute path this SKILL.md was
+read from:
+
+```python
+import sys; sys.path.insert(0, "/absolute/path/to/presentation/scripts")
+from office.impress import impress_document, slides, shapes
+```
 
 ## Reading a deck
 
@@ -175,16 +189,18 @@ Then build every slide in one pass and save once:
 
 ```python
 from office.impress import impress_document, slides, shapes, save_as, delete_slide, set_notes
-from office.template import clone_slide, set_text, fit_width, move, resize, set_char_color
+from office.template import clone_slide, retext, fit_width, move, resize, set_char_color
 
 with impress_document("brand.pptx", save=False) as doc:
     tpl = slides(doc)                              # the template block
     COVER, DIVIDER, CARDS = tpl[0], tpl[3], tpl[6]
 
-    page = clone_slide(doc, CARDS)                 # appended; index=N to insert
-    s = shapes(page)
-    set_text(s[1], "Three of four are past their end date")
-    set_text(s[5], "Backend API")
+    page = clone_slide(doc, CARDS)                 # always appended, in call order
+    left = retext(page, {                          # key = the TEMPLATE's wording
+        "Tagged cards for quick points": "Three of four are past their end date",
+        "SPEED":                         "Backend API",
+    })
+    assert not left, left                          # anything you forgot to replace
     set_notes(page, "Read the dates out loud.")
 
     for old in tpl:                                # drop the templates LAST
@@ -192,15 +208,32 @@ with impress_document("brand.pptx", save=False) as doc:
     save_as(doc, "out.pptx")                       # one .pptx save — see below
 ```
 
+- **`retext(page, {old: new})` matches shapes by the words they already carry,
+  so you never count `s[i]` by hand.** This is the difference between a deck
+  that builds first try and one that takes three attempts. Matching nothing, or
+  two shapes at once, raises before anything is written and prints the slide's
+  own indexed text, so a wrong excerpt corrects itself. A value of `None`
+  deletes the shape; `""` empties it but keeps the box. The return value lists
+  every shape you left untouched that still holds text.
+- **Do not assume a column is one header plus one body box.** A designed column
+  often splits its body across two text boxes, which shifts every later index —
+  the single commonest way a template build goes wrong, and exactly what
+  `retext` sidesteps. Where you do index by hand, re-read `probe.py` and note
+  that its `[i]` is precisely `shapes(page)[i]`.
+- `find_shapes(page, "pattern")` and `shape_by_text(page, "prefix")` locate a
+  shape when you need the object rather than a replacement.
 - **`clone_slide(doc, src, index=None)`** appends a blank page and rebuilds every
   shape on it, so slides can be produced in any order. Measured pixel-identical
   to its source on a fixture with text, an image, a table and a group; for a
   slide carrying an OLE chart or embedded media prefer `duplicate_slide` when
   the order allows it.
+  **Clone in final slide order and leave `index` alone.** Passing `index` while
+  the originals are still in the deck shifts them too, and what ends up where
+  stops being predictable; clone order *is* deck order once the templates go.
 - **`set_text(shape, *lines)` — never bare `setString()` on a template shape.**
   `setString` resets font, size, weight, colour and kerning to the shape's
   defaults, which on a designed slide means throwing the design away. One
-  argument per paragraph.
+  argument per paragraph. `retext` calls it for you.
 - **Reuse the template's own colours** rather than inventing new ones: probe
   prints them, and a card flipped to the dark fill needs `set_char_color(shape,
   0xFFFFFF)` on its text to stay legible.
@@ -259,6 +292,31 @@ the natural height of its rows on first load. It is stable afterwards.
 
 ## QA (required)
 
+### Automated QA
+
+Run this on every deck you produce, before you look at anything:
+
+```bash
+python3 scripts/qa.py out.pptx --template brand.pptx
+```
+
+It reports what a reader would see as broken and nothing else: text overrunning
+its box *into* other text or off the slide, a lone word broken across lines
+because its box is too narrow, wording still shared with the template, and
+leftover placeholders — then runs `validate.py` on a `.pptx`. Exit code 1 means
+findings. Pass `--template` for any template-derived deck; without it the
+leftover-wording check cannot run.
+
+Calibrated against four decks built from one brand template: silent on the
+untouched template and on a carefully built deck, and it finds the defects their
+authors missed — a leftover template paragraph, and pill labels breaking
+mid-word.
+
+**Text taller than its box is not itself a defect**, which is why `qa.py` does
+not report it. Designed templates size a body box to one line and let real
+content flow into the whitespace below; nothing is clipped and the slide is
+fine. Do not "fix" that.
+
 ### Visual QA
 
 Slides are visual. Read the renders; do not reason about coordinates.
@@ -286,13 +344,23 @@ fresh. What to check, most common first:
 pages than it has slides, so PNG numbers stop matching slide numbers after the
 first hidden one. `dump.py` flags which slides are hidden.
 
+`thumbnail.py` works on your finished deck too, not just on templates: one
+contact sheet to scan, then per-slide renders only for the slides that look
+wrong. That is a great deal cheaper than reading fifteen PNGs one at a time.
+
+**If you cannot see images**, say so rather than claiming the deck is checked.
+`qa.py` is the fallback and it covers the commonest defect — broken text — but
+it cannot judge alignment, contrast, crowding or whether a chart's bars are
+proportional. Run it, report what it found, and ask the user to eyeball the
+slides you could not verify, naming them.
+
 ### Content QA
 
-```bash
-python3 scripts/dump.py deck.odp | grep -niE "\bx{3,}\b|lorem|ipsum|\bTODO|\[insert|platzhalter"
-```
+`qa.py` above covers this. To grep a deck for something specific of your own:
 
-Fix anything this finds before declaring success.
+```bash
+python3 scripts/dump.py deck.odp | grep -niE "lorem|ipsum|\bTODO|\[insert|platzhalter"
+```
 
 ### File QA (.pptx only)
 

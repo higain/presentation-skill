@@ -30,6 +30,8 @@ geometry and character formatting of every slide, which is what you need to
 know which ``s[i]`` to write to.
 """
 
+import re
+
 import uno
 
 from office.impress import add_slide, notes_text, set_notes, shapes
@@ -164,6 +166,158 @@ def text_width(doc, page, text, like):
         page.remove(tmp)
 
 
+def text_overflow(doc, page, shape):
+    """``(needed, available, line)`` height in 1/100 mm, or ``None``.
+
+    Lays the shape's own text out fresh at the shape's own width on a throwaway
+    box that is allowed to grow, and reports the height it wanted against the
+    height it has, plus the height of a single line in the same format.
+
+    This is the one defect visual QA catches that a text dump cannot, so it is
+    also the fallback for an agent that cannot see the rendered slide.
+
+    ``None`` when the shape holds no text, is not a text shape, or is set to
+    grow its own height -- which makes overflow impossible by construction.
+
+    Compare with care: a designed box is often sized to its text's cap height
+    rather than the full line box, so a *single* line routinely measures taller
+    than the shape that holds it without anything being wrong.  ``overflowing()``
+    applies the threshold that accounts for this.
+    """
+    try:
+        paras = read_text(shape)
+    except Exception:
+        return None
+    if not any(text.strip() for text, _, _ in paras):
+        return None
+    if getattr(shape, "TextAutoGrowHeight", False):
+        return None
+
+    width = shape.getSize().Width
+    if width <= 0:
+        return None
+
+    tmp = doc.createInstance("com.sun.star.drawing.TextShape")
+    page.add(tmp)
+    try:
+        for prop in ("TextLeftDistance", "TextRightDistance",
+                     "TextUpperDistance", "TextLowerDistance"):
+            try:
+                setattr(tmp, prop, getattr(shape, prop))
+            except Exception:
+                pass
+        tmp.TextAutoGrowWidth = False
+        tmp.TextWordWrap = True
+        tmp.TextAutoGrowHeight = True
+        resize(tmp, width=width)
+
+        write_text(tmp, paras)
+        needed = tmp.getSize().Height
+        # One line in the same formatting, to judge how much of an overrun matters.
+        text, cprops, pprops = paras[0]
+        write_text(tmp, [("X", cprops, pprops)])
+        line = tmp.getSize().Height
+        return needed, shape.getSize().Height, line
+    except Exception:
+        return None
+    finally:
+        page.remove(tmp)
+
+
+def overflowing(doc, page):
+    """``[(index, reason)]`` for every shape whose text is visibly broken.
+
+    **Text taller than its own box is not, by itself, a defect** -- and this is
+    the trap that makes a naive overflow check useless.  Designed templates size
+    a body box to one line and let real content flow on into the whitespace
+    below; PowerPoint and Impress both draw it, nothing is clipped, and the
+    slide looks exactly as intended.  Flagging that buries real defects in a
+    list of things nobody should change.  (Checked against four decks built from
+    one brand template: the naive rule fired 51 times, almost all benign.)
+
+    So a shape is reported only when the overrun actually shows:
+
+    * **off-slide** -- the text runs past the bottom edge of the slide.
+    * **collision** -- it runs into another shape sitting below it.
+    * **mid-word break** -- a single word is wider than the box, so it has to
+      be broken across lines.  This is the narrow-box defect: axis labels like
+      "BACKEND" rendering as "BAC / KEND".
+
+    Each reason is a finished sentence, ready to print.
+    """
+    page_height = page.Height
+
+    # Only text can be collided *with* in a way anyone sees.  Text flowing over
+    # the card or panel it sits on is how these templates are drawn.
+    texts = []
+    for i, shape in enumerate(shapes(page)):
+        try:
+            if not " ".join(shape.getString().split()):
+                continue
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        texts.append((i, pos.X, pos.Y, size.Width, size.Height))
+
+    out = []
+    for i, shape in enumerate(shapes(page)):
+        measured = text_overflow(doc, page, shape)
+        if not measured:
+            continue
+        needed, available, line = measured
+        if available <= 0 or line <= 0:
+            continue
+
+        pos, size = shape.getPosition(), shape.getSize()
+        text = " ".join(shape.getString().split())
+
+        wrapped = needed > line * 1.4
+
+        # A lone word that wrapped had to be broken across lines -- there was no
+        # space to break at.  Measuring the layout settles this; comparing the
+        # word's width to the box does not, because a shape's text insets and a
+        # label that simply overhangs its box both read as too wide while
+        # rendering perfectly.
+        if wrapped and text and " " not in text:
+            out.append((
+                i,
+                f"{text[:24]!r} is broken across {max(2, round(needed / line))} "
+                f"lines mid-word -- widen the shape or shorten the label"
+            ))
+            continue
+
+        # Height defects.  A single line cannot be clipped: there is no second
+        # line to lose, and a box set to its text's cap height measures short on
+        # a slide that is perfectly fine.
+        if not wrapped or needed <= available:
+            continue
+
+        bottom = pos.Y + needed
+        if bottom > page_height:
+            out.append((
+                i,
+                f"text runs {bottom - page_height} past the bottom of the slide"
+            ))
+            continue
+
+        hit = next(
+            (
+                j for j, x, y, w, h in texts
+                if j != i
+                and x < pos.X + size.Width and pos.X < x + w      # overlap in x
+                and y >= pos.Y + available and y < bottom          # starts in the overrun
+            ),
+            None,
+        )
+        if hit is not None:
+            out.append((
+                i,
+                f"text overruns its box by {needed - available} and runs into "
+                f"the text of shape [{hit}] below it"
+            ))
+    return out
+
+
 def fit_width(doc, page, shape, slack=0):
     """Resize ``shape`` to the width of the text it currently holds.
 
@@ -222,6 +376,132 @@ def shape_by_text(page, prefix):
         except Exception:
             pass
     raise LookupError(f"no shape on {page.Name!r} starts with {prefix!r}")
+
+
+# ------------------------------------------------------- retexting by text
+
+def _norm(text):
+    """Collapse whitespace, so a match does not hinge on line breaks."""
+    return " ".join(text.split())
+
+
+def _shape_texts(page):
+    out = {}
+    for i, shape in enumerate(shapes(page)):
+        try:
+            out[i] = _norm(shape.getString())
+        except Exception:
+            out[i] = ""
+    return out
+
+
+def _inventory(texts):
+    """The slide's own text, indexed -- so a failed match self-corrects."""
+    rows = [f"    [{i}] {t[:60]!r}" for i, t in sorted(texts.items()) if t]
+    empty = [str(i) for i, t in sorted(texts.items()) if not t]
+    out = ["  shapes carrying text:"] + (rows or ["    (none)"])
+    if empty:
+        out.append(f"  shapes without text: {', '.join(empty)}")
+    return "\n".join(out)
+
+
+def find_shapes(page, pattern, regex=False):
+    """Every ``(index, shape)`` on ``page`` whose text matches ``pattern``.
+
+    Substring match on whitespace-collapsed text; ``regex=True`` treats
+    ``pattern`` as a case-insensitive regular expression.  Use it to hunt
+    leftover template wording before shipping a deck.
+    """
+    out = []
+    for i, shape in enumerate(shapes(page)):
+        try:
+            text = _norm(shape.getString())
+        except Exception:
+            continue
+        if not text:
+            continue
+        hit = (re.search(pattern, text, re.I) if regex
+               else _norm(pattern).lower() in text.lower())
+        if hit:
+            out.append((i, shape))
+    return out
+
+
+def retext(page, mapping):
+    """Retext a slide by the text its shapes already carry, not by index.
+
+    ``mapping`` goes from an excerpt of the **template's** wording to what
+    should replace it::
+
+        left = retext(page, {
+            "Tagged cards for quick points": "Three of four are past due",
+            "SPEED":                         "BACKEND",
+            "Two shorter paragraphs read":   None,      # delete that shape
+        })
+
+    Counting z-order indices by hand is where template builds go wrong: a
+    column whose body is split across two text boxes shifts every later index,
+    and the mistake surfaces only as someone else's text in the wrong column.
+    Matching on the words you can actually see in ``probe.py`` output removes
+    the arithmetic.
+
+    A key is matched against exact text first, then a prefix, then a substring
+    -- the most specific tier that hits anything wins.  Matching nothing, or
+    more than one shape, raises ``LookupError`` **before** anything is written,
+    with the slide's own indexed text in the message.
+
+    Values: a string is one paragraph, a list or tuple one entry per paragraph,
+    ``""`` empties a shape but keeps the box, and ``None`` removes the shape
+    from the slide -- which is what a leftover template paragraph usually wants.
+
+    Returns ``[(index, text)]`` for every shape left untouched that still
+    carries text: the leftover-template-text check, for free.
+    """
+    by_index = dict(enumerate(shapes(page)))
+    texts = _shape_texts(page)
+
+    claimed = {}
+    for key in mapping:
+        want = _norm(key)
+        if not want:
+            raise ValueError("retext: keys must be a non-empty piece of the template's text")
+        for hits in (
+            [i for i, t in texts.items() if t == want],
+            [i for i, t in texts.items() if t.startswith(want)],
+            [i for i, t in texts.items() if want.lower() in t.lower()],
+        ):
+            if hits:
+                break
+        if not hits:
+            raise LookupError(
+                f"retext: no shape on {page.Name!r} carries {key!r}.\n"
+                + _inventory(texts)
+            )
+        if len(hits) > 1:
+            raise LookupError(
+                f"retext: {key!r} matches {len(hits)} shapes on {page.Name!r} "
+                f"(indices {hits}). Use a longer, more specific excerpt.\n"
+                + _inventory(texts)
+            )
+        index = hits[0]
+        if index in claimed:
+            raise LookupError(
+                f"retext: {key!r} and {claimed[index]!r} both match shape "
+                f"[{index}] on {page.Name!r}; give each its own excerpt.\n"
+                + _inventory(texts)
+            )
+        claimed[index] = key
+
+    for index, key in claimed.items():
+        value = mapping[key]
+        if value is None:
+            page.remove(by_index[index])
+        elif isinstance(value, str):
+            set_text(by_index[index], value)
+        else:
+            set_text(by_index[index], *value)
+
+    return [(i, t) for i, t in sorted(texts.items()) if i not in claimed and t]
 
 
 # ---------------------------------------------------------------- cloning
