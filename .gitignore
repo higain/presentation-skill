@@ -3,3 +3,8 @@ __pycache__/
 .idea/
 .vscode/
 
+
+# per-run agent test output
+testdir/
+testdir-*/
+template-testdir/

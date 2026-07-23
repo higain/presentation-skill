@@ -15,9 +15,9 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/xlsx",
+        "./skills/spreadsheet",
         "./skills/docx",
-        "./skills/pptx",
+        "./skills/presentation",
         "./skills/pdf"
       ]
     },
