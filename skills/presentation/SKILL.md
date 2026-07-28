@@ -17,6 +17,7 @@ stays OOXML. Nothing here rewrites a file format by hand.
 | **Survey** a template's layouts | `python3 scripts/thumbnail.py template.odp` |
 | **Inspect** shapes to edit them | `python3 scripts/probe.py template.odp` |
 | **Create** a new deck | `office.impress` — see [Building a deck](#building-a-deck) |
+| **Build in the house style** | no template supplied — see [Company template](#company-template-default) |
 | **Adapt** a template deck | `office.template` — see [Adapting a template deck](#adapting-a-template-deck) |
 | **Edit** an existing deck | `impress_document(path)` — saves in place, same format |
 | **Convert** formats | `python3 scripts/convert.py in.odp out.pptx` |
@@ -31,6 +32,10 @@ stays OOXML. Nothing here rewrites a file format by hand.
 2. **A new deck defaults to `.pptx`** unless the user asks for `.odp` or names
    an output path that says otherwise.
 
+**And a default for content:** when a deck is requested with no template of the
+user's own, build it from our house template — see [Company
+template](#company-template-default) — rather than inventing a look.
+
 ## Scripts
 
 Paths are relative to this skill's directory.
@@ -44,11 +49,15 @@ Paths are relative to this skill's directory.
 | `scripts/qa.py deck.pptx [--template brand.pptx] [--slides 3,7-9]` | Broken text the renders would show: overflow, mid-word breaks, leftover template wording, placeholders — plus `validate.py` on a `.pptx`. Exit 1 on any finding |
 | `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx [--original src.pptx] [--auto-repair]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** — see [File QA](#file-qa-pptx-only) |
+| `scripts/catalog_extract.py template.pptx -o catalog/` | **Build-time only, not per deck:** per-layout dossiers (render + structure) for authoring the house catalog. See [Maintaining the default](#maintaining-the-default) |
 | `tests/roundtrip_report.py check fixture.odp` | Re-proves the fidelity claims below after a LibreOffice upgrade |
 
-Two references, read only when the job calls for them:
+Three references, read only when the job calls for them:
 `references/design.md` (inventing a look — palette, layout, what makes a deck
-look generated) and `references/pptx-xml.md` (hand-editing OOXML).
+look generated), `references/company-template.md` (our house catalog — which
+template slide for which content; see [Company
+template](#company-template-default)) and
+`references/pptx-xml.md` (hand-editing OOXML).
 `probe.py --json` emits the same survey as data when a script needs to pick
 shapes itself.
 
@@ -252,6 +261,13 @@ with impress_document("brand.pptx", save=False) as doc:
   **Clone in final slide order and leave `index` alone.** Passing `index` while
   the originals are still in the deck shifts them too, and what ends up where
   stops being predictable; clone order *is* deck order once the templates go.
+  The source's master is carried over, so a slide on a second master — a dark
+  divider in a light template — keeps its background. A placeholder whose run
+  colour overrides its presentation style is rebuilt as a plain text shape,
+  because the `.pptx` export drops direct run formatting on placeholders and
+  re-inherits the master's text style; without that the white title on a dark
+  divider exports black. Those shapes stop being placeholders, and per-run
+  formatting within a paragraph collapses to the paragraph's first run.
 - **`set_text(shape, *lines)` — never bare `setString()` on a template shape.**
   `setString` resets font, size, weight, colour and kerning to the shape's
   defaults, which on a designed slide means throwing the design away. One
@@ -344,7 +360,8 @@ its box *into* other text or off the slide, a lone word broken across lines
 because its box is too narrow, wording still shared with the template, and
 leftover placeholders — then runs `validate.py` on a `.pptx`. Exit code 1 means
 findings. Pass `--template` for any template-derived deck; without it the
-leftover-wording check cannot run.
+leftover-wording check cannot run. For a deck built from the house default, the
+template to pass is `assets/company-template.pptx`.
 
 Calibrated against four decks built from one brand template: silent on the
 untouched template and on a carefully built deck, and it finds the defects their
@@ -415,7 +432,8 @@ PowerPoint refuses to open a file over. Each failure names its fix. Exit codes:
 
 - **Pass `--original` for any template-derived deck.** A template may itself
   contain parts the XSD rejects; `--original` baselines against it so the
-  template's own defects do not read as yours.
+  template's own defects do not read as yours. For a house-default deck that
+  baseline is `assets/company-template.pptx`.
 - `--auto-repair` adds missing `xml:space="preserve"` to `<a:t>` runs with
   leading or trailing whitespace, in place.
 - The slide check is a deliberate denylist of defects PowerPoint actually
@@ -462,7 +480,62 @@ Only for OOXML details UNO cannot express — a UNO round trip is lossless for
 everything listed above. When you do need it, **`references/pptx-xml.md`** has
 the unpack/rezip recipe and the rules that keep a deck openable.
 
+## Company template (default)
+
+This skill ships our house template as the default. **When a deck is requested
+and the user names no template of their own, build from
+`assets/company-template.pptx`** — do not start from a blank document, and do
+not invent a look with `references/design.md`. The user's own template always
+wins: if they supply one, use theirs and ignore the default.
+
+1. **Choose designs from the catalog.** `references/company-template.md` maps
+   content to **slide numbers in the asset** — a decision table applied top to
+   bottom, first match wins — and describes what each design holds. Read it
+   first, pick a slide per section, and vary them per its variety rule. Do not
+   eyeball the thumbnail and guess. Slide `N` in the table is `slides(doc)[N-1]`,
+   which is what you pass to `clone_slide`; the autolayout number `probe.py`
+   prints is *not* an identifier here — every slide of the template shares it.
+2. **Respect the catalog's capacities.** Each entry states how many bullets a
+   body holds, how many columns, how many images. When content exceeds that,
+   split the slide rather than overflow it — the numbers are there so you do not
+   have to discover the limit in the render.
+3. **Build with `clone_slide` + `retext`** against the asset, exactly as in
+   [Adapting a template deck](#adapting-a-template-deck): clone the slides you
+   picked in final order, retext by the template's own wording, drop the
+   template block last, save once.
+4. **QA against the asset:**
+   `python3 scripts/qa.py out.pptx --template assets/company-template.pptx`, and
+   `validate.py --original assets/company-template.pptx` for a `.pptx`.
+
+### Maintaining the default
+
+The catalog and the asset are generated from the real template **once, on
+internal infra** — never send company slides to a hosted model. The pipeline:
+
+```bash
+python3 scripts/catalog_extract.py company.pptx -o catalog/   # structure + renders, no model
+```
+
+That writes one `catalog/slide-NN/` per layout, each with a `render.png` and a
+`structure.json` (slots, geometry, fonts). Then, on the internal vision model:
+
+1. Feed each `catalog/slide-NN/` to the model with
+   `references/gemma-catalog-prompt.md` — a per-layout pass, then an
+   aggregation pass that produces the decision table.
+2. Fold the output into `references/company-template.md` (skeleton:
+   `references/company-template.example.md`) and **review every row against the
+   renders** — the model overstates capacity, and a human catches it here.
+3. Copy the template to `assets/company-template.pptx`.
+4. Calibrate: build a few real briefs, QA them against the asset, and correct
+   wrong slide picks in the decision table.
+
+The asset, the catalog and any renders are brand-internal — commit them to the
+internal fork only, never to a remote outside the company.
+
 ## Templates
+
+For our house template, see [Company template](#company-template-default); the
+steps here are for any *other* template a user brings.
 
 ```bash
 python3 scripts/thumbnail.py template.odp     # contact sheet, labelled by master
@@ -493,7 +566,9 @@ spacing, and the list of tells that make a deck look generated (accent lines
 under titles, decorative colour bars, text-only slides).
 
 Filling a brand template does not need it — the template already made those
-decisions, and your job is to follow them.
+decisions, and your job is to follow them. That includes the house default: when
+you build from `assets/company-template.pptx`, follow the catalog, not
+`design.md`.
 
 ## Notes on this environment
 

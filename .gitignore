@@ -8,3 +8,9 @@ __pycache__/
 testdir/
 testdir-*/
 template-testdir/
+
+# Brand-internal template assets. origin is the PUBLIC anthropics/skills repo --
+# a real company template must never be pushed there. The skill reads these
+# from disk, so being untracked costs nothing locally.
+skills/*/assets/
+testing/delta-extract/

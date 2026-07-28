@@ -417,12 +417,27 @@ def fit_pill(doc, page, pill, label, slack=0):
 
 
 def set_char_color(shape, color):
-    """Recolour every run in a shape -- for flipping a card to a dark fill."""
+    """Recolour every run in a shape -- for flipping a card to a dark fill.
+
+    Set the colour on each paragraph *and* on its runs: a paragraph's own
+    CharColor does not reach runs that carry their own, which is most of them
+    in a template deck.
+    """
     enum = shape.createEnumeration()
     while enum.hasMoreElements():
         para = enum.nextElement()
-        if not hasattr(para, "createEnumeration"):
+        try:
             para.CharColor = color
+        except Exception:
+            pass
+        if not hasattr(para, "createEnumeration"):
+            continue
+        portions = para.createEnumeration()
+        while portions.hasMoreElements():
+            try:
+                portions.nextElement().CharColor = color
+            except Exception:
+                pass
             continue
         runs = para.createEnumeration()
         while runs.hasMoreElements():
@@ -618,6 +633,133 @@ def _copy_table(src, new):
                     pass
 
 
+_CHAR_PROPS = (
+    "CharColor", "CharHeight", "CharFontName", "CharWeight", "CharPosture",
+    "CharUnderline", "CharStrikeout", "CharContoured", "CharShadowed",
+    "CharKerning", "CharEscapement", "CharCaseMap",
+)
+
+_TEXT_LAYOUT_PROPS = (
+    "TextHorizontalAdjust", "TextVerticalAdjust", "TextAutoGrowHeight",
+    "TextAutoGrowWidth", "TextWordWrap", "TextFitToSize",
+    "TextLeftDistance", "TextRightDistance",
+    "TextUpperDistance", "TextLowerDistance",
+    "FillStyle", "FillColor", "LineStyle", "TextRotation",
+)
+
+
+def _is_placeholder(shape):
+    """True for a presentation placeholder (title, outline, subtitle, ...)."""
+    try:
+        return shape.getShapeType().startswith("com.sun.star.presentation.")
+    except Exception:
+        return False
+
+
+def _needs_flattening(shape):
+    """True if cloning this placeholder as a placeholder would lose its colour.
+
+    The .pptx export drops direct run formatting on a placeholder and writes
+    the colour inherited from its presentation style instead.  That is
+    invisible when a run's colour already *is* the style's -- ordinary black
+    body text on a light master -- and destructive when it is not, which is
+    exactly the case for white text on a dark divider.
+
+    So compare the run against its own style: any run that overrides the style
+    carries formatting the export cannot preserve, and must be rebuilt as a
+    plain text shape.  Note the master is not part of this test -- a cloned
+    placeholder loses the override whether or not the master changed.
+    """
+    if not _is_placeholder(shape) or not shape.getString():
+        return False
+    try:
+        style_color = shape.Style.CharColor
+    except Exception:
+        return True     # no style to inherit from; keep the formatting we have
+    for para in _paragraphs(shape):
+        portion = _first_portion(para)
+        if portion is None:
+            continue
+        try:
+            if portion.CharColor != style_color:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _paragraphs(shape):
+    """Every paragraph of a text-bearing shape, as a list."""
+    out = []
+    if not hasattr(shape, "createEnumeration"):
+        return out
+    enum = shape.createEnumeration()
+    while enum.hasMoreElements():
+        out.append(enum.nextElement())
+    return out
+
+
+def _first_portion(para):
+    """The paragraph's first text run, or None for an empty paragraph."""
+    if not hasattr(para, "createEnumeration"):
+        return None
+    enum = para.createEnumeration()
+    return enum.nextElement() if enum.hasMoreElements() else None
+
+
+def flatten_placeholder(doc, src, dst_page):
+    """Rebuild a presentation placeholder as a plain ``drawing.TextShape``.
+
+    Cloning a placeholder onto a page whose master differs from the source's
+    silently loses its text colour.  The write does land -- read the portion
+    back in the same session and it is the colour you set -- but LibreOffice's
+    .pptx export discards direct run formatting on a *placeholder* and
+    re-inherits the destination master's text style instead.  Measured on a
+    dark section divider: the run leaves as ``<a:schemeClr val="dk1"/>``
+    (black) where the source had ``lt1``, and reloading reports ``0x0``.
+    Reassigning ``MasterPage``, rebinding ``Style`` to the source master's
+    family, and forcing a non-theme colour all fail to prevent it.
+
+    A plain text shape has no such inheritance, so the colour exports as an
+    explicit ``<a:srgbClr val="ffffff"/>`` and survives.  The cost is that the
+    shape stops being a placeholder: it no longer picks up later layout
+    changes, and per-run formatting *within* a paragraph is flattened to that
+    paragraph's first run.
+    """
+    new = doc.createInstance("com.sun.star.drawing.TextShape")
+    dst_page.add(new)
+    new.setPosition(src.getPosition())
+    new.setSize(src.getSize())
+
+    for prop in _TEXT_LAYOUT_PROPS:
+        try:
+            new.setPropertyValue(prop, src.getPropertyValue(prop))
+        except Exception:
+            pass
+
+    new.setString(src.getString())
+
+    # setString() collapses each paragraph to a single run, so carry the
+    # source paragraph's first run's character formatting across the whole
+    # of the matching destination paragraph.
+    for src_para, dst_para in zip(_paragraphs(src), _paragraphs(new)):
+        portion = _first_portion(src_para)
+        if portion is None:
+            continue
+        for prop in _CHAR_PROPS:
+            try:
+                dst_para.setPropertyValue(prop, portion.getPropertyValue(prop))
+            except Exception:
+                pass
+        for prop in ("ParaAdjust", "ParaLeftMargin", "ParaTopMargin",
+                     "ParaBottomMargin", "ParaLineSpacing"):
+            try:
+                dst_para.setPropertyValue(prop, src_para.getPropertyValue(prop))
+            except Exception:
+                pass
+    return new
+
+
 def clone_shape(doc, src, dst_page):
     """Rebuild one shape on another slide, formatting and all.
 
@@ -688,11 +830,31 @@ def clone_slide(doc, src_page, index=None):
     source on a fixture carrying text, an image, a table and a group; for a
     slide with an OLE chart or embedded media, ``duplicate_slide()`` is the
     safer copy when slide order happens to allow it.
+
+    **Cross-master clones.**  A new page comes up on the deck's default master,
+    so cloning a slide that sits on a *different* master -- a dark section
+    divider in a mostly-light template, say -- would otherwise lose both its
+    background and its text colour.  The master is carried over here, and any
+    presentation placeholder is flattened to a plain text shape so its colour
+    survives the .pptx export (see ``flatten_placeholder`` for why that is
+    necessary).  Slides already on the default master are untouched by this and
+    keep their placeholders.
     """
     dst = add_slide(doc, index)
+    # A new page comes up on whatever master its neighbour uses, which is not
+    # necessarily the source's -- carry the source's over before anything else,
+    # or a dark divider lands on the light master and loses its background.
+    try:
+        dst.MasterPage = src_page.MasterPage
+    except Exception:
+        pass
+
     copy_background(doc, src_page, dst)
     for shape in shapes(src_page):
-        clone_shape(doc, shape, dst)
+        if _needs_flattening(shape):
+            flatten_placeholder(doc, shape, dst)
+        else:
+            clone_shape(doc, shape, dst)
     try:
         notes = notes_text(src_page)
         if notes:
