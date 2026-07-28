@@ -244,7 +244,24 @@ Slide 11 is the exception worth knowing: its waterfall is a genuine OOXML
 the lower one invisible to fake the waterfall — so it *is* editable as a real
 chart. It carries no think-cell object.
 
-### Cloning dividers — fixed, but know what it cost
+### Build with `build_deck`, not `clone_slide`
+
+**Use `office.deckbuild.build_deck` for this template.** It duplicates designs
+instead of rebuilding their shapes, then sets the slide order by permuting
+`<p:sldIdLst>` in the saved file. Measured over designs 7, 8, 13, 20 and 1
+against their source renders: mean RMS **7.8 versus 22.8** for `clone_slide`,
+better on every slide.
+
+That matters here specifically because this template leans on three things a
+shape rebuild destroys: **bullet markers**, **per-run colour inside a paragraph**
+(the blue-on-black body text is everywhere), and **think-cell's OLE objects** —
+6 references survive a `build_deck` build, none survive `clone_slide`. The
+divider footer line survives too.
+
+The rest of this section describes `clone_slide`'s behaviour, which still
+applies if you use it — for an `.odp`, or when editing a deck in place.
+
+### Cloning dividers with `clone_slide` — fixed, but know what it cost
 
 Cloning a `Section_dark` divider used to produce a white slide with black text.
 Two separate faults, both now fixed in `office/template.py`:
@@ -278,14 +295,18 @@ The cost of flattening: those shapes are no longer placeholders, so they will
 not pick up later layout changes, and per-run formatting *within* a paragraph
 collapses to that paragraph's first run.
 
-### Still unfixed: inline formatting in body text boxes
+### Inline formatting in body text boxes — avoided, not repaired
 
-Separate from the above and **not** fixed. The body text on these slides sits
-in ordinary `ooxml-rect` shapes, not placeholders, so `clone_shape` handles it
-— and it loses bullet markers and inline run colour, flattening a paragraph
-that mixed blue and black to a single colour. Compare a clone of slide 20
-against the original and the bullets are visibly plainer. Budget for fixing
-body text by hand after a build, or check the render before shipping.
+The body text on these slides sits in ordinary `ooxml-rect` shapes, not
+placeholders, so `clone_shape` handles it — and it loses bullet markers and
+inline run colour, flattening a paragraph that mixed blue and black to one
+colour. Compare a `clone_slide` copy of slide 20 against the original and the
+bullets are visibly plainer.
+
+This was never fixed in `clone_slide`; `build_deck` sidesteps it by not
+rebuilding shapes at all (slide 20: RMS 2.5 via `build_deck`, 31.5 via
+`clone_slide`). If you do use `clone_slide` on this template, budget for fixing
+body text by hand and check the render before shipping.
 
 ### Round-trip validation noise
 

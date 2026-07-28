@@ -176,7 +176,50 @@ offers only insert and remove, and the `.uno:MovePageFirst/Up/Down/Last`
 dispatches return a dispatch object and then silently do nothing (measured, not
 assumed). So copies of a slide can only form one contiguous run beside it. Any
 deck whose layouts interleave — divider, chart, cards, divider, columns — is
-**not buildable with `duplicate_slide` at all**. Use `clone_slide` below.
+**not buildable with `duplicate_slide` alone.**
+
+Two ways round it. For a `.pptx` built from a template, **`build_deck` is the
+better one**: it duplicates at full fidelity and then fixes the order in the
+saved file, where slide order is just a list — see [Building from a template at
+full fidelity](#building-from-a-template-at-full-fidelity). For everything else
+— `.odp`, or copying between two open documents — use `clone_slide` below, which
+rebuilds each shape and accepts the losses that come with that.
+
+## Building from a template at full fidelity
+
+**`.pptx` from a template: reach for this first.** `build_deck` duplicates the
+designs you name — a real Impress duplicate, so nothing is rebuilt — drops the
+template originals, and then puts the slides in your order by permuting
+`<p:sldIdLst>` in the saved file. Slide order in a `.pptx` is only that list;
+the slide parts do not care.
+
+```python
+from office.deckbuild import build_deck
+from office.template import retext
+
+def fill(page, slot, design):
+    if design == 7:
+        retext(page, {"Formelemente, Navigator": "Kapitel 1: Vorgehen"})
+
+build_deck("assets/company-template.pptx", "out.pptx",
+           [7, 8, 13, 20, 1],          # catalog slide numbers, in final order
+           fill=fill)                   # called per page, before the save
+```
+
+`designs` may repeat a slide. `fill(page, slot, design)` is where retexting
+belongs — it runs after the originals are gone, so `slides(doc)` is already the
+deck you asked for.
+
+Why it beats `clone_slide` on a template: measured against the delta asset over
+designs 7, 8, 13, 20 and 1, diffing each result against its source render, mean
+RMS **7.8 versus 22.8**, better on every slide. Bullet markers, per-run colour
+inside a paragraph and think-cell's OLE data all survive here and do not survive
+a rebuild — 6 think-cell references kept versus none. Same output size, same
+validator findings.
+
+Limits: `.pptx` only, since the reorder is an OOXML step, and it builds a *new*
+deck from a template rather than editing one in place. For those, use
+`clone_slide`.
 
 ## Adapting a template deck
 
@@ -492,17 +535,19 @@ wins: if they supply one, use theirs and ignore the default.
    content to **slide numbers in the asset** — a decision table applied top to
    bottom, first match wins — and describes what each design holds. Read it
    first, pick a slide per section, and vary them per its variety rule. Do not
-   eyeball the thumbnail and guess. Slide `N` in the table is `slides(doc)[N-1]`,
-   which is what you pass to `clone_slide`; the autolayout number `probe.py`
-   prints is *not* an identifier here — every slide of the template shares it.
+   eyeball the thumbnail and guess. Slide `N` in the table is the number you put
+   in `build_deck`'s design list; the autolayout number `probe.py` prints is
+   *not* an identifier here — every slide of the template shares it.
 2. **Respect the catalog's capacities.** Each entry states how many bullets a
    body holds, how many columns, how many images. When content exceeds that,
    split the slide rather than overflow it — the numbers are there so you do not
    have to discover the limit in the render.
-3. **Build with `clone_slide` + `retext`** against the asset, exactly as in
-   [Adapting a template deck](#adapting-a-template-deck): clone the slides you
-   picked in final order, retext by the template's own wording, drop the
-   template block last, save once.
+3. **Build with `build_deck`** against the asset — see [Building from a template
+   at full fidelity](#building-from-a-template-at-full-fidelity). Pass the slide
+   numbers you picked in final order and retext from its `fill` callback, by the
+   template's own wording. It duplicates rather than rebuilds, so this template's
+   bullets, inline colour and think-cell objects survive; `clone_slide` loses all
+   three here.
 4. **QA against the asset:**
    `python3 scripts/qa.py out.pptx --template assets/company-template.pptx`, and
    `validate.py --original assets/company-template.pptx` for a `.pptx`.
