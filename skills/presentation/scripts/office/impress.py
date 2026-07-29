@@ -15,8 +15,14 @@ media survive an edit here that a rewrite-from-scratch library would lose.
         set_notes(page, "Mit der Umsatzzahl aufmachen.")
     # saved in place, still .odp
 
-All geometry is in **1/100 mm** (UNO's drawing unit), not points or EMU:
-a 16:9 slide is 28000 x 15750.  ``mm(15)`` and ``pt(18)`` convert.
+All geometry is in **1/100 mm** (UNO's drawing unit), not points or EMU.
+``mm(15)`` and ``pt(18)`` convert.
+
+**Read the slide size, never assume it.**  ``slide_size(doc)`` is the only
+answer that is right for the deck in front of you: a LibreOffice default page
+is 28000 x 15750, but a brand template is usually its own size -- delta's is
+32001 x 18000.  Hardcoding the default silently shifts every shape you place
+on a template that is 14% wider.
 
 One headless LibreOffice is started on first use and shut down when the process
 ends, so many documents in one script cost one startup.
@@ -25,10 +31,12 @@ ends, so many documents in one script cost one startup.
 import atexit
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 import uno
@@ -48,6 +56,9 @@ FILTERS = {
 
 # Extensions this skill will open.  .ppt is read-only in practice: convert it.
 PRESENTATION_EXTS = {".odp", ".otp", ".fodp", ".pptx", ".potx", ".ppt", ".pps", ".ppsx"}
+
+# OOXML packages -- the ones repair_pptx() knows how to mend after a save.
+_OOXML_EXTS = {".pptx", ".potx"}
 
 PRESENTATION_SERVICE = "com.sun.star.presentation.PresentationDocument"
 
@@ -75,11 +86,28 @@ class _Server:
         self.profile = None
 
     def desktop(self, timeout: float = 60.0):
+        if self.ctx is not None and not self._alive():
+            # LibreOffice died under us -- a crash on a malformed shape, an OOM,
+            # an outside kill.  Without this every later call in the process
+            # fails with "Binary URP bridge disposed" or "cannot get value
+            # ServiceManager", which reads as a bug in the caller's script
+            # rather than a dead server.  Drop the corpse and start again.
+            self.stop()
         if self.ctx is None:
             self._start(timeout)
-        return self.ctx.ServiceManager.createInstanceWithContext(
-            "com.sun.star.frame.Desktop", self.ctx
-        )
+        try:
+            return self.ctx.ServiceManager.createInstanceWithContext(
+                "com.sun.star.frame.Desktop", self.ctx
+            )
+        except Exception:
+            self.stop()                  # bridge disposed between check and use
+            self._start(timeout)
+            return self.ctx.ServiceManager.createInstanceWithContext(
+                "com.sun.star.frame.Desktop", self.ctx
+            )
+
+    def _alive(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
 
     def _start(self, timeout: float):
         port = free_port()
@@ -244,16 +272,114 @@ def new_document(timeout: float = 60.0):
     return doc
 
 
-def save_as(doc, path):
+# Content types for the media LibreOffice writes into a .pptx but forgets to
+# declare.  Straight from the OOXML defaults; the validator names the same ones.
+_CONTENT_TYPES = {
+    "bin": "application/vnd.openxmlformats-officedocument.oleObject",
+    "bmp": "image/bmp",
+    "emf": "image/x-emf",
+    "gif": "image/gif",
+    "jpeg": "image/jpeg",
+    "jpg": "image/jpeg",
+    "m4a": "audio/mp4",
+    "mp3": "audio/mpeg",
+    "mp4": "video/mp4",
+    "png": "image/png",
+    "svg": "image/svg+xml",
+    "tif": "image/tiff",
+    "tiff": "image/tiff",
+    "wav": "audio/wav",
+    "wmf": "image/x-wmf",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+_DEFAULT_RE = re.compile(r'<Default\s+Extension="([^"]+)"', re.I)
+_TYPES_OPEN_RE = re.compile(r"(<Types\b[^>]*>)", re.I)
+
+
+def repair_pptx(path) -> list:
+    """Fix the two package defects LibreOffice writes into every ``.pptx``.
+
+    Both are introduced by the save, not by the template -- a pristine
+    ``company-template.pptx`` validates clean and its own saved copy does not:
+
+    * ``_rels/.rels`` gets ``Target="../customXml/item1.xml"``.  The package
+      root has no parent, so the reference dangles.  ``validate.py`` reports it
+      **CRITICAL, "will cause the document to appear corrupt"**.
+    * ``[Content_Types].xml`` loses the ``<Default>`` for extensions still
+      present in the package -- typically ``wmf``, from think-cell artwork.
+
+    Left alone these fire 22 findings on every deck this skill produces, which
+    trains you to ignore the validator, which is how a real defect ships.
+    Returns a list of what it repaired, empty when there was nothing to do.
+    """
+    path = Path(path)
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+        parts = {name: archive.read(name) for name in names}
+
+    fixed = []
+
+    # 1. Root-relative relationship targets that climb out of the package.
+    root_rels = "_rels/.rels"
+    if root_rels in parts:
+        before = parts[root_rels].decode("utf8")
+        after = re.sub(r'(\bTarget=")\.\./', r"\1", before)
+        if after != before:
+            parts[root_rels] = after.encode("utf8")
+            fixed.append(f"{root_rels}: dropped '../' from "
+                         f"{before.count('Target=\"../')} relationship target(s)")
+
+    # 2. Media in the package with no content type declared for its extension.
+    types_part = "[Content_Types].xml"
+    if types_part in parts:
+        content_types = parts[types_part].decode("utf8")
+        declared = {m.lower() for m in _DEFAULT_RE.findall(content_types)}
+        present = {
+            Path(name).suffix.lstrip(".").lower()
+            for name in names
+            if not name.endswith("/")
+        }
+        missing = sorted(
+            ext for ext in present - declared - {"xml", "rels"}
+            if ext in _CONTENT_TYPES
+        )
+        if missing:
+            added = "".join(
+                f'<Default Extension="{ext}" ContentType="{_CONTENT_TYPES[ext]}"/>'
+                for ext in missing
+            )
+            content_types = _TYPES_OPEN_RE.sub(r"\1" + added, content_types, count=1)
+            parts[types_part] = content_types.encode("utf8")
+            fixed.append(f"{types_part}: declared {', '.join(missing)}")
+
+    if not fixed:
+        return []
+
+    # Rewrite whole: editing a zip entry in place leaves the old one behind.
+    staged = path.with_suffix(path.suffix + ".repair-tmp")
+    with zipfile.ZipFile(staged, "w", zipfile.ZIP_DEFLATED) as out:
+        for name in names:
+            out.writestr(name, parts[name])
+    staged.replace(path)
+    return fixed
+
+
+def save_as(doc, path, repair: bool = True):
     """Write the document to ``path``, picking the filter from its extension.
 
     Leaves the document's own location alone, so a load-edit-save_as chain never
     overwrites the input.
+
+    For a ``.pptx``, ``repair_pptx`` then fixes the package defects the export
+    filter introduces -- pass ``repair=False`` to see the raw output.
     """
     path = Path(path).absolute()
     doc.storeToURL(
         uno.systemPathToFileUrl(str(path)), _props(FilterName=filter_for(path), Overwrite=True)
     )
+    if repair and path.suffix.lower() in _OOXML_EXTS:
+        repair_pptx(path)
     return path
 
 
@@ -266,14 +392,18 @@ def impress_document(path, save: bool = True):
     disk untouched.
     """
     doc = load_document(path, read_only=not save)
+    saved = False
     try:
         yield doc
         if save:
             doc.setModified(True)  # store() is a no-op on an unmodified document
             doc.store()
+            saved = True
     finally:
         with contextlib.suppress(Exception):
             doc.close(False)
+    if saved and Path(path).suffix.lower() in _OOXML_EXTS:
+        repair_pptx(path)          # same export filter, same defects to mend
 
 
 # --- slides ---------------------------------------------------------------
@@ -384,8 +514,145 @@ def placeholder(page, kind: str = "Title"):
     return None
 
 
-def add_textbox(doc, page, x: int, y: int, width: int, height: int, text: str = ""):
-    """Add a text box.  All geometry in 1/100 mm -- use mm() or pt()."""
+# Presentation placeholder shape types -> a short, readable slot label.  Only
+# the ones with a stable meaning are named; anything else falls back to the
+# shape's own Name (which for imported PowerPoint carries the placeholder name,
+# e.g. "Action Title").
+_PLACEHOLDER_LABELS = {
+    "TitleTextShape": "title",
+    "SubtitleShape": "subtitle",
+    "OutlineTextShape": "content",
+    "OutlinerShape": "content",
+    "NotesTextShape": "notes",
+    "NotesShape": "notes",
+    "HeaderTextShape": "header",
+    "FooterTextShape": "footer",
+    "SlideNumberTextShape": "slide number",
+    "DateTimeTextShape": "date/time",
+}
+
+
+def is_empty_placeholder(shape) -> bool:
+    """True if this shape is an empty presentation placeholder.
+
+    Keys on ``IsEmptyPresentationObject`` -- the one signal that is set on a
+    placeholder inheriting its geometry from the master and currently holding no
+    text, and is ``False`` on a filled or baked-in shape.  This is what makes an
+    empty *action title* (or any custom placeholder) visible instead of the
+    slide reading as blank: the shape type alone does not tell you, because a
+    custom placeholder imports under an unpredictable type.
+    """
+    return getattr(shape, "IsEmptyPresentationObject", False) is True
+
+
+def placeholder_kind(shape) -> str:
+    """A readable label for a placeholder slot: 'title', 'content', or, for a
+    custom placeholder with no standard type, its own name ('Action Title')."""
+    short = shape.getShapeType().rsplit(".", 1)[-1]
+    label = _PLACEHOLDER_LABELS.get(short)
+    if label:
+        return label
+    name = (getattr(shape, "Name", "") or "").strip()
+    return name or short
+
+
+# Chrome placeholders that sit on every master and say nothing about what a
+# layout is *for* -- excluded from the slot report.
+_META_PLACEHOLDER_TYPES = {
+    "HeaderTextShape", "HeaderShape",
+    "FooterTextShape", "FooterShape",
+    "SlideNumberTextShape", "SlideNumberShape",
+    "DateTimeTextShape", "DateTimeShape",
+    "NotesTextShape", "NotesShape",
+    "PageShape",
+}
+
+
+def _presentation_placeholders(page):
+    """Presentation placeholder shapes on a page, by z-order.  Decoration on a
+    master (logos, background rectangles) is drawing.* and excluded; only
+    presentation.* placeholder shapes come back."""
+    return [s for s in shapes(page)
+            if s.getShapeType().startswith("com.sun.star.presentation.")]
+
+
+# Which placeholder kinds each Impress autolayout actually offers.  The master
+# always carries the full default set (title, outline, footer, number, date),
+# so the master alone would over-report; the autolayout is what says which slots
+# are live for a given slide.  Only the layouts this stack is sure of are listed
+# (measured -- see SKILL.md); an unknown layout falls back to the master, which
+# is where a custom PowerPoint placeholder (e.g. an action title) shows up.
+_AUTOLAYOUT_KINDS = {
+    0: {"title", "subtitle"},   # title slide
+    1: {"title", "content"},    # title + content
+    19: {"title"},              # title only
+    20: set(),                  # blank -- no placeholders
+}
+
+
+def layout_slots(page):
+    """Content placeholder slots the slide's *layout* offers but the slide has
+    no shape for -- the "Click to add Title" case, where the placeholder lives
+    only in the layout/master and never lands on the slide's own page.
+
+    Without this a slide that inherits an empty title from its layout reads as
+    blank: ``shapes(page)`` returns nothing for it.  The slots are gated by the
+    autolayout (``page.Layout``) so the master's always-present default
+    placeholders are not over-reported, then read off ``MasterPage`` for their
+    geometry, minus the chrome (footer, page number, date) and minus any slot
+    the slide already carries a shape for (so it is not double-counted with what
+    ``shapes(page)`` shows).
+
+    Returns dicts: ``kind`` (label), ``name``, and the master's geometry.
+    """
+    layout = getattr(page, "Layout", None)
+    allowed = _AUTOLAYOUT_KINDS.get(layout)   # None == layout we don't model
+    if allowed is not None and not allowed:
+        return []                             # known blank layout: no slots
+    master = getattr(page, "MasterPage", None)
+    if master is None:
+        return []
+    on_page = {placeholder_kind(s) for s in _presentation_placeholders(page)}
+    out = []
+    for s in _presentation_placeholders(master):
+        short = s.getShapeType().rsplit(".", 1)[-1]
+        if short in _META_PLACEHOLDER_TYPES:
+            continue
+        kind = placeholder_kind(s)
+        if kind in on_page:
+            continue
+        if allowed is not None and kind not in allowed:
+            continue                          # known layout: only its own kinds
+        pos, size = s.getPosition(), s.getSize()
+        out.append({
+            "kind": kind,
+            "name": getattr(s, "Name", ""),
+            "x": pos.X, "y": pos.Y,
+            "width": size.Width, "height": size.Height,
+        })
+    return out
+
+
+def add_textbox(doc, page, x: int, y: int, width: int, height: int,
+                text: str = "", **style):
+    """Add a text box.  All geometry in 1/100 mm -- use mm() or pt().
+
+    With no ``style`` the box inherits Impress's drawing defaults (Arial 18,
+    black, left) -- which is almost never what a slide wants.  Pass any of
+    ``size`` (pt), ``color``, ``weight`` (``draw.BOLD``), ``align``, ``valign``,
+    ``font``, ``italic``, ``underline``, ``pad``, ``fill``, ``line`` and the box
+    is styled for you; see ``office.draw.text``, which this then delegates to.
+
+    **Style after the text, never before.**  ``setString()`` on an empty shape
+    re-inherits the drawing default and silently discards character formatting
+    set before it -- the reason font sizes "don't stick".  Both paths here get
+    the order right; if you call ``setString()`` yourself, follow it with
+    ``office.draw.restyle(shape, ...)``.
+    """
+    if style:
+        from . import draw          # deferred: draw imports this module
+        return draw.text(doc, page, x, y, width, height, text, **style)
+
     shape = doc.createInstance("com.sun.star.drawing.TextShape")
     page.add(shape)
     shape.setPosition(uno.createUnoStruct("com.sun.star.awt.Point", x, y))
@@ -409,13 +676,21 @@ def add_image(doc, page, image_path, x: int, y: int, width: int, height: int):
 
 
 def slide_size(doc):
-    """(width, height) of a slide in 1/100 mm."""
+    """(width, height) of a slide in 1/100 mm.
+
+    Ask this before placing anything.  Templates are not all the same size and
+    the difference is large enough to push a right-aligned column off the page.
+    """
     page = doc.getDrawPages().getByIndex(0)
     return page.Width, page.Height
 
 
 def set_slide_size(doc, width: int, height: int):
-    """Resize every slide and master.  16:9 is 28000 x 15750."""
+    """Resize every slide and master.  A 16:9 LibreOffice page is 28000 x 15750.
+
+    Only for decks you are creating.  Never resize a brand template: its masters
+    are drawn to its own dimensions and everything on them would shift.
+    """
     for page in slides(doc) + masters(doc):
         page.Width = width
         page.Height = height

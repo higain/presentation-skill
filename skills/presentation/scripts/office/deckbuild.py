@@ -25,6 +25,7 @@ slide between two open documents, use ``clone_slide``.
 
 from __future__ import annotations
 
+import inspect
 import re
 import shutil
 import zipfile
@@ -79,13 +80,40 @@ def reorder_pptx(path: Path, slot_at_position) -> Path:
     return path
 
 
-def build_deck(template, out, designs, fill=None) -> Path:
+def _call_fill(fill, doc, page, slot, design):
+    """Call ``fill`` as ``(doc, page, slot, design)``, or the old ``(page, slot,
+    design)`` if that is what it takes.
+
+    ``doc`` is what every shape constructor needs -- ``doc.createInstance(...)``
+    -- so a filler that draws cannot work without it.  Older fillers that only
+    retext do not want it, and still run unchanged.
+    """
+    try:
+        params = inspect.signature(fill).parameters
+        wants_doc = len(params) >= 4 or any(
+            p.kind is inspect.Parameter.VAR_POSITIONAL for p in params.values()
+        )
+    except (TypeError, ValueError):
+        wants_doc = True                      # builtin or C callable: assume new
+    return fill(doc, page, slot, design) if wants_doc else fill(page, slot, design)
+
+
+def build_deck(template, out, designs, fill=None, qa=True) -> Path:
     """Write ``out``: one slide per entry of ``designs``, in that order.
 
     ``designs`` holds 1-based slide numbers in ``template`` -- the numbers a
-    layout catalog cites -- and may repeat one.  ``fill(page, slot, design)``,
-    if given, is called on each new page before the save, and is where retexting
-    belongs.
+    layout catalog cites -- and may repeat one.
+
+    ``fill(doc, page, slot, design)``, if given, is called on each new page
+    before the save.  This is where **all** of the content goes: retexting with
+    ``office.template.retext`` and drawing with ``office.draw``.  Do not reopen
+    the finished file to add shapes -- that is a second .pptx round trip, it
+    grows the masters, and it is how overlays end up on top of template text
+    nobody replaced.
+
+    ``qa=True`` runs ``scripts/qa.py``'s checks on the result and prints what it
+    finds -- overflow and leftover template wording, the two defects that are
+    invisible without rendering.  It never raises; it reports.
 
     The two traps this handles, both of which silently produce the wrong deck:
     ``duplicate_slide`` inserts each copy next to its original, so every later
@@ -128,13 +156,48 @@ def build_deck(template, out, designs, fill=None) -> Path:
 
         if fill is not None:
             for slot, page in enumerate(made):
-                fill(page, slot, designs[slot])
+                _call_fill(fill, doc, page, slot, designs[slot])
 
         save_as(doc, out)
     finally:
         doc.close(False)
 
-    return reorder_pptx(out, order)
+    reorder_pptx(out, order)
+    if qa:
+        _report_qa(out, template)
+    return out
+
+
+def _report_qa(out: Path, template: Path):
+    """Print the QA findings for a freshly built deck.
+
+    Built in rather than left to the caller because the runs that most need it
+    are the ones that never get round to running it.  ``build_deck(..., qa=False)``
+    turns it off; ``scripts/qa.py`` is the same check with an exit code.
+    """
+    try:
+        from qa import check                  # scripts/ is on sys.path already
+    except ImportError:                       # imported from outside scripts/
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        try:
+            from qa import check
+        except ImportError:
+            return
+    try:
+        issues, checked = check(out, template=template)
+    except Exception as e:                    # QA must never lose you the deck
+        print(f"[build_deck] QA could not run: {e}")
+        return
+    print(f"\n[build_deck] {out.name}: {checked} slide(s) built.")
+    if issues:
+        print(f"[build_deck] {len(issues)} QA issue(s) -- fix these before shipping:")
+        for issue in issues:
+            print(f"  - {issue}")
+    else:
+        print("[build_deck] QA: no overflow and no leftover template text.")
+    print("[build_deck] QA cannot see the slides. Render them "
+          "(python3 scripts/render.py) and look.\n")
 
 
 def _index_of(page, pages):

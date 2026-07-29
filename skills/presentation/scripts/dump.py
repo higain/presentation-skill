@@ -25,9 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from office.impress import (  # noqa: E402
     PRESENTATION_EXTS,
     SofficeError,
+    is_empty_placeholder,
+    layout_slots,
     load_document,
     masters,
     notes_text,
+    placeholder_kind,
     shape_text,
     shapes,
     slides,
@@ -103,8 +106,14 @@ def _walk(shape, out: list[str], slots: list[str], depth: int = 0):
     text = shape_text(shape).strip()
     label = PLACEHOLDER_TYPES.get(kind)
     if not text:
+        # An empty placeholder is a slot the layout offers -- catch it by the
+        # IsEmptyPresentationObject signal, not just the known text-shape types,
+        # so a custom placeholder (e.g. an action title inherited from the
+        # master) is reported instead of the slide reading as blank.
         if label:
             slots.append(label)
+        elif is_empty_placeholder(shape):
+            slots.append(placeholder_kind(shape))
         return
     prefix = f"**{label}:** " if label else ""
     for i, line in enumerate(text.splitlines()):
@@ -143,6 +152,9 @@ def dump(path: Path, notes: bool = True, layout: bool = True) -> str:
             slots: list[str] = []
             for shape in shapes(page):
                 _walk(shape, body, slots)
+            # Slots the layout offers but that never land on the slide's own
+            # page ("Click to add Title"): read them off the master.
+            slots.extend(s["kind"] for s in layout_slots(page))
             if slots:
                 counts = Counter(slots)
                 body.append(

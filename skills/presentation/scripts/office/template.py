@@ -66,6 +66,64 @@ _BG_PROPS = ("FillStyle", "FillColor", "FillTransparence", "FillGradientName",
 _READONLY = 16  # com.sun.star.beans.PropertyAttribute.READONLY
 
 
+# ------------------------------------------------------------ walking shapes
+
+def _is_group(shape):
+    try:
+        return shape.getShapeType() == "com.sun.star.drawing.GroupShape"
+    except Exception:
+        return False
+
+
+def _walk(container, prefix=()):
+    """``(path, shape, parent)`` for every shape in ``container``, depth first.
+
+    ``path`` is a tuple of indices: ``(3,)`` is the fourth top-level shape,
+    ``(3, 1)`` the second shape inside it.  ``parent`` is the container to
+    remove the shape from -- the page for a top-level shape, the group for a
+    shape inside one.
+    """
+    try:
+        count = container.getCount()
+    except Exception:
+        return
+    for i in range(count):
+        try:
+            shape = container.getByIndex(i)
+        except Exception:
+            continue
+        path = prefix + (i,)
+        yield path, shape, container
+        if _is_group(shape):
+            yield from _walk(shape, path)
+
+
+def _addr(path):
+    """A readable address: ``3`` at the top level, ``'3.1'`` inside a group."""
+    return path[0] if len(path) == 1 else ".".join(str(p) for p in path)
+
+
+def addr_key(address):
+    """Sort key for the addresses ``walk_shapes``, ``find_shapes`` and
+    ``retext`` hand back -- ``3`` sorts before ``'3.1'`` before ``4``."""
+    if isinstance(address, int):
+        return (address,)
+    return tuple(int(part) for part in str(address).split("."))
+
+
+def walk_shapes(page):
+    """``[(address, shape)]`` for every shape on ``page``, groups included.
+
+    ``shapes(page)`` stops at the top level, and on a designed template that is
+    routinely less than half the words on the slide: delta's phase-plan slide
+    carries 14 top-level shapes and 12 more inside five groups, holding the
+    phase labels and durations.  Anything that reads or rewrites a slide's text
+    has to come through here, or it will report a slide clean while the
+    template's own German is still sitting on it.
+    """
+    return [(_addr(path), shape) for path, shape, _ in _walk(page)]
+
+
 # --------------------------------------------------------------------- text
 
 def read_text(shape):
@@ -112,18 +170,35 @@ def write_text(shape, paras):
 
 
 def set_text(shape, *lines):
-    """Retext a shape, keeping the formatting of its first paragraph.
+    """Retext a shape, keeping its paragraphs' formatting.
 
     ``setString()`` alone drops font, size, weight, colour and kerning back to
     the shape's defaults -- which on a template slide means losing the design.
     Pass one argument per paragraph.
+
+    **Formatting is matched paragraph by paragraph**, and lines past the last
+    template paragraph inherit that last one.  A designed body is often not
+    uniform -- the house template's default content slide opens with a blue
+    heading and continues in black -- and flattening everything onto the first
+    paragraph's format turns that into a wall of blue.  Where every paragraph
+    is formatted alike this is the same as taking the first.
+
+    **Colour is the exception, and no code here can fix it: the .pptx export
+    discards per-paragraph character colour** and writes one colour for the
+    whole shape.  Measured on the house template -- three paragraphs written
+    red/blue/green come back all one colour, while their per-paragraph *sizes
+    and weights* survive intact.  An .odp keeps all of it.  So a heading and
+    its body in different colours have to be **separate shapes** in a .pptx;
+    ``office.draw.text`` makes that cheap.
     """
     paras = read_text(shape)
     if not paras:
         shape.setString("\n".join(lines))
         return
-    _, cprops, pprops = paras[0]
-    write_text(shape, [(line, cprops, pprops) for line in lines])
+    write_text(shape, [
+        (line, paras[min(i, len(paras) - 1)][1], paras[min(i, len(paras) - 1)][2])
+        for i, line in enumerate(lines)
+    ])
 
 
 def _apply(target, props):
@@ -225,7 +300,10 @@ def text_overflow(doc, page, shape):
 
 
 def overflowing(doc, page):
-    """``[(index, reason)]`` for every shape whose text is visibly broken.
+    """``[(address, reason)]`` for every shape whose text is visibly broken.
+
+    Addresses are ``walk_shapes``'s: ``3`` for a top-level shape, ``'3.1'`` for
+    one inside a group.
 
     **Text taller than its own box is not, by itself, a defect** -- and this is
     the trap that makes a naive overflow check useless.  Designed templates size
@@ -257,8 +335,10 @@ def overflowing(doc, page):
 
     # Only text can be collided *with* in a way anyone sees.  Text flowing over
     # the card or panel it sits on is how these templates are drawn.
+    walked = walk_shapes(page)
+
     texts = []
-    for i, shape in enumerate(shapes(page)):
+    for i, shape in walked:
         try:
             if not " ".join(shape.getString().split()):
                 continue
@@ -268,7 +348,7 @@ def overflowing(doc, page):
         texts.append((i, pos.X, pos.Y, size.Width, size.Height))
 
     out = []
-    for i, shape in enumerate(shapes(page)):
+    for i, shape in walked:
         measured = text_overflow(doc, page, shape)
         if not measured:
             continue
@@ -445,8 +525,11 @@ def set_char_color(shape, color):
 
 
 def shape_by_text(page, prefix):
-    """The first shape on ``page`` whose text starts with ``prefix``."""
-    for shape in shapes(page):
+    """The first shape on ``page`` whose text starts with ``prefix``.
+
+    Reaches inside groups, like ``retext`` and ``find_shapes``.
+    """
+    for _, shape in walk_shapes(page):
         try:
             if shape.getString().startswith(prefix):
                 return shape
@@ -462,35 +545,66 @@ def _norm(text):
     return " ".join(text.split())
 
 
-def _shape_texts(page):
-    out = {}
-    for i, shape in enumerate(shapes(page)):
+def _untruncate(text):
+    """Drop a trailing ellipsis from a match key.
+
+    Inventories print long text cut short.  The excerpt then gets copied back
+    into a mapping with the ellipsis still attached, and the match fails on a
+    string that is visibly right -- a failure models have burned whole sessions
+    on, and one that costs three lines to make impossible.  A key is a
+    substring anyway, so nothing is lost by trimming it.
+    """
+    for marker in ("...", "…"):
+        if text.endswith(marker):
+            return text[: -len(marker)].rstrip()
+    return text
+
+
+def _scan(page):
+    """``({address: text}, {address: (shape, parent)})`` for the whole slide,
+    groups included."""
+    texts, entries = {}, {}
+    for path, shape, parent in _walk(page):
+        address = _addr(path)
+        entries[address] = (shape, parent)
         try:
-            out[i] = _norm(shape.getString())
+            texts[address] = _norm(shape.getString())
         except Exception:
-            out[i] = ""
-    return out
+            texts[address] = ""
+    return texts, entries
+
+
+def _shape_texts(page):
+    """``{address: text}`` for every shape on the slide, groups included."""
+    return _scan(page)[0]
 
 
 def _inventory(texts):
-    """The slide's own text, indexed -- so a failed match self-corrects."""
-    rows = [f"    [{i}] {t[:60]!r}" for i, t in sorted(texts.items()) if t]
-    empty = [str(i) for i, t in sorted(texts.items()) if not t]
+    """The slide's own text, addressed -- so a failed match self-corrects."""
+    ordered = sorted(texts.items(), key=lambda kv: addr_key(kv[0]))
+    rows = [f"    [{i}] {t[:60]!r}" for i, t in ordered if t]
+    empty = [str(i) for i, t in ordered if not t]
     out = ["  shapes carrying text:"] + (rows or ["    (none)"])
     if empty:
         out.append(f"  shapes without text: {', '.join(empty)}")
+    if any(isinstance(i, str) for i, _ in ordered):
+        out.append("  ([3.1] is a shape inside the group at [3].)")
+    out.append("  Any distinctive substring of a line above works as a key.")
     return "\n".join(out)
 
 
 def find_shapes(page, pattern, regex=False):
-    """Every ``(index, shape)`` on ``page`` whose text matches ``pattern``.
+    """Every ``(address, shape)`` on ``page`` whose text matches ``pattern``.
 
     Substring match on whitespace-collapsed text; ``regex=True`` treats
     ``pattern`` as a case-insensitive regular expression.  Use it to hunt
     leftover template wording before shipping a deck.
+
+    Reaches inside groups: an address of ``'3.1'`` is the second shape in the
+    group at index 3.
     """
     out = []
-    for i, shape in enumerate(shapes(page)):
+    for address, shape in walk_shapes(page):
         try:
             text = _norm(shape.getString())
         except Exception:
@@ -500,7 +614,7 @@ def find_shapes(page, pattern, regex=False):
         hit = (re.search(pattern, text, re.I) if regex
                else _norm(pattern).lower() in text.lower())
         if hit:
-            out.append((i, shape))
+            out.append((address, shape))
     return out
 
 
@@ -531,15 +645,21 @@ def retext(page, mapping):
     ``""`` empties a shape but keeps the box, and ``None`` removes the shape
     from the slide -- which is what a leftover template paragraph usually wants.
 
-    Returns ``[(index, text)]`` for every shape left untouched that still
+    Keys reach **inside groups**, where designed templates keep a good half of
+    their text; a shape there is addressed ``'3.1'`` rather than ``3``.
+
+    A key ending in ``...`` or ``…`` has it stripped before matching, so a
+    string pasted straight out of ``probe.py``'s truncated listing still finds
+    its shape instead of failing on the ellipsis.
+
+    Returns ``[(address, text)]`` for every shape left untouched that still
     carries text: the leftover-template-text check, for free.
     """
-    by_index = dict(enumerate(shapes(page)))
-    texts = _shape_texts(page)
+    texts, entries = _scan(page)
 
     claimed = {}
     for key in mapping:
-        want = _norm(key)
+        want = _untruncate(_norm(key))
         if not want:
             raise ValueError("retext: keys must be a non-empty piece of the template's text")
         for hits in (
@@ -557,28 +677,78 @@ def retext(page, mapping):
         if len(hits) > 1:
             raise LookupError(
                 f"retext: {key!r} matches {len(hits)} shapes on {page.Name!r} "
-                f"(indices {hits}). Use a longer, more specific excerpt.\n"
+                f"(at {hits}). Use a longer, more specific excerpt.\n"
                 + _inventory(texts)
             )
-        index = hits[0]
-        if index in claimed:
+        address = hits[0]
+        if address in claimed:
             raise LookupError(
-                f"retext: {key!r} and {claimed[index]!r} both match shape "
-                f"[{index}] on {page.Name!r}; give each its own excerpt.\n"
+                f"retext: {key!r} and {claimed[address]!r} both match shape "
+                f"[{address}] on {page.Name!r}; give each its own excerpt.\n"
                 + _inventory(texts)
             )
-        claimed[index] = key
+        claimed[address] = key
 
-    for index, key in claimed.items():
+    for address, key in claimed.items():
         value = mapping[key]
+        shape, parent = entries[address]
         if value is None:
-            page.remove(by_index[index])
+            parent.remove(shape)          # the page, or the group it sits in
         elif isinstance(value, str):
-            set_text(by_index[index], value)
+            set_text(shape, value)
         else:
-            set_text(by_index[index], *value)
+            set_text(shape, *value)
 
-    return [(i, t) for i, t in sorted(texts.items()) if i not in claimed and t]
+    return [(i, t) for i, t in sorted(texts.items(), key=lambda kv: addr_key(kv[0]))
+            if i not in claimed and t]
+
+
+# A pattern-collection template carries flags addressed to whoever builds from
+# it -- "Beispiel", "Layout", a fill-in marker for a customer logo.  They are
+# ordinary shapes, so nothing flags them, and they ship unless deleted.  These
+# are the house template's, matched on the whole string so that a slide titled
+# "Vorgehen zum Bilden eines Modells" is not mistaken for the "Vorgehen:" block.
+HOUSE_ANNOTATIONS = (
+    "Beispiel",
+    "Layout",
+    "Kundenlogo",
+    "Alternatives Design zum Master",
+)
+HOUSE_ANNOTATION_PREFIXES = (
+    "Vorgehen: 1.",
+    "Viele nützliche Informationen rund um das Thema Pricing",
+)
+
+
+def strip_annotations(page, exact=HOUSE_ANNOTATIONS,
+                      prefixes=HOUSE_ANNOTATION_PREFIXES):
+    """Delete a template's authoring annotations from a slide.
+
+    Reaches inside groups -- design 10 keeps its ``Beispiel`` flag in one.
+    ``exact`` matches a shape's whole text (case-insensitively, whitespace
+    collapsed); ``prefixes`` matches the start of it, for the multi-sentence
+    build-instruction blocks.  Pass your own for another template.
+
+    Returns the texts it removed, so you can see what went.
+    """
+    wanted = {_norm(t).lower() for t in exact}
+    starts = tuple(_norm(p).lower() for p in prefixes)
+    removed = []
+    for _, shape, parent in list(_walk(page)):
+        try:
+            text = _norm(shape.getString())
+        except Exception:
+            continue
+        if not text:
+            continue
+        low = text.lower()
+        if low in wanted or low.startswith(starts):
+            try:
+                parent.remove(shape)
+            except Exception:
+                continue
+            removed.append(text)
+    return removed
 
 
 # ---------------------------------------------------------------- cloning

@@ -1,13 +1,15 @@
-# Design: making a deck that doesn't look generated
+# Design: choosing a look for a deck that has no template
 
-Loaded from the presentation skill's SKILL.md. Read this when you are inventing
-a look — a deck from scratch, or a restyle. Filling a brand template does not
+Loaded from the presentation skill's SKILL.md. Read this when you are **inventing
+a look** — a deck from scratch, or a restyle. Filling a brand template does not
 need it: the template already made these decisions, and you should follow it.
 
+**What goes *on* a slide is a different question, and this file does not answer
+it.** The visual-per-slide rule, layout variety, spacing and the list of tells
+that make a deck look generated live in SKILL.md's **Composition** section, and
+they apply to every deck — template or not. This file is only about the look.
 
-**Don't create boring slides.** Plain bullets on white won't impress anyone.
-
-### Before starting
+### Choosing the palette
 
 - **Pick a bold, content-informed palette.** If swapping your colors into an
   unrelated deck would still "work", the choice wasn't specific enough.
@@ -15,8 +17,8 @@ need it: the template already made these decisions, and you should follow it.
   supporting tones, one sharp accent. Never equal weight.
 - **Dark/light contrast**: dark title and closing slides, light content
   ("sandwich"), or commit to dark throughout for a premium feel.
-- **Commit to one motif** and repeat it — rounded image frames, icons in
-  colored circles. Not a color bar or accent stripe (see Avoid).
+- **Don't default to blue** — pick colors that reflect the topic.
+- **Don't default to cream or beige backgrounds** — use white or the palette.
 
 | Theme | Primary | Secondary | Accent |
 |-------|---------|-----------|--------|
@@ -31,40 +33,21 @@ need it: the template already made these decisions, and you should follow it.
 | **Sage Calm** | `84B59F` (sage) | `69A297` (eucalyptus) | `50808E` (slate) |
 | **Cherry Bold** | `990011` (cherry) | `FCF6F5` (off-white) | `2F3C7E` (navy) |
 
-In UNO, colors are integers: `0x1E2761`, not `"1E2761"`.
+In UNO, colors are integers: `0x1E2761`, not `"1E2761"`. `office.draw` takes
+them in that form.
 
-### For each slide
+### Committing to a motif
 
-**Every slide needs a visual element** — image, chart, icon, or shape.
-Text-only slides are forgettable.
+**Pick one motif and repeat it** across the deck — rounded image frames, icons
+in colored circles, a consistent card shape. A motif is what makes a set of
+slides read as one deck.
 
-- Two-column (text left, illustration right)
-- Icon + text rows (icon in a colored circle, bold header, description below)
-- 2×2 or 2×3 grid of content blocks
-- Half-bleed image down one side with content overlaid
-- Large stat callouts (60-72pt numbers, small labels below)
-- Comparison columns (before/after, pros/cons)
-- Timeline or process flow (numbered steps, arrows)
+Not a colour bar and not an accent stripe: those are the tells, and SKILL.md's
+Composition section says why.
 
-### Spacing
+### Consistency
 
-0.5" minimum margins · 0.3-0.5" between blocks · leave breathing room.
-
-### Avoid
-
-- **Don't repeat one layout** — vary columns, cards and callouts
-- **Don't center body text** — left-align paragraphs and lists; center only titles
-- **Don't skimp on size contrast** — titles 36pt+ against 14-16pt body
-- **Don't default to blue** — pick colors that reflect the topic
-- **Don't mix spacing randomly** — pick 0.3" or 0.5" and hold to it
-- **Don't style one slide and leave the rest plain**
-- **Don't create text-only slides**
-- **Don't use low-contrast elements** — icons *and* text need contrast
-- **NEVER use accent lines under titles** — a hallmark of AI-generated slides;
-  use whitespace or background color instead
-- **NEVER add decorative color bars or accent stripes** — header/footer bars,
-  vertical sidebar stripes, thin stripes along a card edge, single-side borders.
-  To set a card apart use a subtle background tint, a shadow, or an icon
-- **Don't default to cream/beige backgrounds** — use white or the brand palette
-- **Don't ship text that overflows its shape** — shrink, split, or enlarge
-
+- **Don't style one slide and leave the rest plain.** Whatever you choose here,
+  apply it everywhere — a half-styled deck looks worse than an unstyled one.
+- Fonts: pick from the trustworthy list in SKILL.md's Typography section, or
+  accept that the overflow check cannot be relied on.

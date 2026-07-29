@@ -4,15 +4,30 @@ The house template this skill builds from when the user names no template of
 their own. Generated from the real deck by `catalog_extract.py` + a vision
 model (see *Provenance* at the foot), then reviewed.
 
-**Asset:** `assets/company-template.pptx` — 21 designs, 16:9 (320 × 180 mm),
-masters `AT_ST` (content), `Section_dark` (dividers), `Default 36` (slide 4).
-Build with `clone_slide` + `retext` (see "Adapting a template deck" in SKILL.md).
-QA every build with `qa.py --template assets/company-template.pptx`.
+**Asset:** `assets/company-template.pptx` — 21 designs, 16:9, **32001 × 18000**
+in 1/100 mm (*not* the LibreOffice default 28000 × 15750 — read
+`slide_size(doc)` rather than assuming, or every offset you compute lands 14%
+too far left). Masters `AT_ST` (content), `Section_dark` (dividers),
+`Default 36` (design 4).
 
-**Designs are named by their slide number in that asset.** Slide `N` is
-`slides(doc)[N - 1]` — what you hand to `clone_slide`. Do *not* key on the
-autolayout number `probe.py` reports as `layout`: every slide of this deck
-reports `layout: 20`, so it distinguishes nothing.
+**Build with `build_deck`** — see "Building from a template at full fidelity" in
+SKILL.md. It duplicates rather than rebuilds, so this template's bullets, inline
+colour and think-cell objects survive; `clone_slide` loses all three here. Check
+every build with
+`make_deck.py build.py out.pptx --template assets/company-template.pptx`, and
+open the renders it prints.
+
+**Designs are named by their slide number in that asset.** Design `N` is
+`slides(doc)[N - 1]`, and `N` is what you put in `build_deck`'s design list. Do
+*not* key on the autolayout number `probe.py` reports as `layout`: every slide of
+this deck reports `layout: 20`, so it distinguishes nothing — and **catalog
+design 20 is a real, densely filled two-column slide, not a blank one.**
+
+**Much of this template's text lives inside groups.** Eleven of the 21 designs
+carry text in grouped shapes, which `shapes(page)` cannot reach — design 10 has
+16 grouped text shapes against 11 top-level. `retext`, `find_shapes` and `qa.py`
+all walk groups, and `probe.py` lists them indented as `[6.2]`. Each entry below
+notes its count. Retext by wording, never by index.
 
 ## Decision table — content → template slide
 
@@ -20,6 +35,7 @@ Apply top to bottom; first match wins.
 
 | When the content is… | Use slide | Design | Because |
 |---|---|---|---|
+| **a diagram, chart, matrix, comparison — anything no row below fits** | `8` | **Canvas** | Strip design 8 back with `draw.canvas(page, keep=(0, 1, 2, 3))` — think-cell stub, title, topic label, source line — and draw in the area the body text vacates: **2031, 3545 to 30003, 15702**. You keep the master, background, chrome, fonts and margins. **Reach for this rather than forcing the content into the nearest bullet list** — see "The canvas pattern" in SKILL.md. |
 | deck opener | `7` | Section Divider Dark | Dark section divider provides a high-impact start; slide 1 is a similar alternative. |
 | agenda | `8` | Content slide with navigator | Content slide with navigator allows for a list of topics with a progress indicator. |
 | section start | `1` | Section divider | Standard section divider for thematic shifts; slide 5 and 7 are alternatives. |
@@ -34,6 +50,16 @@ Apply top to bottom; first match wins.
 | closing slide | `7` | Section Divider Dark | Dark section divider provides a clean, definitive end to the deck. |
 
 **Variety rule:** Interleave standard bullet slides (8) with visual process flows (13, 18), analysis matrices (6, 12), and high-impact dividers (1, 7) to break the monotony of text.
+
+**There is no cover design and no closing design.** Design 7 is a dark section
+divider pressed into service for both. A real title slide — deck title,
+subtitle, date, audience — has to be built: take design 7 and add what it needs
+with `office.draw`, or use design 8 as a canvas. Do not leave the deck without
+one.
+
+**Neither is there a design for a diagram.** That is what the canvas row at the
+top of the table is for, and on a deck with any analytical content you should
+expect to use it several times.
 
 ## Design entries
 
@@ -68,6 +94,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To present a detailed project schedule with associated effort (BT) and total cost calculations.
 - **Content types:** `timeline`, `metrics-kpi`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 3 · max bullets 4 · images 0 · chart ✗
+- **Grouped text:** 8 text shape(s) sit inside groups (26 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** When providing a detailed breakdown of project phases, milestones, and the resulting financial quote.
 - **Avoid when:** When a high-level roadmap is needed without granular task-level effort or pricing.
 - **Imagery:** none
@@ -86,6 +113,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To present two parallel analysis streams (e.g., competitor vs. target group) with their respective findings.
 - **Content types:** `bulleted-content`, `comparison`
 - **Capacity:** headline ✓ · body slots 6 · max bullets 3 · images 2 · chart ✗
+- **Grouped text:** 2 text shape(s) sit inside groups (21 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** When you need to show a structured breakdown of two different analysis categories and their resulting outcomes.
 - **Avoid when:** When presenting a linear process, a single deep-dive analysis, or data-heavy charts.
 - **Imagery:** a laptop showing a chart on screen (photo-placeholder); a hand holding a pen writing on a document (photo-placeholder); crossed swords icon (icon); a target/bullseye icon (icon); a speech bubble icon (icon); a document/checklist icon (icon); the delta company logo (logo)
@@ -113,6 +141,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To demonstrate or explain different navigation elements and frameworks used throughout a presentation.
 - **Content types:** `bulleted-content`, `image-showcase`
 - **Capacity:** headline ✓ · body slots 1 · max bullets 3 · images 6 · chart ✗
+- **Grouped text:** 6 text shape(s) sit inside groups (13 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** When explaining the presentation's navigation logic or showcasing specific framework icons.
 - **Avoid when:** When presenting primary data, complex tables, or long-form text documents.
 - **Imagery:** a grey puzzle piece (photo-placeholder); a puzzle piece partially filled with blue (photo-placeholder); a puzzle piece partially filled with blue (photo-placeholder); a puzzle piece partially filled with blue (photo-placeholder); a sequence of four document icons with a grey arrow (photo-placeholder); a simplified Business Model Canvas diagram with blue and green blocks (photo-placeholder); a chevron process arrow sequence in grey and green (decorative); the delta company logo (logo)
@@ -122,6 +151,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To visualize a linear progression of phases with a detailed breakdown of a specific step or result below.
 - **Content types:** `process-steps`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 2 · max bullets 3 · images 0 · chart ✗
+- **Grouped text:** 16 text shape(s) sit inside groups (11 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** Use when showing a high-level 3-step process and providing a detailed explanation or sub-process for one of those steps.
 - **Avoid when:** Avoid for complex timelines with many dates or slides requiring heavy data tables.
 - **Imagery:** a grey right-pointing arrow (decorative); a grey right-pointing arrow (decorative); a sequence of connected blue hexagonal shapes (photo-placeholder); an orange slanted rectangle label (decorative); an orange slanted rectangle label (decorative); the delta company logo (logo)
@@ -149,6 +179,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To visualize a linear project timeline or process divided into three distinct phases with associated tasks.
 - **Content types:** `process-steps`, `timeline`
 - **Capacity:** headline ✓ · body slots 3 · max bullets 3 · images 0 · chart ✗
+- **Grouped text:** 7 text shape(s) sit inside groups (17 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** Use when presenting a high-level project roadmap or a three-step methodology with detailed action items for each phase.
 - **Avoid when:** Avoid for complex processes with more than three steps or for content that does not follow a linear chronological sequence.
 - **Imagery:** a target with an arrow (icon); a magnifying glass (icon); a checklist on a clipboard (icon); a red diamond (decorative); the company logo (logo)
@@ -158,6 +189,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To present five distinct dimensions or categories of a strategic analysis surrounding a central core concept.
 - **Content types:** `bulleted-content`, `process-steps`
 - **Capacity:** headline ✓ · body slots 5 · max bullets 3 · images 0 · chart ✗
+- **Grouped text:** 6 text shape(s) sit inside groups (16 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** Use when you need to break down a central topic into five specific analytical dimensions or question sets.
 - **Avoid when:** Avoid when you have more or fewer than five key points, or when the content requires a linear sequence rather than a hub-and-spoke relationship.
 - **Imagery:** four arrows pointing outwards (icon); a bar chart on a screen (icon); three small people figures (icon); a speech bubble with a person silhouette (icon); a bar chart (icon); the delta company logo (logo)
@@ -167,6 +199,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To visualize a sequential process or list of steps where specific steps are highlighted with detailed explanatory text.
 - **Content types:** `process-steps`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 7 · max bullets 3 · images 0 · chart ✗
+- **Grouped text:** 1 text shape(s) sit inside groups (29 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** Use when presenting a multi-step process where one or more steps require expanded descriptions or examples.
 - **Avoid when:** Avoid for simple lists without detailed call-outs or for complex timelines with specific dates.
 - **Imagery:** a pie chart icon (icon); a magnifying glass over a document icon (icon); a list with a magnifying glass icon (icon); a human head profile icon (icon); a bar chart with an upward arrow icon (icon); the delta company logo (logo)
@@ -176,6 +209,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To outline a sequential process or a series of steps with corresponding detailed descriptions.
 - **Content types:** `process-steps`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 5 · max bullets 3 · images 0 · chart ✗
+- **Grouped text:** 2 text shape(s) sit inside groups (21 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** Use when presenting a linear workflow or a list of five key phases that require brief explanatory bullets.
 - **Avoid when:** Avoid for complex diagrams, large data tables, or processes with more than five steps.
 - **Imagery:** a data table (photo-placeholder); a funnel (photo-placeholder); a bar chart with an upward arrow (photo-placeholder); a funnel (photo-placeholder); a document with charts (photo-placeholder); a blue vertical arrow shape (decorative); the delta company logo (logo)
@@ -185,6 +219,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To visualize a cyclical development process that transforms initial specifications into a final model through iterative feedback loops.
 - **Content types:** `process-steps`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 3 · max bullets 5 · images 0 · chart ✗
+- **Grouped text:** 3 text shape(s) sit inside groups (36 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** Use when showing a non-linear workflow where inputs are refined through a central iterative cycle to reach a set of outcomes.
 - **Avoid when:** Avoid for simple linear timelines or slides requiring heavy data visualization.
 - **Imagery:** a circular arrow diagram representing a cycle (decorative); the company logo 'delta' (logo)
@@ -203,6 +238,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To present three parallel analysis streams, each with a visual representation, descriptive bullets, and a resulting outcome.
 - **Content types:** `process-steps`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 3 · max bullets 2 · images 3 · chart ✗
+- **Grouped text:** 12 text shape(s) sit inside groups (18 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** When comparing three distinct strategic modules or analysis steps that lead to specific foundations or conclusions.
 - **Avoid when:** When there are more or fewer than three categories, or when long-form text is required.
 - **Imagery:** a colored grid matrix (photo-placeholder); a value chain diagram with arrows (photo-placeholder); a Business Model Canvas diagram (photo-placeholder); three blue chevron arrows (decorative); the delta company logo (logo)
@@ -221,6 +257,7 @@ Apply top to bottom; first match wins.
 - **Purpose:** To visualize a non-linear process or conceptual framework with a detailed explanation of one specific component.
 - **Content types:** `process-steps`, `bulleted-content`
 - **Capacity:** headline ✓ · body slots 2 · max bullets 5 · images 0 · chart ✗
+- **Grouped text:** 7 text shape(s) sit inside groups (16 top-level) — `retext`/`find_shapes`/`qa.py` reach them, `shapes(page)` does not.
 - **Use when:** When showing a conceptual flow or a set of interconnected methods where one specific step requires a detailed bulleted list.
 - **Avoid when:** When a simple linear timeline or a standard text-heavy slide is needed.
 - **Imagery:** a blue chevron arrow (decorative); a document icon (icon); the delta company logo (logo)
@@ -336,21 +373,38 @@ The deck is a pattern collection, so several slides carry rotated coloured
 flags that are instructions to the author, never content:
 
 - Orange/green/magenta `Beispiel`, `Layout`, `Alternatives Design zum Master`
-  flags — slides 6, 10, 11, 12, 15.
-- Slide 4's yellow `Vorgehen:` block (four numbered build steps) and its orange
+  flags — designs 6, 10, 11, 12, 15. Design 10 keeps its `Beispiel` **inside a
+  group**.
+- Design 4's yellow `Vorgehen:` block (four numbered build steps) and its orange
   toolbox tip box.
-- Yellow highlight marks `Kundenlogo`, `Kunde`, `XX.XXX`, `XX`, `450` — fill-in
-  markers, replace with real values or the customer's logo.
+- Yellow highlight marks `Kundenlogo` (designs 2, 3), `Kunde`, `XX.XXX`, `XX`,
+  `450` — fill-in markers, replace with real values or the customer's logo.
 
-Delete these on use. `qa.py` will not flag them; they are ordinary shapes.
+**`strip_annotations(page)` deletes them for you** — call it in `fill`, before
+retexting:
+
+```python
+from office.template import strip_annotations, retext
+
+def fill(doc, page, slot, design):
+    strip_annotations(page)          # returns what it removed
+    retext(page, {...})
+```
+
+It matches whole strings, so design 17's title *Vorgehen zum Bilden eines
+Modells* and design 20's `Vorgehen` column header are correctly left alone. The
+fill-in markers (`XX.XXX`, `450`) are deliberately **not** deleted — they are
+values to replace, not flags to drop.
+
+`qa.py` will not flag any of this; they are ordinary shapes carrying short
+strings.
 
 ### Gaps in the collection
 
-**There is no cover slide and no closing/contact slide.** Slides 1, 5 and 7 are
-all section dividers on `Section_dark`. The decision table's "deck opener" and
-"closing slide" rows therefore both point at a divider — workable, but if a
-brief needs a real title slide or a contact page, build one rather than
-assuming the template has one.
+**No cover, no closing/contact slide, no diagram design** — see the notes under
+the decision table. Designs 1, 5 and 7 are all section dividers on
+`Section_dark`, which is why "deck opener" and "closing slide" both point at
+one.
 
 **Slides 8 and 9 are documentation, not designs.** They explain how the
 Navigator element works and what it is for. The decision table reaches for

@@ -36,6 +36,67 @@ stays OOXML. Nothing here rewrites a file format by hand.
 user's own, build it from our house template — see [Company
 template](#company-template-default) — rather than inventing a look.
 
+## The recipe
+
+**This is the commonest job — a `.pptx` on the house template — and this is the
+whole of it.** Follow these six steps in order. Everything further down is
+detail on one of them.
+
+```bash
+# 1. See what the template offers.
+python3 scripts/thumbnail.py assets/company-template.pptx
+python3 scripts/probe.py assets/company-template.pptx --slides 8,13
+```
+
+**2. Pick a design per section** from `references/company-template.md` — a
+decision table, top to bottom, first match wins. Its numbers are the slide
+numbers you pass to `build_deck`. Content the table has no design for — a
+diagram, a chart, a comparison you want to draw — goes on **design 8 stripped
+to a canvas**; see [Drawing on a slide](#drawing-on-a-slide).
+
+**3. Write one build script.** One `fill` per page, retexting *and* drawing.
+Never reopen the finished file to add more: that is a second `.pptx` save, it
+grows the masters, and it is how shapes end up layered over template text
+nobody replaced.
+
+```python
+import sys; sys.path.insert(0, "/absolute/path/to/presentation/scripts")
+from office.deckbuild import build_deck
+from office.template import retext
+from office.impress import mm
+from office import draw as D
+
+def fill(doc, page, slot, design):
+    if slot == 0:
+        retext(page, {"Potentielle Navigatoren": "How we got here"})
+    if slot == 1:                                   # a drawn slide
+        D.canvas(page, keep=(0, 1, 2, 3))           # title, topic label, source
+        D.venn(doc, page, mm(160), mm(105), mm(45),
+               [0x009EE0, 0xE8730C, 0x6B3FA0],
+               labels=["Private data", "Untrusted content", "External comms"],
+               centre=0xC00000, centre_text="Exfiltration")
+
+build_deck("assets/company-template.pptx", "out.pptx", [7, 8, 13], fill=fill)
+```
+
+```bash
+# 4-6. Build, check, render — one command, and it prints the PNG paths.
+python3 scripts/make_deck.py build.py out.pptx --template assets/company-template.pptx
+```
+
+**5. Fix every finding it reports.** Exit 1 means findings. Leftover template
+wording and text running off the slide are defects, not noise.
+
+**6. Open the PNGs and look at them.** This is not optional and nothing
+substitutes for it. `make_deck.py` cannot see a slide: it will not tell you that
+a diagram is off-centre, that two shapes collide, that a slide is half empty, or
+that one is still in the template's language. If you cannot see images, say so
+plainly and name the slides you could not verify — do not report the deck as
+checked.
+
+**Every slide needs something to look at.** A deck of twelve bullet lists is a
+failed deck even when every check passes; see [Composition](#composition).
+
 ## Scripts
 
 Paths are relative to this skill's directory.
@@ -46,15 +107,25 @@ Paths are relative to this skill's directory.
 | `scripts/probe.py deck.odp [--slides 4,7-9]` | Every shape's **index**, position, size, fill, line and character formatting, plus a per-slide reading-order block grouping shapes by column. `dump.py` says what a slide *says*; this says what it *is*. Run it before editing any template slide |
 | `scripts/thumbnail.py deck.odp [prefix]` | One labelled contact sheet of all slides, for picking template layouts. Output is named after the deck, so two decks never overwrite each other |
 | `scripts/render.py deck.odp [-o dir] [--dpi N] [--slides 3,7-9]` | One PNG per slide; prints their absolute paths. **This is visual QA** |
-| `scripts/qa.py deck.pptx [--template brand.pptx] [--slides 3,7-9]` | Broken text the renders would show: overflow, mid-word breaks, leftover template wording, placeholders — plus `validate.py` on a `.pptx`. Exit 1 on any finding |
+| `scripts/make_deck.py [build.py] deck.pptx --template brand.pptx` | **Run this last.** Runs the build script, QAs, schema-checks, renders every slide and prints the paths and a contact sheet. Exit 1 on any finding |
+| `scripts/qa.py deck.pptx [--template brand.pptx] [--slides 3,7-9]` | The checks alone, without the renders: overflow, mid-word breaks, leftover template wording, placeholders — plus `validate.py` on a `.pptx`. Exit 1 on any finding |
 | `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx [--original src.pptx] [--auto-repair]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** — see [File QA](#file-qa-pptx-only) |
 | `scripts/catalog_extract.py template.pptx -o catalog/` | **Build-time only, not per deck:** per-layout dossiers (render + structure) for authoring the house catalog. See [Maintaining the default](#maintaining-the-default) |
 | `tests/roundtrip_report.py check fixture.odp` | Re-proves the fidelity claims below after a LibreOffice upgrade |
 
+The `office` modules your build script imports:
+
+| Module | What it gives you |
+|---|---|
+| `office.impress` | open, save, slides, shapes, placeholders, notes, `mm()`/`pt()` |
+| `office.template` | `retext`, `set_text`, `find_shapes`, `clone_slide`, `fit_pill`, `scale_bars`, `overflowing` — editing what a template slide already has |
+| `office.draw` | `rect`, `ellipse`, `line`, `arrow`, `polygon`, `chevron`, `text`, `chip`, `bullets`, `table`, `venn`, `canvas`, `restyle` — **putting new things on a slide**; see [Drawing on a slide](#drawing-on-a-slide) |
+| `office.deckbuild` | `build_deck` — a whole deck from a template, in any order |
+
 Three references, read only when the job calls for them:
-`references/design.md` (inventing a look — palette, layout, what makes a deck
-look generated), `references/company-template.md` (our house catalog — which
+`references/design.md` (inventing a look — palette and motif, for a deck with no
+template), `references/company-template.md` (our house catalog — which
 template slide for which content; see [Company
 template](#company-template-default)) and
 `references/pptx-xml.md` (hand-editing OOXML).
@@ -113,23 +184,37 @@ placeholder(page, "Title").setString("Quartalsbericht Q3")
 placeholder(page, "Subtitle").setString("Vertrieb & Marketing")
 set_notes(page, "Mit der Umsatzzahl aufmachen.")
 
-page = add_slide(doc, layout=20)           # 20 = blank, place everything yourself
-box = add_textbox(doc, page, mm(20), mm(20), mm(240), mm(25), "Ergebnisse")
-box.CharHeight = 40.0
-box.CharWeight = 150.0                     # bold
-box.CharColor = 0x1E2761
+page = add_slide(doc)                      # blank; place everything yourself
+box = add_textbox(doc, page, mm(20), mm(20), mm(240), mm(25), "Ergebnisse",
+                  size=40, weight=150, color=0x1E2761)
 add_image(doc, page, "chart.png", mm(20), mm(60), mm(120), mm(80))
 
 save_as(doc, "deck.pptx")                  # the extension picks the filter
 doc.close(False)
 ```
 
-**Geometry is in 1/100 mm, not points or EMU.** A 16:9 slide is 28000 × 15750
-(280 × 157.5 mm). Use `mm()` and `pt()` rather than raw numbers — a value that
-looks like points is 25× too small and lands off-slide with no error at all.
+**Geometry is in 1/100 mm, not points or EMU.** Use `mm()` and `pt()` rather
+than raw numbers — a value that looks like points is 25× too small and lands
+off-slide with no error at all.
 
-Autolayouts worth knowing: `0` title+subtitle, `1` title+content, `19` title
-only, `20` blank. Anything you position yourself wants `20`.
+**Read the slide size; never hardcode it.** `slide_size(doc)` is the only answer
+that is right for the deck in front of you. A LibreOffice default page is
+28000 × 15750, but a brand template is usually its own size — the house
+template is **32001 × 18000**, 14% wider, enough to shift every offset you
+computed against the default.
+
+**Style after the text, never before.** `setString()` on a shape re-inherits the
+drawing default (Arial 18, black) and silently discards character formatting set
+before it — this is why font sizes "don't stick". Passing `size=`/`color=`/
+`weight=` to `add_textbox` gets the order right for you; if you call
+`setString()` yourself, follow it with `office.draw.restyle(shape, ...)`.
+
+`add_slide(doc)` gives you a blank slide. It takes an optional `layout=` —
+Impress *autolayout* numbers, `0` title+subtitle, `1` title+content, `19` title
+only, `20` blank (the default) — which have **nothing to do with the design
+numbers in a layout catalog.** Catalog "design 20" is a specific template slide;
+`layout=20` is "no placeholders". Confusing the two puts a densely filled
+template slide where you wanted an empty one.
 
 **`new_document()` already contains one slide.** Use `slides(doc)[0]` for the
 title slide, as above — calling `add_slide()` for it leaves a stray blank slide
@@ -196,19 +281,32 @@ the slide parts do not care.
 ```python
 from office.deckbuild import build_deck
 from office.template import retext
+from office import draw as D
 
-def fill(page, slot, design):
+def fill(doc, page, slot, design):
     if design == 7:
         retext(page, {"Formelemente, Navigator": "Kapitel 1: Vorgehen"})
+    if slot == 3:
+        D.rect(doc, page, mm(20), mm(60), mm(80), mm(40), fill=0x009EE0)
 
 build_deck("assets/company-template.pptx", "out.pptx",
-           [7, 8, 13, 20, 1],          # catalog slide numbers, in final order
+           [7, 8, 13, 20, 1],          # catalog design numbers, in final order
            fill=fill)                   # called per page, before the save
 ```
 
-`designs` may repeat a slide. `fill(page, slot, design)` is where retexting
-belongs — it runs after the originals are gone, so `slides(doc)` is already the
-deck you asked for.
+`designs` may repeat a design. **`fill(doc, page, slot, design)` is where all
+the content goes** — retexting *and* drawing. It runs after the originals are
+gone, so `slides(doc)` is already the deck you asked for, and it hands you `doc`
+because every shape constructor needs it.
+
+**Do not reopen the saved file to add shapes.** That is a second `.pptx` save
+(the masters grow — see [What a round trip
+preserves](#what-a-round-trip-preserves)), and because the second pass sees a
+deck you have already stopped thinking about, it is how drawn shapes end up
+layered on top of template text nobody replaced. Everything happens in `fill`.
+
+`build_deck` QAs its own output and prints what it finds; pass `qa=False` to
+silence that.
 
 Why it beats `clone_slide` on a template: measured against the delta asset over
 designs 7, 8, 13, 20 and 1, diffing each result against its source render, mean
@@ -220,6 +318,113 @@ validator findings.
 Limits: `.pptx` only, since the reorder is an OOXML step, and it builds a *new*
 deck from a template rather than editing one in place. For those, use
 `clone_slide`.
+
+## Drawing on a slide
+
+A template gives you designed slides. It does not give you a Venn diagram, an
+attack flow, a comparison matrix or a bar chart of your numbers — and the
+difference between a deck that lands and a deck of bullet lists is almost always
+whether those got drawn. `office.draw` is the toolbox:
+
+```python
+from office.impress import mm
+from office import draw as D
+
+D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=0x009EE0, radius=200)
+D.ellipse(doc, page, mm(50), mm(55), mm(15), fill=0xE8730C, transparence=60)
+D.text(doc, page, mm(20), mm(40), mm(60), mm(30), "Phase I", "eight weeks",
+       size=18, color=D.WHITE, weight=D.BOLD, align="center", valign="center")
+D.arrow(doc, page, mm(85), mm(50), mm(8), mm(10))
+D.chevron(doc, page, mm(20), mm(80), mm(50), mm(14), fill=0x009EE0)
+D.table(doc, page, mm(20), mm(100), [mm(60), mm(40), mm(40)],
+        [["Control", "Cost", "Stops it?"], ["Prompt filter", "low", "no"]],
+        row_h=mm(10), head_fill=0x009EE0)
+D.venn(doc, page, mm(160), mm(90), mm(40), [0x009EE0, 0xE8730C, 0x6B3FA0],
+       labels=["Private data", "Untrusted content", "External comms"],
+       centre=0xC00000, centre_text="Exfiltration")
+```
+
+Full list: `rect`, `ellipse`, `line`/`hline`/`vline`, `polygon`, `arrow`,
+`chevron`, `text`, `chip`, `bullets`, `table`, `venn` (+ `venn_geometry`,
+`pair_spots`), `canvas`, `restyle`, `walk`/`walk_page`, `est_lines`, plus
+`move`, `resize` and `set_text` re-exported from `office.template`.
+
+- **Ellipses take a centre and radii**, not a bounding box.
+- **Colours are ints** (`0x009EE0`). Take them from the template — `probe.py`
+  prints every fill and line colour — rather than inventing a palette.
+- `D.table` draws rectangles and text rather than a real table shape: it takes
+  per-cell colour without fighting a table style and survives a round trip
+  unchanged. Use a real table only if the recipient must edit it as one.
+- `est_lines` guesses how many lines a string will wrap to, for laying out
+  before the document can measure. `office.template.text_overflow` measures for
+  real — trust that one.
+
+### The canvas pattern
+
+**When the catalog has no design for what you need, do not force the content
+into the nearest one and do not start from a blank slide.** Take a designed
+content slide, strip it back to its title and topic label, and draw on what is
+left. You keep the master, background, chrome, fonts and margins — everything
+that makes it look like the house deck — and you get an empty area to work in.
+
+```python
+def fill(doc, page, slot, design):
+    D.canvas(page, keep=(0, 1, 2, 3))   # house design 8: title, topic, source
+    retext(page, {"Potentielle Navigatoren": "Why it cannot just be patched"})
+    ...                                 # draw in the area the body text left
+```
+
+`canvas(page, keep=(...))` removes every shape whose index is not in `keep`;
+`canvas(page, remove=(...))` removes only the ones you name. **Run `probe.py` on
+the design first** — the indices differ per design and guessing them deletes the
+title.
+
+On the house template **design 8 is the canvas**: `[0]` a think-cell stub, `[1]`
+title, `[2]` topic label, `[3]` source line, `[4]` the sample body text and
+`[5]`+ the navigator chevrons. Keep `(0, 1, 2, 3)` and you are left with the
+body area — 2031, 3545 to 30003, 15702 in 1/100 mm. See
+`references/company-template.md`.
+
+## Composition
+
+**This applies to every deck, template or not.** A brand template decides the
+palette, the fonts and the chrome; it does not decide whether your slide is
+worth looking at. Choosing the palette for a deck that has no template is a
+separate job — `references/design.md`.
+
+**Every slide needs something to look at** — a diagram, chart, table, image,
+icon or drawn shape. A slide that is a title and a bullet list is forgettable,
+and a deck of twelve of them has failed even when every automated check passes.
+That is the single commonest way a build goes wrong now that `office.draw`
+exists: reaching for `bullets()` when the content wanted a diagram.
+
+Patterns worth reaching for, roughly in order of how often they earn their keep:
+
+- **Comparison columns** — before/after, pros/cons, option A vs B
+- **Timeline or process flow** — numbered steps, chevrons, arrows
+- **A table** — when the content really is a matrix, say so with one
+- **Large stat callouts** — 60–72pt numbers with small labels beneath
+- **Icon + text rows** — icon in a filled circle, bold header, description below
+- **2×2 or 2×3 grid** of content blocks
+- **Two-column** — text left, illustration right
+- **A diagram** — Venn, quadrant, flow, hierarchy; `office.draw` has the parts
+
+Then:
+
+- **Vary the layout.** Not every section belongs on title-and-bullets. Repeating
+  one design down the whole deck reads as a form someone filled in.
+- **Size contrast.** Titles well above body text; see [Typography](#typography).
+- **Left-align body text.** Centre titles and short labels only.
+- **Hold one spacing rhythm** — pick a gap and keep it. Minimum margins about
+  0.5", 0.3–0.5" between blocks.
+- **Contrast on everything**, icons as well as text. A card flipped to a dark
+  fill needs `set_char_color(shape, 0xFFFFFF)` on its label.
+- **Never ship text that overflows its shape** — shrink it, split it, or make
+  the shape bigger. `qa.py` finds these.
+- **Never draw an accent line under a title**, and **never add decorative colour
+  bars or stripes** — header/footer bars, sidebar stripes, thin rules along a
+  card edge. They are the clearest tell of a generated deck. To set a card apart
+  use a background tint or an icon.
 
 ## Adapting a template deck
 
@@ -258,6 +463,22 @@ Read that block before indexing anything. The slide above looks like three
 columns of two in z-order and is not one: column 2 carries a second body box,
 which shifts `[8]` and `[9]`. Assuming the even grid is what puts column 3's
 heading into column 2 and leaves the template's own text on the slide.
+
+**Text inside groups.** A designed slide keeps a lot of its wording inside
+grouped shapes, and `shapes(page)` cannot see any of it. On the house template
+**11 of 21 designs carry text inside groups**; on the phase-plan design 13, 17
+shapes are top-level and 13 more sit inside five groups, 7 of them holding the
+phase labels and durations. Design 10 is worse: 16 grouped text shapes against
+11 top-level, so most of the slide is invisible from the top level.
+`probe.py` lists them indented, addressed `[6.2]` for the third shape in the
+group at `[6]`, and
+`retext`, `find_shapes`, `shape_by_text` and `qa.py` all reach them. Only
+`shapes(page)[i]` does not — one more reason to retext by wording rather than by
+index.
+
+**Excerpts in `probe.py` are cut short with `…`.** A `retext` key is a
+substring, so copy a short distinctive fragment rather than a whole line. A
+trailing ellipsis is stripped if you do paste one.
 
 Then build every slide in one pass and save once:
 
@@ -314,7 +535,18 @@ with impress_document("brand.pptx", save=False) as doc:
 - **`set_text(shape, *lines)` — never bare `setString()` on a template shape.**
   `setString` resets font, size, weight, colour and kerning to the shape's
   defaults, which on a designed slide means throwing the design away. One
-  argument per paragraph. `retext` calls it for you.
+  argument per paragraph, and each line keeps the formatting of the template
+  paragraph in the same position — a designed body that opens with a coloured
+  heading and continues in body text stays that shape. `retext` calls it for
+  you.
+- **A `.pptx` cannot hold two text colours in one shape.** The export discards
+  per-paragraph character colour and writes a single colour for the whole
+  shape. Measured on the house template: three paragraphs written red, blue and
+  green come back all one colour, while their per-paragraph **sizes and weights
+  survive intact**. An `.odp` keeps all of it. So a heading in one colour above
+  body text in another has to be **two shapes** in a `.pptx` — `office.draw.text`
+  makes that cheap. The template's own multi-coloured bodies were authored in
+  PowerPoint and are fine until you retext them.
 - **Reuse the template's own colours** rather than inventing new ones: probe
   prints them, and a card flipped to the dark fill needs `set_char_color(shape,
   0xFFFFFF)` on its text to stay legible.
@@ -390,12 +622,17 @@ the natural height of its rows on first load. It is stable afterwards.
 
 ## QA (required)
 
+**A deck is not finished until this has run and you have looked at the
+renders.** Every deck that shipped broken had skipped one of the two.
+
 ### Automated QA
 
-Run this on every deck you produce, before you look at anything:
+`make_deck.py` runs all of this and renders too — prefer it. `qa.py` is the same
+checks without the renders:
 
 ```bash
-python3 scripts/qa.py out.pptx --template brand.pptx
+python3 scripts/make_deck.py build.py out.pptx --template brand.pptx   # do this
+python3 scripts/qa.py out.pptx --template brand.pptx                   # checks only
 ```
 
 It reports what a reader would see as broken and nothing else: text overrunning
@@ -473,10 +710,17 @@ references, master/theme sharing, chart constraints, and the slide-XML defects
 PowerPoint refuses to open a file over. Each failure names its fix. Exit codes:
 `0` pass, `1` validation failure, `2` bad usage or unreadable file.
 
-- **Pass `--original` for any template-derived deck.** A template may itself
-  contain parts the XSD rejects; `--original` baselines against it so the
-  template's own defects do not read as yours. For a house-default deck that
-  baseline is `assets/company-template.pptx`.
+- **A deck built through this skill should pass, exit 0.** It did not always:
+  LibreOffice's `.pptx` export writes `Target="../customXml/item1.xml"` into the
+  package root (a reference that climbs out of the package — reported CRITICAL)
+  and drops the `<Default>` content type for `.wmf` media, which together fired
+  22 findings on every deck this skill produced. `impress.save_as` now repairs
+  both, so **a failure here is yours and worth reading.** `repair_pptx(path)`
+  runs it by hand if you ever save through raw UNO.
+- **Pass `--original` for any template-derived deck** — `qa.py --template` does
+  it for you. A template may itself contain parts the XSD rejects; `--original`
+  baselines against it so the template's own defects do not read as yours. For a
+  house-default deck that baseline is `assets/company-template.pptx`.
 - `--auto-repair` adds missing `xml:space="preserve"` to `<a:t>` runs with
   leading or trailing whitespace, in place.
 - The slide check is a deliberate denylist of defects PowerPoint actually
@@ -532,25 +776,32 @@ not invent a look with `references/design.md`. The user's own template always
 wins: if they supply one, use theirs and ignore the default.
 
 1. **Choose designs from the catalog.** `references/company-template.md` maps
-   content to **slide numbers in the asset** — a decision table applied top to
-   bottom, first match wins — and describes what each design holds. Read it
-   first, pick a slide per section, and vary them per its variety rule. Do not
-   eyeball the thumbnail and guess. Slide `N` in the table is the number you put
-   in `build_deck`'s design list; the autolayout number `probe.py` prints is
-   *not* an identifier here — every slide of the template shares it.
+   content to **design numbers** — the slide numbers in the asset — as a
+   decision table applied top to bottom, first match wins, and describes what
+   each design holds. Read it first, pick a design per section, and vary them
+   per its variety rule. Do not eyeball the thumbnail and guess.
+
+   **"Design 8" always means the catalog's design 8**, which is the number you
+   put in `build_deck`'s list. It is never an Impress autolayout number: the
+   autolayout `probe.py` prints is `20` for every slide in this template and
+   identifies nothing.
 2. **Respect the catalog's capacities.** Each entry states how many bullets a
    body holds, how many columns, how many images. When content exceeds that,
    split the slide rather than overflow it — the numbers are there so you do not
    have to discover the limit in the render.
-3. **Build with `build_deck`** against the asset — see [Building from a template
-   at full fidelity](#building-from-a-template-at-full-fidelity). Pass the slide
-   numbers you picked in final order and retext from its `fill` callback, by the
-   template's own wording. It duplicates rather than rebuilds, so this template's
-   bullets, inline colour and think-cell objects survive; `clone_slide` loses all
-   three here.
-4. **QA against the asset:**
-   `python3 scripts/qa.py out.pptx --template assets/company-template.pptx`, and
-   `validate.py --original assets/company-template.pptx` for a `.pptx`.
+3. **Anything the table has no design for — a diagram, a chart, a comparison you
+   want to draw — goes on design 8 stripped to a canvas.** Do not force it into
+   the nearest design's bullet list, and do not start from a blank slide. See
+   [The canvas pattern](#the-canvas-pattern).
+4. **Build with `build_deck`** against the asset — see [Building from a template
+   at full fidelity](#building-from-a-template-at-full-fidelity). Pass the design
+   numbers you picked in final order, and retext *and draw* from its `fill`
+   callback. It duplicates rather than rebuilds, so this template's bullets,
+   inline colour and think-cell objects survive; `clone_slide` loses all three
+   here.
+5. **Check and look:**
+   `python3 scripts/make_deck.py build.py out.pptx --template assets/company-template.pptx`,
+   then open every PNG it prints.
 
 ### Maintaining the default
 
@@ -605,15 +856,19 @@ deck](#adapting-a-template-deck) for the whole recipe.
 
 ## Design
 
-Building a deck from scratch, or restyling one? Read
-**`references/design.md`** before choosing anything: palette, layout variety,
-spacing, and the list of tells that make a deck look generated (accent lines
-under titles, decorative colour bars, text-only slides).
+**No template — inventing a look?** Read **`references/design.md`** before
+choosing anything: how to pick a palette that fits the content, colour
+dominance, dark/light structure and committing to one motif.
 
-Filling a brand template does not need it — the template already made those
-decisions, and your job is to follow them. That includes the house default: when
-you build from `assets/company-template.pptx`, follow the catalog, not
-`design.md`.
+Filling a brand template does not need it: the template already chose the
+palette, the fonts and the chrome, and your job is to follow them. That includes
+the house default — build from `assets/company-template.pptx` and follow the
+catalog, not `design.md`.
+
+**[Composition](#composition) is not part of that split.** What goes on a slide,
+how much variety a deck needs and the visual-per-slide rule apply to a template
+build exactly as much as to a designed one — a brand template will happily let
+you ship twelve identical bullet slides.
 
 ## Notes on this environment
 

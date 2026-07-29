@@ -35,9 +35,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from office.impress import (  # noqa: E402
-    PRESENTATION_EXTS, SofficeError, load_document, shapes, slides,
+    PRESENTATION_EXTS, SofficeError, load_document, slides,
 )
-from office.template import overflowing  # noqa: E402
+from office.template import overflowing, walk_shapes  # noqa: E402
 
 PPTX_EXTS = {".pptx", ".potx"}
 
@@ -74,17 +74,22 @@ def _norm(text):
 
 
 def _texts(doc):
-    """``{slide number: {shape index: text}}`` for every shape carrying text."""
+    """``{slide number: {address: text}}`` for every shape carrying text.
+
+    Walks groups.  Stopping at the top level is how a deck gets reported clean
+    with the template's own wording still on it: a designed slide keeps much of
+    its text inside groups, and none of it is visible to ``shapes(page)``.
+    """
     out = {}
     for number, page in enumerate(slides(doc), start=1):
         found = {}
-        for i, shape in enumerate(shapes(page)):
+        for address, shape in walk_shapes(page):
             try:
                 text = _norm(shape.getString())
             except Exception:
                 continue
             if text:
-                found[i] = text
+                found[address] = text
         out[number] = found
     return out
 
@@ -116,10 +121,10 @@ def check(path, template=None, wanted=None):
                 continue
             checked += 1
 
-            for index, reason in overflowing(doc, page):
-                issues.append(f"slide {number} shape [{index}]: {reason}")
+            for address, reason in overflowing(doc, page):
+                issues.append(f"slide {number} shape [{address}]: {reason}")
 
-            for index, shape in enumerate(shapes(page)):
+            for address, shape in walk_shapes(page):
                 try:
                     text = _norm(shape.getString())
                 except Exception:
@@ -129,12 +134,12 @@ def check(path, template=None, wanted=None):
                 hit = PLACEHOLDER.search(text)
                 if hit:
                     issues.append(
-                        f"slide {number} shape [{index}]: placeholder text "
+                        f"slide {number} shape [{address}]: placeholder text "
                         f"{hit.group(0)!r} in {text[:60]!r}"
                     )
                 elif text in tpl_strings:
                     issues.append(
-                        f"slide {number} shape [{index}]: still the template's "
+                        f"slide {number} shape [{address}]: still the template's "
                         f"own wording -- {text[:60]!r}"
                     )
         return issues, checked
@@ -142,12 +147,18 @@ def check(path, template=None, wanted=None):
         doc.close(False)
 
 
-def validate_pptx(path):
+def validate_pptx(path, template=None):
+    """Run ``office/validate.py``, baselining against the template when given.
+
+    ``--original`` suppresses schema findings the template already had, so what
+    is left is yours.  It does not cover broken relationships or undeclared
+    content types -- those are repaired at the source, in ``impress.save_as``.
+    """
     script = Path(__file__).resolve().parent / "office" / "validate.py"
-    proc = subprocess.run(
-        [sys.executable, str(script), str(path)],
-        capture_output=True, text=True,
-    )
+    cmd = [sys.executable, str(script), str(path)]
+    if template and Path(template).suffix.lower() in PPTX_EXTS:
+        cmd += ["--original", str(template)]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
     return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
@@ -203,7 +214,7 @@ def main():
     failed = bool(issues)
 
     if path.suffix.lower() in PPTX_EXTS and not args.skip_validate:
-        code, output = validate_pptx(path)
+        code, output = validate_pptx(path, args.template)
         print("\n## File integrity\n")
         if code == 0:
             print("validate.py: passed")
@@ -211,11 +222,12 @@ def main():
             failed = True
             print(f"validate.py: FAILED (exit {code})")
             print(output)
-            print(
-                "\nIf this deck came from a template, re-run with "
-                "`office/validate.py --original <template>` -- the template's "
-                "own defects otherwise read as yours."
-            )
+            if not args.template:
+                print(
+                    "\nIf this deck came from a template, re-run with "
+                    "`--template <template>` -- the template's own schema "
+                    "defects otherwise read as yours."
+                )
 
     print(
         "\nThis check cannot see the slides. Render them "

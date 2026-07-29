@@ -29,6 +29,15 @@ looks like an even grid there when it is not.  That single mistake -- assuming
 three columns of two shapes on the slide sketched above -- is what puts column
 three's heading into column two and leaves the template's own words on the
 slide.  ``office.template.retext()`` avoids the indices altogether.
+
+Shapes inside a group are listed too, indented, addressed ``[3.1]`` for the
+second shape in the group at ``[3]``.  ``shapes(page)`` cannot reach those --
+``retext()``, ``find_shapes()`` and ``qa.py`` can, and on a designed template
+they hold a large share of the text.
+
+Long strings are cut short with ``…``.  ``retext()`` matches on substrings, so
+copy a distinctive fragment rather than the whole line -- and never copy the
+ellipsis (it is stripped if you do).
 """
 
 import argparse
@@ -41,11 +50,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from office.impress import (  # noqa: E402
     PRESENTATION_EXTS,
     SofficeError,
+    is_empty_placeholder,
+    layout_slots,
     load_document,
+    placeholder_kind,
     shapes,
     slides,
 )
-from office.template import read_text  # noqa: E402
+from office.template import read_text, walk_shapes  # noqa: E402
 
 ADJUST = {0: "left", 1: "right", 2: "block", 3: "center", 4: "stretch"}
 
@@ -59,9 +71,11 @@ def _fill(shape):
     if "NONE" in style:
         return "-"
     if "SOLID" in style:
-        colour = _hex(shape.FillColor)
+        colour = getattr(shape, "FillColor", None)   # groups/placeholders lack it
+        if colour is None:
+            return "?"
         alpha = getattr(shape, "FillTransparence", 0)
-        return f"{colour}{f'@{alpha}%' if alpha else ''}"
+        return f"{_hex(colour)}{f'@{alpha}%' if alpha else ''}"
     return style.split("'")[1] if "'" in style else "?"
 
 
@@ -69,7 +83,10 @@ def _line(shape):
     style = str(getattr(shape, "LineStyle", ""))
     if "NONE" in style:
         return "-"
-    return f"{_hex(shape.LineColor)}/{getattr(shape, 'LineWidth', 0)}"
+    colour = getattr(shape, "LineColor", None)       # not every shape has a line colour
+    if colour is None:
+        return "-"
+    return f"{_hex(colour)}/{getattr(shape, 'LineWidth', 0)}"
 
 
 def _geometry_type(shape):
@@ -118,7 +135,7 @@ def _columns(page, slide_width):
     even grid in z-order and is not one.
     """
     items = []
-    for i, shape in enumerate(shapes(page)):
+    for i, shape in walk_shapes(page):
         try:
             text = " ".join(shape.getString().split())
             pos, size = shape.getPosition(), shape.getSize()
@@ -157,7 +174,7 @@ def _reading_order(page, slide_width):
 
     def row(label, items):
         cells = "  ".join(
-            f"[{i}] {(text if len(text) <= 26 else text[:23] + '...')!r}"
+            f"[{i}] {(text if len(text) <= 26 else text[:25] + '…')!r}"
             for i, _, _, _, text in items
         )
         return f"  {label:<11} {cells}"
@@ -219,9 +236,13 @@ def probe(path: Path, slide_spec=None) -> str:
             "",
             f"{len(pages)} slide(s), {width} × {height} (1/100 mm)",
             "",
-            "`[i]` is exactly `shapes(page)[i]` — the index set_text() writes to.",
+            "`[i]` is exactly `shapes(page)[i]` — the index set_text() writes to. "
+            "`[3.1]` is a shape *inside* the group at [3]: reachable with "
+            "retext() and find_shapes(), not with shapes(page).",
             "The table is in z-order, which is not reading order; where a slide "
             "has columns, the block under it groups the same shapes by column.",
+            "Text is shown truncated with `…`. retext() keys are substrings, so "
+            "any distinctive fragment of a line below works — copy less, not more.",
             "",
         ]
         for number, page in enumerate(pages, start=1):
@@ -238,10 +259,12 @@ def probe(path: Path, slide_spec=None) -> str:
                 f"{'idx':>5} {'shape':<12} {'type':<18}"
                 f"{'x':>7}{'y':>7}{'w':>7}{'h':>7}  {'fill':<10}{'line'}"
             )
-            for i, shape in enumerate(shapes(page)):
+            for address, shape in walk_shapes(page):
                 pos, size = shape.getPosition(), shape.getSize()
+                depth = str(address).count(".")
                 out.append(
-                    f"{'[' + str(i) + ']':>5} {shape.Name[:12]:<12} "
+                    f"{'[' + str(address) + ']':>5} {'  ' * depth}"
+                    f"{shape.Name[:12]:<12} "
                     f"{_geometry_type(shape)[:18]:<18}"
                     f"{pos.X:>7}{pos.Y:>7}{size.Width:>7}{size.Height:>7}  "
                     f"{_fill(shape):<10}{_line(shape)}"
@@ -253,11 +276,20 @@ def probe(path: Path, slide_spec=None) -> str:
                 for text, cprops, pprops in paras:
                     if not text.strip():
                         continue
-                    shown = text if len(text) <= 64 else text[:61] + "..."
+                    shown = text if len(text) <= 64 else text[:63] + "…"
                     out.append(f"{'':>5} {shown!r}")
                     style = _format_line(cprops, pprops)
                     if style:
                         out.append(f"{'':>7} {style}")
+            inherited = layout_slots(page)
+            if inherited:
+                out.append(
+                    "  layout offers, inherited & empty (no shape on this slide): "
+                    + ", ".join(
+                        f"{s['kind']} [{s['x']},{s['y']} {s['width']}×{s['height']}]"
+                        for s in inherited
+                    )
+                )
             out += _reading_order(page, width)
             out.append("")
         return "\n".join(out).rstrip() + "\n"
@@ -293,16 +325,19 @@ def probe_data(path: Path, slide_spec=None) -> dict:
                 "hidden": not getattr(page, "Visible", True),
                 "shapes": [],
             }
-            for i, shape in enumerate(shapes(page)):
+            for address, shape in walk_shapes(page):
                 pos, size = shape.getPosition(), shape.getSize()
                 try:
                     paras = read_text(shape)
                 except Exception:
                     paras = []
+                empty_ph = is_empty_placeholder(shape)
                 entry["shapes"].append({
-                    "index": i,
+                    "index": address,
                     "name": shape.Name,
                     "type": _geometry_type(shape),
+                    "empty_placeholder": empty_ph,
+                    "placeholder": placeholder_kind(shape) if empty_ph else None,
                     "x": pos.X, "y": pos.Y,
                     "width": size.Width, "height": size.Height,
                     "fill": _fill(shape),
@@ -325,6 +360,9 @@ def probe_data(path: Path, slide_spec=None) -> dict:
                 "full_width": [it[0] for it in wide],
                 "columns": [[it[0] for it in column] for column in columns],
             }
+            # Placeholders inherited from the layout with no shape on the slide
+            # itself -- the "Click to add Title" case; empty on the page.
+            entry["layout_slots"] = layout_slots(page)
             out["slides"].append(entry)
         return out
     finally:
