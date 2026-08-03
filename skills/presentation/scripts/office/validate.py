@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Command line tool to validate PowerPoint XML files against XSD schemas.
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Convert a spreadsheet between formats with LibreOffice, recalculating first so
 the result never carries stale or missing cached values.

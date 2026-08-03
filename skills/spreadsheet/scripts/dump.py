@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Print a spreadsheet as markdown, with cell coordinates -- so you can plan edits
 from what you read.  Reads every format Calc opens: .ods, .fods, .xlsx, .xlsm,

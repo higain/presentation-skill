@@ -460,9 +460,40 @@ def delete_slide(doc, page):
     pages.remove(page)
 
 
+class _Shapes(list):
+    """A shape list that says what is on the slide when an index misses.
+
+    ``shapes(page)[12]`` on a nine-shape design is a routine mistake -- the
+    indices come from a *different* design, or from before ``draw.canvas()``
+    removed half of them.  A bare "list index out of range" sends you looking
+    at the wrong thing; the slide's actual contents end it immediately.
+    """
+
+    def __getitem__(self, key):
+        try:
+            return list.__getitem__(self, key)
+        except IndexError:
+            lines = []
+            for i, shape in enumerate(self):
+                try:
+                    text = " ".join(shape.getString().split())[:52]
+                except Exception:
+                    text = ""
+                lines.append("    [%d] %s%s" % (
+                    i, getattr(shape, "Name", "") or shape.getShapeType(),
+                    "  %r" % text if text else ""))
+            raise IndexError(
+                "shapes(page)[%r]: this slide has %d shape(s), indices 0-%d.\n"
+                "%s\n  Indices are per design and change after draw.canvas() "
+                "removes shapes.\n  Prefer retext()/find_shapes() by wording, "
+                "which does not depend on position." % (
+                    key, len(self), len(self) - 1, "\n".join(lines) or "    (none)")
+            ) from None
+
+
 def shapes(page):
     """Every shape on a slide (or on a notes page), in z-order."""
-    return [page.getByIndex(i) for i in range(page.getCount())]
+    return _Shapes(page.getByIndex(i) for i in range(page.getCount()))
 
 
 def shape_text(shape) -> str:

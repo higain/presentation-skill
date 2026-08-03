@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Recalculate every formula in a spreadsheet with LibreOffice and report the
 cells that end up as errors.

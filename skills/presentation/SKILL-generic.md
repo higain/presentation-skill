@@ -13,16 +13,16 @@ stays OOXML. Nothing here rewrites a file format by hand.
 
 | Task | How |
 |---|---|
-| **Read** a deck | `python3 scripts/dump.py deck.odp` |
-| **Survey** a template's layouts | `python3 scripts/thumbnail.py template.odp` |
-| **Inspect** shapes to edit them | `python3 scripts/probe.py template.odp` |
+| **Read** a deck | `scripts/dump.py deck.odp` |
+| **Survey** a template's layouts | `scripts/thumbnail.py template.odp` |
+| **Inspect** shapes to edit them | `scripts/probe.py template.odp` |
 | **Create** a new deck | `office.impress` — see [Building a deck](#building-a-deck) |
 | **Adapt** a template deck | `office.template` — see [Adapting a template deck](#adapting-a-template-deck) |
 | **Edit** an existing deck | `impress_document(path)` — saves in place, same format |
-| **Convert** formats | `python3 scripts/convert.py in.odp out.pptx` |
-| **Render** for visual QA | `python3 scripts/render.py deck.odp` |
-| **Check** a finished deck | `python3 scripts/qa.py deck.pptx --template brand.pptx` |
-| **Schema-check** a `.pptx` | `python3 scripts/office/validate.py deck.pptx` |
+| **Convert** formats | `scripts/convert.py in.odp out.pptx` |
+| **Render** for visual QA | `scripts/render.py deck.odp` |
+| **Check** a finished deck | `scripts/qa.py deck.pptx --template brand.pptx` |
+| **Schema-check** a `.pptx` | `scripts/office/validate.py deck.pptx` |
 
 **Two rules that override anything below:**
 
@@ -70,7 +70,7 @@ from office.impress import impress_document, slides, shapes
 ## Reading a deck
 
 ```bash
-python3 scripts/dump.py deck.odp
+scripts/dump.py deck.odp
 ```
 
 ```
@@ -175,8 +175,8 @@ The common job: a brand deck arrives with one slide per layout, and you have to
 produce fifteen slides of your own content in that design.
 
 ```bash
-python3 scripts/thumbnail.py brand.pptx        # which layout is which slide
-python3 scripts/probe.py brand.pptx            # shape indices + geometry + fonts
+scripts/thumbnail.py brand.pptx        # which layout is which slide
+scripts/probe.py brand.pptx            # shape indices + geometry + fonts
 ```
 
 `probe.py` is the step that saves the afternoon. To retext a template slide you
@@ -336,7 +336,7 @@ the natural height of its rows on first load. It is stable afterwards.
 Run this on every deck you produce, before you look at anything:
 
 ```bash
-python3 scripts/qa.py out.pptx --template brand.pptx
+scripts/qa.py out.pptx --template brand.pptx
 ```
 
 It reports what a reader would see as broken and nothing else: text overrunning
@@ -361,7 +361,7 @@ fine. Do not "fix" that.
 Slides are visual. Read the renders; do not reason about coordinates.
 
 ```bash
-python3 scripts/render.py deck.odp          # prints absolute PNG paths
+scripts/render.py deck.odp          # prints absolute PNG paths
 ```
 
 Pass those paths to the view tool and look at every slide. After staring at the
@@ -398,14 +398,14 @@ slides you could not verify, naming them.
 `qa.py` above covers this. To grep a deck for something specific of your own:
 
 ```bash
-python3 scripts/dump.py deck.odp | grep -niE "lorem|ipsum|\bTODO|\[insert|platzhalter"
+scripts/dump.py deck.odp | grep -niE "lorem|ipsum|\bTODO|\[insert|platzhalter"
 ```
 
 ### File QA (.pptx only)
 
 ```bash
-python3 scripts/office/validate.py deck.pptx
-python3 scripts/office/validate.py deck.pptx --original template.pptx
+scripts/office/validate.py deck.pptx
+scripts/office/validate.py deck.pptx --original template.pptx
 ```
 
 Checks XML well-formedness, relationships, content types, unique IDs, layout
@@ -465,9 +465,9 @@ the unpack/rezip recipe and the rules that keep a deck openable.
 ## Templates
 
 ```bash
-python3 scripts/thumbnail.py template.odp     # contact sheet, labelled by master
-python3 scripts/dump.py template.odp          # which slots each layout offers
-python3 scripts/probe.py template.odp         # shape indices, geometry, fonts
+scripts/thumbnail.py template.odp     # contact sheet, labelled by master
+scripts/dump.py template.odp          # which slots each layout offers
+scripts/probe.py template.odp         # shape indices, geometry, fonts
 ```
 
 Map each content section onto a template slide and **vary the layouts** — not
@@ -481,7 +481,7 @@ deck](#adapting-a-template-deck) for the whole recipe.
   deletes; do it before you index into `shapes(page)` again.
 - To reuse a template's icon or image, clone or duplicate a slide that has it.
 - `.otp`/`.potx` templates open and save like any deck; keep the extension.
-- Legacy `.ppt`: `python3 scripts/convert.py old.ppt new.pptx` first.
+- Legacy `.ppt`: `scripts/convert.py old.ppt new.pptx` first.
 - A template installed system-wide is usually read-only. Copy it before editing;
   `load_document` says so rather than failing obscurely.
 

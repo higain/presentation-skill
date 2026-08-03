@@ -9,15 +9,18 @@ compatibility: Linux with LibreOffice (soffice) and python3-uno, plus python3-op
 
 | Task | Approach |
 |---|---|
-| **Read** any format, with cell coordinates | `python3 scripts/dump.py file.ods` |
+| **Read** any format, with cell coordinates | `scripts/dump.py file.ods` |
 | **Edit an existing file** — .ods, or any file whose formatting must survive | `office.calc`, the LibreOffice API — see below |
 | **Build a new .xlsx** from scratch | `openpyxl`, then `recalc.py` |
 | **Build a new .ods** from scratch | `openpyxl` → `convert.py file.xlsx ods` → `recalc.py` |
 | **Bulk data** in or out | `pandas` — `read_excel(f, engine="odf")` for .ods, default engine for .xlsx |
-| **Convert** between formats | `python3 scripts/convert.py in.xlsx out.ods` |
-| **Verify** — mandatory whenever the file has formulas | `python3 scripts/recalc.py file` |
+| **Convert** between formats | `scripts/convert.py in.xlsx out.ods` |
+| **Verify** — mandatory whenever the file has formulas | `scripts/recalc.py file` |
 
-> Script paths are relative to this skill's directory. Everything is preinstalled from apt —
+> Script paths are relative to this skill's directory, and each script runs directly — they carry
+> a shebang and the executable bit, so `scripts/dump.py file.ods` is the whole invocation.
+> (`python3 scripts/dump.py file.ods` still works if a copy ever loses the executable bit.)
+> Everything is preinstalled from apt —
 > **there is no pip and no npm here.** If something is genuinely missing, ask the user to
 > `sudo apt install` it; never try to install a Python package yourself.
 
@@ -104,7 +107,7 @@ call `setArrayFormula` on the whole target range:
 ## Recalculate — mandatory whenever the file contains formulas
 
 ```bash
-python3 scripts/recalc.py output.ods [timeout_seconds] [--force]   # default 60
+scripts/recalc.py output.ods [timeout_seconds] [--force]   # default 60
 ```
 
 LibreOffice computes every formula, the file is **rewritten in place**, and you get JSON:
@@ -147,7 +150,7 @@ lone edited cell mid-row is the commonest silent error · guard denominators tha
 
 ## Reading a file
 
-`python3 scripts/dump.py file.ods` prints each sheet as a markdown grid **with row numbers and
+`scripts/dump.py file.ods` prints each sheet as a markdown grid **with row numbers and
 column letters**, plus every formula it contains — the only reader here that works on .ods and the
 only one that gives you coordinates to plan an edit from. `--sheet NAME`, `--max-rows`,
 `--max-cols`, `--formulas` (formulas inside the grid) narrow it.

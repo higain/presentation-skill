@@ -98,6 +98,29 @@ def _call_fill(fill, doc, page, slot, design):
     return fill(doc, page, slot, design) if wants_doc else fill(page, slot, design)
 
 
+def _find_template(template) -> Path:
+    """Resolve a template path, falling back to the skill's own folder.
+
+    A build script is written next to the deck and run from there, but the
+    template it names is quoted from this skill's documentation -- so
+    ``"assets/company-template.pptx"`` is relative to the *skill*, not to the
+    working directory, and every first build died on ``FileNotFoundError``
+    before the script had a chance to be wrong about anything else.  Resolving
+    it here costs nothing and an absolute path still wins.
+    """
+    path = Path(template)
+    if path.exists():
+        return path
+    here = Path(__file__).resolve().parent.parent.parent    # the skill folder
+    for candidate in (here / path, here / "assets" / path.name):
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        f"no template at {template!r}, and none at {here / path} either.\n"
+        f"  The skill's own template is {here / 'assets' / 'company-template.pptx'}"
+    )
+
+
 def build_deck(template, out, designs, fill=None, qa=True) -> Path:
     """Write ``out``: one slide per entry of ``designs``, in that order.
 
@@ -121,7 +144,7 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
     end up interleaved with the originals, so the originals have to be deleted
     by identity rather than by index.
     """
-    template, out = Path(template), Path(out)
+    template, out = _find_template(template), Path(out)
     if out.suffix.lower() != ".pptx":
         raise ValueError(
             f"build_deck writes .pptx only (got {out.suffix or 'no suffix'}); "
@@ -195,7 +218,8 @@ def _report_qa(out: Path, template: Path):
         for issue in issues:
             print(f"  - {issue}")
     else:
-        print("[build_deck] QA: no overflow and no leftover template text.")
+        print("[build_deck] QA: no overflow, no collisions, no leftover "
+              "template text.")
     print("[build_deck] QA cannot see the slides. Render them "
           "(python3 scripts/render.py) and look.\n")
 

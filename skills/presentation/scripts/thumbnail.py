@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Create a labelled contact sheet of every slide in a deck -- .odp or .pptx.
 
 One grid image of all slides, for picking which template layout to reuse.  Each
@@ -59,6 +60,12 @@ def main():
         default=DEFAULT_COLS,
         help=f"Number of columns (default: {DEFAULT_COLS}, max: {MAX_COLS})",
     )
+    parser.add_argument(
+        "--from-images",
+        metavar="DIR",
+        help="Reuse the per-slide images already in DIR -- as render.py writes "
+             "them -- instead of converting the deck a second time",
+    )
 
     args = parser.parse_args()
 
@@ -90,7 +97,18 @@ def main():
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            visible_images = convert_to_images(input_path, temp_path)
+            # Converting the deck costs a full LibreOffice round trip.  When the
+            # caller has already rendered every slide -- which make_deck.py has,
+            # one step earlier -- doing it again is half the wall clock of the
+            # command for a second copy of the same pixels.
+            if args.from_images:
+                visible_images = existing_images(Path(args.from_images))
+                if not visible_images:
+                    print(f"Error: no slide images in {args.from_images}",
+                          file=sys.stderr)
+                    sys.exit(1)
+            else:
+                visible_images = convert_to_images(input_path, temp_path)
 
             if not visible_images and not any(s["hidden"] for s in slide_info):
                 print("Error: No slides found", file=sys.stderr)
@@ -171,6 +189,23 @@ def create_hidden_placeholder(size: tuple[int, int]) -> Image.Image:
     draw.line([(0, 0), size], fill="#CCCCCC", width=line_width)
     draw.line([(size[0], 0), (0, size[1])], fill="#CCCCCC", width=line_width)
     return img
+
+
+def existing_images(directory: Path) -> list[Path]:
+    """Per-slide images already rendered into ``directory``, in slide order.
+
+    ``render.py`` names them ``slide-01.png``; anything matching ``slide-*``
+    with an image extension is taken, sorted by the number in the name so 10
+    does not sort before 2.
+    """
+    found = [p for p in directory.glob("slide-*")
+             if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
+
+    def number(path):
+        digits = "".join(c for c in path.stem if c.isdigit())
+        return int(digits) if digits else 0
+
+    return sorted(found, key=number)
 
 
 def convert_to_images(deck_path: Path, temp_dir: Path) -> list[Path]:

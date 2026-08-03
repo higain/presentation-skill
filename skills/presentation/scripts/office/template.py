@@ -406,6 +406,293 @@ def overflowing(doc, page):
     return out
 
 
+def ink_box(doc, page, shape):
+    """``(x, y, w, h, text)`` of the *ink* a text shape puts on the slide.
+
+    A text box is nearly always bigger than the words in it: a caption box the
+    width of a column holding two centred words paints a fifth of its own area,
+    and the rest is empty.  So comparing shape boxes to find things that
+    collide reports every slide ever designed.  This lays the text out at the
+    shape's own width, measures the block it actually makes, and places that
+    block inside the shape the way the shape's own alignment will place it.
+
+    ``None`` for a shape with no text, one that is rotated (the rectangle no
+    longer describes it), or one that cannot be measured.
+    """
+    try:
+        text = " ".join(shape.getString().split())
+    except Exception:
+        return None
+    if not text:
+        return None
+    try:
+        if int(getattr(shape, "RotateAngle", 0) or 0) % 36000:
+            return None
+        pos, size = shape.getPosition(), shape.getSize()
+    except Exception:
+        return None
+    if size.Width <= 0 or size.Height <= 0:
+        return None
+
+    height = size.Height
+    measured = text_overflow(doc, page, shape)
+    if measured:
+        needed, available, line = measured
+        # Only an overrun that *wrapped* is really on the slide.  A single line
+        # measures taller than a box sized to its cap height without anything
+        # being wrong -- and a drawn table is a column of those, so trusting the
+        # raw number reports every pair of adjacent cells as a collision.  Same
+        # threshold `overflowing` uses, for the same reason.
+        height = (needed if needed > line * 1.4 else min(needed, available))
+
+    width = _ink_width(doc, page, shape, size.Width)
+
+    # Where the block sits inside the shape, per the shape's own alignment.
+    x = pos.X + _align_offset(_para_adjust(shape), size.Width - width)
+    y = pos.Y + _align_offset(_vert_adjust(shape), size.Height - height)
+    return (x, y, max(width, 1), max(height, 1), text)
+
+
+def _ink_width(doc, page, shape, box_width):
+    """Width of the longest line the text lays out to, capped at the box."""
+    try:
+        paras = read_text(shape)
+    except Exception:
+        return box_width
+    tmp = doc.createInstance("com.sun.star.drawing.TextShape")
+    page.add(tmp)
+    try:
+        tmp.TextWordWrap = False
+        tmp.TextAutoGrowWidth = True
+        tmp.TextAutoGrowHeight = True
+        widest = 0
+        for text, cprops, pprops in paras:
+            if not text.strip():
+                continue
+            write_text(tmp, [(text, cprops, pprops)])
+            widest = max(widest, tmp.getSize().Width)
+        return min(widest, box_width) if widest else box_width
+    except Exception:
+        return box_width
+    finally:
+        try:
+            page.remove(tmp)
+        except Exception:
+            pass
+
+
+# Both axes answer the same question -- does the block sit at the start of the
+# space, in the middle of it, or at the end -- so both report it the same way.
+
+# com.sun.star.style.ParagraphAdjust, by value: LEFT 0, RIGHT 1, BLOCK 2,
+# CENTER 3, STRETCH 4.  Justified text fills the width, so its ink starts where
+# left-aligned text does.
+_PARA_ADJUST = {0: "start", 1: "end", 2: "start", 3: "middle", 4: "start"}
+
+
+def _para_adjust(shape):
+    """``'start' | 'middle' | 'end'`` across, for a shape's first paragraph."""
+    try:
+        enum = shape.createEnumeration()
+        while enum.hasMoreElements():
+            para = enum.nextElement()
+            if hasattr(para, "createEnumeration"):
+                return _PARA_ADJUST.get(int(para.ParaAdjust), "start")
+    except Exception:
+        pass
+    return "start"
+
+
+def _vert_adjust(shape):
+    """``'start' | 'middle' | 'end'`` down.  A text shape defaults to centred."""
+    try:
+        return {"TOP": "start", "BOTTOM": "end"}.get(
+            str(shape.TextVerticalAdjust.value), "middle")
+    except Exception:
+        return "middle"
+
+
+def _align_offset(where, slack):
+    """How far in from the leading edge the block starts."""
+    slack = max(0, slack)
+    return {"start": 0, "middle": slack // 2, "end": slack}[where]
+
+
+# How much of the smaller block another must cover before it counts as a
+# collision.  Laying text out on a throwaway shape reproduces the real layout to
+# within a few percent, not exactly, so a threshold set down where that noise
+# lives yields a finding that appears and disappears between identical runs.  A
+# quarter of one block buried under another is well clear of it, and is what
+# "printed over each other" looks like in a render.  Pairs that brush each other
+# by a millimetre are below this check's resolution and need the eye.
+COLLISION = 0.25
+
+# A badge, a tick, a bullet glyph, a step number.  Templates place these on the
+# corner of the tile they mark, so they overlap it by design -- six of the house
+# template's own slides do it -- and reporting them buries the finding that
+# matters.  Only blocks of actual words are compared.
+MIN_COLLISION_CHARS = 4
+
+
+def colliding(doc, page):
+    """``[(address, reason)]`` for text drawn on top of other text.
+
+    ``overflowing`` catches text that runs *out of its own box* into something
+    below it.  This catches the other half, and the more common one once a
+    build script starts drawing: two blocks placed at coordinates that overlap
+    from the start -- a Venn label over the circle's own caption, a title long
+    enough to reach the strapline beside it, a footnote under a table that grew
+    a row.  Nothing overflows, nothing is off the slide, every other check
+    passes, and the render shows two sentences printed through each other.
+
+    Measured on the ink (see :func:`ink_box`), not on the boxes, or every
+    designed slide reports.
+    """
+    # Two passes.  Measuring ink costs two UNO layout round trips per shape, so
+    # the cheap shape rectangles go first: a pair whose *boxes* miss each other
+    # entirely cannot have ink that meets, and on a well laid out slide that is
+    # almost every pair.  Only the survivors get measured.
+    candidates = []
+    for address, shape in walk_shapes(page):
+        try:
+            text = " ".join(shape.getString().split())
+            if len(text) < MIN_COLLISION_CHARS:
+                continue
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if size.Width > 0 and size.Height > 0:
+            # Grown by its own height above and below: text that overruns its
+            # box is still on the slide, and the pair it collides with is one
+            # the raw rectangles would have said could not meet.  Generous on
+            # purpose -- this pass only decides what is worth measuring.
+            candidates.append((address, shape,
+                               (pos.X, pos.Y - size.Height,
+                                size.Width, size.Height * 3)))
+
+    touching = set()
+    for i in range(len(candidates)):
+        for j in range(i + 1, len(candidates)):
+            a, b = candidates[i][2], candidates[j][2]
+            if (min(a[0] + a[2], b[0] + b[2]) > max(a[0], b[0])
+                    and min(a[1] + a[3], b[1] + b[3]) > max(a[1], b[1])):
+                touching.add(i)
+                touching.add(j)
+
+    boxes = []
+    for i in sorted(touching):
+        address, shape, _ = candidates[i]
+        ink = ink_box(doc, page, shape)
+        if ink is not None:
+            boxes.append((address, ink))
+
+    out = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            (a_addr, a), (b_addr, b) = boxes[i], boxes[j]
+            over_w = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+            over_h = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+            if over_w <= 0 or over_h <= 0:
+                continue
+            smaller = min(a[2] * a[3], b[2] * b[3])
+            if not smaller or (over_w * over_h) / smaller < COLLISION:
+                continue
+            share = (over_w * over_h) / smaller
+            out.append((
+                a_addr,
+                f"{a[4][:28]!r} and {b[4][:28]!r} in shape [{b_addr}] are "
+                f"printed over each other -- {share:.0%} of the smaller block "
+                f"is covered"
+            ))
+    return out
+
+
+def offslide(page, tolerance=100):
+    """``[(address, reason)]`` for every shape hanging off the edge of the slide.
+
+    ``overflowing`` measures text against the shape that holds it, so it is
+    blind to a shape that is simply in the wrong place: a Venn given a radius
+    too large for its slot spills off the bottom of the page and every text
+    check still passes.  Geometry is the other half of "is this slide on the
+    slide", and it is the one a build script gets wrong when it computes
+    positions from hardcoded millimetres.
+
+    ``tolerance`` (default 1 mm) forgives the hairline bleed that rounding and
+    designed templates both produce.  A template decoration that bleeds *far*
+    past the trim on purpose still trips this, so ``qa.py`` baselines whatever
+    the template itself does -- see ``offslide_baseline``.
+
+    Returned amounts are exact, so a caller can baseline on them.
+    """
+    out = []
+    for address, shape in walk_shapes(page):
+        try:
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if size.Width <= 0 or size.Height <= 0:
+            continue
+
+        over = {
+            "off the left edge": -(pos.X + tolerance),
+            "above the top edge": -(pos.Y + tolerance),
+            "off the right edge": pos.X + size.Width - page.Width - tolerance,
+            "past the bottom edge": pos.Y + size.Height - page.Height - tolerance,
+        }
+        worst = max(over.items(), key=lambda kv: kv[1])
+        if worst[1] <= 0:
+            continue
+
+        # A shape wider than the slide in both directions is a background, not
+        # a mistake.  What matters is content that has walked off the page.
+        if size.Width > page.Width and size.Height > page.Height:
+            continue
+
+        try:
+            label = " ".join(shape.getString().split())[:32]
+        except Exception:
+            label = ""
+        what = f"{label!r} " if label else ""
+        out.append((
+            address,
+            f"{what}extends {int(worst[1])} {worst[0]} of the slide "
+            f"-- it will be cut off"
+        ))
+    return out
+
+
+def offslide_baseline(path, tolerance=100):
+    """``{(direction, amount)}`` for the bleeds a template already has.
+
+    The house template has a decoration on design 14 that hangs ~10 mm below
+    the trim on purpose.  ``build_deck`` duplicates it unchanged, so it reappears
+    in every deck built on that design with exactly the same overhang -- report
+    it and the check cries wolf on work nobody did.  Keying on direction and
+    exact amount is enough to recognise the duplicate without excusing a shape
+    the build script really did push off the page.
+    """
+    from .impress import load_document, slides
+
+    doc = load_document(str(path), read_only=True)
+    try:
+        seen = set()
+        for page in slides(doc):
+            for _, reason in offslide(page, tolerance):
+                amount, direction = _bleed_key(reason)
+                if amount is not None:
+                    seen.add((direction, amount))
+        return seen
+    finally:
+        doc.close(False)
+
+
+def _bleed_key(reason):
+    """``(amount, direction)`` parsed back out of an ``offslide`` reason."""
+    hit = re.search(r"extends (\d+) (off the \w+ edge|above the top edge|"
+                    r"past the bottom edge)", reason)
+    return (int(hit.group(1)), hit.group(2)) if hit else (None, None)
+
+
 def fit_width(doc, page, shape, slack=0):
     """Resize ``shape`` to the width of the text it currently holds.
 
@@ -415,6 +702,55 @@ def fit_width(doc, page, shape, slack=0):
     width = text_width(doc, page, shape.getString(), shape) + slack
     resize(shape, width=width)
     return width
+
+
+def shrink_to_fit(doc, page, shape, max_lines=None, min_size=18.0, step=0.92):
+    """Shrink ``shape``'s type until its text fits the box it is in.
+
+    Returns the point size it settled on, or ``None`` if the text already fit.
+
+    **Reach for this on a template's title slot.** A designed headline box is
+    sized to exactly the number of lines the designer drew it for, at the point
+    size they chose, and a real title is longer than the placeholder every time.
+    What happens then is not clipping, which you would notice: the text flows on
+    past the bottom of the box, over whatever the master has drawn there.
+
+    ``max_lines`` is the stricter question, and on a decorated divider it is the
+    one that matters.  The house dividers (designs 1, 5, 7) sit their title in
+    the gap between the two edges of a big white triangle -- **one** line of
+    60pt fits that gap, and a second one crosses the decoration however small
+    you make the type.  ``max_lines=1`` shrinks until the title is one line.
+    Nothing on the page collides, so `qa.py` cannot see this: master decoration
+    is not a shape on the slide.
+
+    If the size it returns is embarrassing, the title is too long for the
+    design rather than too big -- shorten it, or build the slide on a canvas.
+    Adding a second text box beside the placeholder is not the fix.
+    """
+    def fits():
+        measured = text_overflow(doc, page, shape)
+        if not measured:
+            return True
+        needed, available, line = measured
+        if max_lines is not None and line > 0:
+            return needed <= line * (max_lines + 0.4)
+        return needed <= available
+
+    if fits():
+        return None
+    size = None
+    for _ in range(24):
+        paras = read_text(shape)
+        current = max((p[1].get("CharHeight", 0) or 0) for p in paras)
+        if not current:
+            return None
+        size = max(min_size, current * step)
+        for _, cprops, _ in paras:
+            cprops["CharHeight"] = size
+        write_text(shape, paras)
+        if fits() or size <= min_size:
+            break
+    return size
 
 
 # ------------------------------------------------------------- geometry
@@ -618,7 +954,7 @@ def find_shapes(page, pattern, regex=False):
     return out
 
 
-def retext(page, mapping):
+def retext(page, mapping, **kw):
     """Retext a slide by the text its shapes already carry, not by index.
 
     ``mapping`` goes from an excerpt of the **template's** wording to what
@@ -652,9 +988,28 @@ def retext(page, mapping):
     string pasted straight out of ``probe.py``'s truncated listing still finds
     its shape instead of failing on the ellipsis.
 
+    **It changes words and nothing else** -- the template's size, weight,
+    colour and alignment are the point of building on a template, so there are
+    no styling keywords here.  When the new wording genuinely does not fit the
+    slot the designer drew, ``shrink_to_fit(doc, page, shape)`` is the fix;
+    ``set_char_color(shape, ...)`` and ``draw.restyle(shape, ...)`` change the
+    rest, on a shape ``find_shapes`` hands you.
+
     Returns ``[(address, text)]`` for every shape left untouched that still
     carries text: the leftover-template-text check, for free.
     """
+    if kw:
+        raise TypeError(
+            "retext() takes no styling keywords (got %s): it replaces words "
+            "and keeps the template's own formatting, which is the reason to "
+            "build on a template at all.\n"
+            "  Too long for the slot -> shrink_to_fit(doc, page, shape, "
+            "max_lines=1)\n"
+            "  Different colour      -> set_char_color(shape, 0xRRGGBB)\n"
+            "  Anything else         -> draw.restyle(shape, CharHeight=..., ...)\n"
+            "  find_shapes(page, 'some words')[0][1] gives you the shape."
+            % ", ".join(sorted(kw)))
+
     texts, entries = _scan(page)
 
     claimed = {}

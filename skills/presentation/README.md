@@ -43,7 +43,7 @@ The skill wiring that consumes them already exists as a draft:
 ## Stage A — Extract  *(done once; you have already run this)*
 
 ```bash
-python3 scripts/catalog_extract.py company.pptx -o catalog/
+scripts/catalog_extract.py company.pptx -o catalog/
 ```
 
 Deterministic. It runs `probe.py` and `render.py` internally — you do **not**
@@ -86,12 +86,12 @@ expose. Stdlib only; no pip.
 
 ```bash
 # per-layout pass: sends each render.png + structure.json to gemma
-python3 scripts/catalog_gemma.py catalog/ \
+scripts/catalog_gemma.py catalog/ \
     --base-url http://localhost:11434/v1 \
     --model gemma3:27b
 
 # aggregate pass: folds catalog/entries/*.json into a decision table
-python3 scripts/catalog_gemma.py catalog/ --aggregate \
+scripts/catalog_gemma.py catalog/ --aggregate \
     --base-url http://localhost:11434/v1 \
     --model gemma3:27b
 ```
@@ -103,7 +103,7 @@ endpoint requires a bearer token).
 **Verify the wiring before you commit to a full run:**
 
 ```bash
-python3 scripts/catalog_gemma.py catalog/ --dry-run
+scripts/catalog_gemma.py catalog/ --dry-run
 ```
 
 `--dry-run` writes the exact request bodies to `catalog/entries/*.request.json`
@@ -191,8 +191,8 @@ it in Stage C, against the renders.
 Build three or four real briefs with the now-defaulted skill. For each:
 
 ```bash
-python3 scripts/qa.py out.pptx --template assets/company-template.pptx
-python3 scripts/render.py out.pptx        # then look at the slides
+scripts/qa.py out.pptx --template assets/company-template.pptx
+scripts/render.py out.pptx        # then look at the slides
 ```
 
 Where the skill picked a wrong layout or overran a box, correct the offending
