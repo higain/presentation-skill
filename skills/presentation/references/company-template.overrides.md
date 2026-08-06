@@ -36,12 +36,28 @@ replaced `[1]` on every slide and `[2]` on none — shipping that German label o
 design you are using and account for all of them: replace the ones you want, and
 `strip_annotations` or draw over the ones you do not.
 
-**The footer is on the master, not on the slide.** `Gegenstand | Titel | Ort |
-Datum` renders on every content slide and no per-slide check can see it —
-`walk_shapes(page)` does not reach the master, so a deck with the placeholder
-still in it reports clean. It is the template's own field text, so leaving it is
-a defensible default; if the user wants it filled, set it on the master page
-rather than per slide, and expect it to be visible in every render you look at.
+**The footer is a page property, not a shape and not the master.** `Gegenstand
+| Titel | Ort | Datum` renders along the bottom of every content slide. It is a
+`ftr` placeholder that Impress exposes as `page.FooterText`, so `walk_shapes`
+never reaches it and neither does `retext`, `find_shapes` or anything that
+searches the slide's text.
+
+**It is German, and a deck in any other language must set or hide it.** Four
+runs shipped it under English slides — every slide of every deck — and one of
+them searched the shapes for the string, found nothing, and concluded the
+reviewer that had flagged it was wrong. Set it once for the whole deck, or per
+page in `fill`:
+
+```python
+build_deck("assets/company-template.pptx", "out.pptx", designs, fill=fill,
+           footer="The Lethal Trifecta · Board briefing · 2026")   # None hides it
+
+from office.template import set_footer, footer_text
+set_footer(page, "…")          # per page, inside fill
+```
+
+`qa.py` reports it when it is still the template's, so this is a finding now
+rather than a thing to remember.
 
 ## after-decision-table
 
@@ -56,8 +72,10 @@ built: design 8 as a canvas, with title, subtitle and date drawn in the area the
 body text vacates. Do not leave the deck without one.
 
 **Neither is there a design for a diagram.** That is what the canvas row at the
-top of the table is for, and on a deck with any analytical content you should
-expect to use it several times.
+bottom of the table is for, and on a deck with any analytical content you should
+expect to use it several times — several, not every time. `build_deck` records
+the design list on the file and `qa.py` prints the spread, so a deck that is
+100% canvas says so in its own report.
 
 ## before-design-entries
 

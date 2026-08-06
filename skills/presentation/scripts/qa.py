@@ -22,10 +22,17 @@ The checks, in the order they catch real defects:
 4. **Leftover text** -- generic placeholders (lorem, TODO, xxx, [insert]), and,
    with ``--template``, any string still shared verbatim with the template you
    built from.  Retexting a designed slide by z-order index puts text in the
-   wrong box and leaves the template's own words behind; this finds that.
+   wrong box and leaves the template's own words behind; this finds that.  It
+   covers **the footer** too, which is a page property rather than a shape and
+   which nothing that walks shapes can see: four decks shipped with the house
+   template's German ``Gegenstand | Titel | Ort | Datum`` under English slides,
+   and all four reported clean.
 5. **Markdown on a slide** -- ``~~struck~~`` and ``**bold**`` render as literal
    tildes and asterisks.  They arrive by pasting drafted wording into
-   ``set_text`` unchanged.
+   ``set_text`` unchanged.  Alongside it, **emoji** (a colour-font picture the
+   template has no say over) and **type under the smallest size the template
+   itself sets**, which is legible on the monitor it was built on and not from
+   a seat in the room.
 6. **Contrast** -- each run's colour against the fill behind it, or the slide
    background.  A headline drawn in the default black onto a dark divider is
    the right words in the right box and invisible, and nothing else here sees
@@ -61,11 +68,11 @@ from office.impress import (  # noqa: E402
     PRESENTATION_EXTS, SofficeError, load_document, parse_slide_spec, shapes,
     slides,
 )
-from office.deckbuild import find_template  # noqa: E402
-from office.draw import contrast_ratio  # noqa: E402
+from office.deckbuild import find_template, recorded_designs  # noqa: E402
+from office.draw import MIN_READABLE_PT, contrast_ratio  # noqa: E402
 from office.template import (  # noqa: E402
-    _bleed_key, colliding, ink_box, offslide, offslide_baseline, overflowing,
-    walk_shapes,
+    _bleed_key, colliding, footer_text, ink_box, offslide, offslide_baseline,
+    overflowing, walk_shapes,
 )
 
 PPTX_EXTS = {".pptx", ".potx"}
@@ -104,6 +111,9 @@ MARKDOWN = re.compile(r"~~.+?~~|\*\*.+?\*\*|(?<![\w*])\*[^*\s][^*]*\*(?![\w*])"
 # uses.  4.5 is the AA threshold for body text; 3.0 is where a headline stops
 # being legible at all, and it is the number worth failing a build over.
 MIN_CONTRAST = 3.0
+
+#: What an unset slide background renders as.  See ``_page_bg``.
+WHITE_BG = 0xFFFFFF
 
 # Below this the text is not merely hard to read, it is not visible: black on
 # navy, white on lime.  Always a mistake, never a style.
@@ -160,6 +170,26 @@ def _page_texts(page):
             yield address, text
 
 
+#: Colour-font emoji on a corporate slide.  The pictograph blocks, anything
+#: carrying variation-selector-16 (which is what forces emoji presentation on a
+#: character that would otherwise be a glyph), and the handful of older
+#: codepoints that render in colour without it.
+#:
+#: Deliberately NOT the dingbats as a block: ✓ and ✗ are ordinary monochrome
+#: glyphs that a table has every right to use, and they set in the deck's own
+#: font.  ✅ and ❌ are pictures, they arrive at whatever size and colour the
+#: emoji font feels like, and they render differently in LibreOffice and
+#: PowerPoint -- one run put ✅ ⚠️ ❌ in a status column and coloured the word
+#: beside them red for "safe".
+EMOJI = re.compile(
+    "[\U0001F000-\U0001FAFF]"            # pictographs, faces, transport, flags
+    "|️"                            # variation selector-16: "draw as emoji"
+    "|[✅❌❎⭐⭕"   # heavy tick, cross, star, circle
+    "⛔⚠❗❓❔"     # no-entry, warning, bang, question
+    "‼⁉⬆⬇❤]"    # !!, !?, arrows, heart
+)
+
+
 class _Baseline:
     """What the template already does, so a deck is not blamed for inheriting it.
 
@@ -175,12 +205,13 @@ class _Baseline:
     """
 
     def __init__(self, strings=(), bleeds=(), contrast=(), occlusion=(),
-                 collisions=()):
+                 collisions=(), footers=()):
         self.strings = set(strings)
         self.bleeds = set(bleeds)
         self.contrast = set(contrast)
         self.occlusion = set(occlusion)
         self.collisions = set(collisions)
+        self.footers = set(footers)
 
 
 def _collision_key(reason):
@@ -233,6 +264,7 @@ def _baseline_load(cache_file):
         contrast={(c[0], c[1]) for c in d["contrast"]},
         occlusion={(o[0], o[1]) for o in d["occlusion"]},
         collisions={frozenset(c) for c in d["collisions"]},
+        footers=d.get("footers", ()),
     )
 
 
@@ -248,6 +280,7 @@ def _baseline_save(cache_file, base):
             "contrast": [list(c) for c in base.contrast],
             "occlusion": [list(o) for o in base.occlusion],
             "collisions": [sorted(c) for c in base.collisions],
+            "footers": sorted(base.footers),
         }))
         tmp.replace(cache_file)
     except OSError:
@@ -276,10 +309,14 @@ def _template_baseline(path):
     doc = load_document(path, read_only=True)
     try:
         strings, contrast, occlusion, collisions = set(), set(), set(), set()
+        footers = set()
         for page in slides(doc):
             for _, text in _page_texts(page):
                 if len(text) >= MIN_LEFTOVER and any(c.isalpha() for c in text):
                     strings.add(text)
+            foot = footer_text(page)
+            if foot.strip():
+                footers.add(foot.strip())
             contrast.update(pair for pair, *_ in _contrast_findings(page))
             occlusion.update(pair for pair, *_ in _occlusion_findings(page))
             collisions.update(_collision_key(reason)
@@ -288,7 +325,7 @@ def _template_baseline(path):
         doc.close(False)
 
     base = _Baseline(strings, offslide_baseline(path), contrast, occlusion,
-                     collisions)
+                     collisions, footers)
     if cache_file is not None:
         _baseline_save(cache_file, base)
     return base
@@ -323,6 +360,16 @@ def _solid_fill(shape, max_transparence=40):
 
 
 def _page_bg(page):
+    """The colour behind everything on this page.
+
+    Falls back to **white** when neither the page nor its master sets one,
+    because that is what an unset background renders as -- in LibreOffice, in
+    PowerPoint, and on the projector.  Returning ``None`` instead meant text
+    sitting on the bare slide had no backdrop to be checked against, so the
+    contrast check covered exactly the slides with a coloured panel and skipped
+    every ordinary white one: a label in the brand's own lime is 2.15:1 on
+    white, and it reported clean.
+    """
     for holder in (page, getattr(page, "MasterPage", None)):
         if holder is None:
             continue
@@ -334,7 +381,7 @@ def _page_bg(page):
                 return int(background.FillColor) & 0xFFFFFF
         except Exception:
             continue
-    return None
+    return WHITE_BG
 
 
 def _text_colors(shape):
@@ -362,6 +409,90 @@ def _text_colors(shape):
                 continue
             if sample and color >= 0:            # -1 is "automatic"
                 out.setdefault(color & 0xFFFFFF, sample)
+    return out
+
+
+def _text_sizes(shape):
+    """``{size: sample text}`` for every run in the shape, in points.
+
+    Same enumeration as ``_text_colors`` and for the same reason: the size that
+    matters is the run's, not the shape's.
+    """
+    out = {}
+    try:
+        paragraphs = shape.createEnumeration()
+    except Exception:
+        return out
+    while paragraphs.hasMoreElements():
+        para = paragraphs.nextElement()
+        if not hasattr(para, "createEnumeration"):
+            continue
+        runs = para.createEnumeration()
+        while runs.hasMoreElements():
+            run = runs.nextElement()
+            try:
+                sample, size = run.getString().strip(), float(run.CharHeight)
+            except Exception:
+                continue
+            if sample and size > 0:
+                out.setdefault(round(size, 1), sample)
+    return out
+
+
+def tiny_type_issues(page, number, baseline=frozenset()):
+    """Text set smaller than the deck's own smallest role.
+
+    The floor is ``draw.MIN_READABLE_PT``, which is the smallest size the house
+    template itself types at -- so this is the design's own limit rather than a
+    number invented here.  Anything the *template* set that small is baselined
+    out: its think-cell stubs and corner marks are 3 and 5pt by design.
+
+    Short strings are ignored. A lone digit or a units mark at 6pt is a
+    diagram's furniture; a sentence at 6pt is a footnote nobody in the room can
+    read, and both of the runs this was written for produced one.
+    """
+    # Clustered by size: one caption set too small is usually a row of them,
+    # and a line per cell reads as twelve mistakes instead of one decision.
+    seen = {}
+    for address, shape in walk_shapes(page):
+        for size, sample in _text_sizes(shape).items():
+            if size >= MIN_READABLE_PT or len(sample) < 12:
+                continue
+            if _norm(sample) in baseline:
+                continue
+            seen.setdefault(size, [address, sample, 0])[2] += 1
+    out = []
+    for size, (address, sample, count) in sorted(seen.items()):
+        more = (f" (and {count - 1} more run(s) at the same size)"
+                if count > 1 else "")
+        out.append(
+            f"slide {number} shape [{address}]: {size:g}pt text -- under "
+            f"the {MIN_READABLE_PT:g}pt floor this template types at, "
+            f"legible on a monitor and not from a seat: {sample[:40]!r}{more}. "
+            f"Use the scale: D.text(..., role='footnote')"
+        )
+    return out
+
+
+def emoji_issues(page, number, baseline=frozenset()):
+    """Colour-font emoji on a slide.  See :data:`EMOJI`."""
+    seen = {}
+    for address, text in _page_texts(page):
+        if text in baseline:
+            continue
+        hit = EMOJI.search(text)
+        if hit:
+            seen.setdefault(hit.group(0), [address, text, 0])[2] += 1
+    out = []
+    for glyph, (address, text, count) in seen.items():
+        more = (f" (and {count - 1} more shape(s) with it)" if count > 1 else "")
+        out.append(
+            f"slide {number} shape [{address}]: emoji {glyph!r} in "
+            f"{text[:40]!r}{more} -- a colour-font picture on a corporate "
+            f"slide, sized and coloured by the emoji font rather than by the "
+            f"template, and drawn differently by LibreOffice and PowerPoint. "
+            f"Use a D.chip, a coloured D.rect, or the monochrome ✓ / ✗"
+        )
     return out
 
 
@@ -602,6 +733,61 @@ def sparse_slides(doc, wanted=None):
     return out
 
 
+#: Above this share of the deck on a single design, the variety note says so
+#: outright.  Four separate agent runs against the house template built
+#: ``[8] * N`` -- 100%, 100%, 100% and 94% -- so the number is not a warning
+#: about a tendency, it is a warning about the observed default.
+DESIGN_DOMINANCE = 0.7
+
+
+def _catalog_size(template):
+    """How many designs a ``.pptx`` template offers, or ``None``.
+
+    Counted out of the zip rather than by opening the document: this runs on
+    every check and the answer is one number nobody should pay a LibreOffice
+    load for.
+    """
+    if not template or Path(template).suffix.lower() not in PPTX_EXTS:
+        return None
+    import zipfile
+    try:
+        with zipfile.ZipFile(template) as z:
+            return sum(1 for n in z.namelist()
+                       if re.fullmatch(r"ppt/slides/slide\d+\.xml", n))
+    except Exception:
+        return None
+
+
+def design_note(designs, catalog_size=None):
+    """One line on which template designs a deck was built from, or ``None``.
+
+    Not a finding: repeating a design is legitimate and a deck of content
+    slides *should* mostly be content slides.  What is worth saying out loud is
+    the share, because the runs this exists for did not notice they had built
+    fifteen slides on one design and neither did anything else in the report.
+    """
+    if not designs:
+        return None
+    counts = {}
+    for design in designs:
+        counts[design] = counts.get(design, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    total = len(designs)
+    spread = ", ".join(f"{n}x design {d}" for d, n in ranked[:4])
+    if len(ranked) > 4:
+        spread += f", +{len(ranked) - 4} more"
+    note = (f"{total} slide(s) on {len(counts)} design(s): {spread}")
+    if ranked[0][1] / total >= DESIGN_DOMINANCE:
+        note += (f" -- {ranked[0][1] / total:.0%} of the deck is design "
+                 f"{ranked[0][0]}")
+        if catalog_size and catalog_size > len(counts):
+            note += f", out of {catalog_size} the template offers"
+        note += (". Fine if they are content slides; if it is the canvas "
+                 "design, the deck is drawn from scratch on a template it "
+                 "never uses -- an opener, a divider and a quote are designs")
+    return note
+
+
 def stray_template_images(deck, template, wanted=None):
     """Pictures still on a slide that came from the template, with their size.
 
@@ -698,14 +884,15 @@ def stray_template_images(deck, template, wanted=None):
 
 
 def check(path, template=None, wanted=None):
-    """``(issues, slides_checked, sparse)`` -- all three ready to print.
+    """``(issues, slides_checked, sparse, notes)`` -- all four ready to print.
 
-    ``sparse`` is advisory and deliberately not part of ``issues``: see
-    ``sparse_slides``.  A caller that fails a build on findings must not fail
-    it on these.
+    ``sparse`` and ``notes`` are advisory and deliberately not part of
+    ``issues``: see ``sparse_slides`` and ``design_note``.  A caller that fails
+    a build on findings must not fail it on these.
     """
     issues = []
     leftovers = {}
+    footers = {}
     # Whatever the template already does -- its wording, the decorations it
     # bleeds past the trim on purpose, its brand colour pairings, the shapes it
     # stacks -- is duplicated into the deck unchanged, and is not a defect this
@@ -725,10 +912,24 @@ def check(path, template=None, wanted=None):
             for address, reason in overflowing(doc, page):
                 issues.append(f"slide {number} shape [{address}]: {reason}")
 
+            # One block of text laid over a row of table cells collides with
+            # each cell separately, and the pair of texts is the same every
+            # time -- so it is one defect and one line, with a count.  Same
+            # principle as the off-slide grouping below.
+            seen = {}
             for address, reason in colliding(doc, page):
-                if _collision_key(reason) in base.collisions:
+                key = _collision_key(reason)
+                if key in base.collisions:
                     continue
-                issues.append(f"slide {number} shape [{address}]: {reason}")
+                if key in seen:
+                    seen[key][2] += 1
+                    continue
+                seen[key] = [address, reason, 1]
+            for address, reason, count in seen.values():
+                more = (f" (and {count - 1} more block(s) it covers the same "
+                        f"way -- one thing drawn over another)"
+                        if count > 1 else "")
+                issues.append(f"slide {number} shape [{address}]: {reason}{more}")
 
             # One table drawn too wide is 11 shapes over the edge by the
             # same amount.  Report the defect once, with a count -- eleven
@@ -758,11 +959,22 @@ def check(path, template=None, wanted=None):
                 elif text in tpl_strings:
                     leftovers.setdefault(text, []).append((number, address))
 
+            # The footer is a page property, so it is not in _page_texts and
+            # nothing above this line can see it.  See template.footer_text.
+            foot = footer_text(page).strip()
+            if foot and foot in base.footers:
+                footers.setdefault(foot, []).append(number)
+
             issues.extend(markdown_issues(page, number))
+            issues.extend(emoji_issues(page, number, tpl_strings))
+            issues.extend(tiny_type_issues(page, number, tpl_strings))
             issues.extend(contrast_issues(page, number, base.contrast))
             issues.extend(occlusion_issues(page, number, base.occlusion))
 
         sparse = sparse_slides(doc, wanted)
+        notes = [note for note in (design_note(recorded_designs(doc),
+                                               _catalog_size(template)),)
+                 if note]
     finally:
         doc.close(False)
 
@@ -781,12 +993,26 @@ def check(path, template=None, wanted=None):
             f"design that carries it"
         )
 
+    # Reported after the wording it looks like, and worded to say where it is
+    # not: the shape hunt is what a run does next, and there is no shape.
+    for text, numbers in sorted(footers.items(), key=lambda kv: -len(kv[1])):
+        where = (f"slide {numbers[0]}" if len(numbers) == 1
+                 else f"slides {', '.join(str(n) for n in sorted(numbers))}")
+        issues.append(
+            f"{where} footer: still the template's own footer -- {text[:60]!r}. "
+            f"It is a page property, not a shape: `retext`, `find_shapes` and "
+            f"every other check here walk shapes and cannot see it. Fix it with "
+            f"`office.template.set_footer(page, ...)` in `fill`, or "
+            f"`build_deck(..., footer='...')` for the whole deck; "
+            f"`footer=None` hides it"
+        )
+
     # Read from the zip, so it runs after the document is closed.
     if template and Path(path).suffix.lower() in PPTX_EXTS \
             and Path(template).suffix.lower() in PPTX_EXTS:
         issues.extend(stray_template_images(path, template, wanted))
 
-    return issues, checked, sparse
+    return issues, checked, sparse, notes
 
 
 def validate_pptx(path, template=None):
@@ -844,13 +1070,15 @@ def main():
     wanted = _parse_slides(args.slides) if args.slides else None
 
     try:
-        issues, checked, sparse = check(path, args.template, wanted)
+        issues, checked, sparse, notes = check(path, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
 
     print(f"# QA {path.name}")
     print(f"\n{checked} slide(s) checked.\n")
+    for note in notes:
+        print(f"{note}\n")
 
     if issues:
         print(f"## {len(issues)} issue(s)\n")

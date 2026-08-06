@@ -38,7 +38,9 @@ import uno
 from .impress import shapes
 # Re-exported so a drawing script needs one import: these edit shapes that are
 # already on the slide, which is the other half of the same job.
-from .template import move, resize, set_text  # noqa: F401
+from .template import (  # noqa: F401
+    move, palette, palette_roles, resize, set_text, text_width, type_scale,
+)
 
 # Enums and structs are resolved by name rather than imported: a
 # ``from com.sun.star...`` import only works once a UNO bridge exists, and this
@@ -115,6 +117,83 @@ DEFAULT_FONT = "Arial"
 # that fits sits between them, and shrinks from there when the space is tight.
 LABEL_MAX_PT = 18.0
 CENTRE_MAX_PT = 16.0
+
+# Below this, text is legible on the monitor it was built on and not from a
+# seat in the room.  It is the smallest size the house template itself types
+# at, so it is a floor taken from the design rather than invented here, and
+# ``qa.py`` reports anything under it that the build put on the slide.
+MIN_READABLE_PT = 9.0
+
+# The sizes a build script would otherwise pick one at a time.  Read from the
+# template profile, which counts them off the asset; empty for a deck with no
+# template, where nothing is stopping you from choosing a scale of your own --
+# see references/design.md -- as long as it *is* a scale.
+_SCALE_FALLBACK = {"display": 40.0, "title": 20.0, "subtitle": 16.0,
+                   "body": 14.0, "label": 12.0, "caption": 10.0,
+                   "footnote": 9.0}
+
+
+def size_for(role):
+    """The point size of a named role in the deck's type scale.
+
+    ``D.text(..., role="footnote")`` is the usual way in; this is for the
+    arithmetic around it -- how tall a band has to be, what a caption under a
+    figure should match.  Unknown names raise with the list of real ones,
+    because a silent default is how a scale stops being a scale.
+    """
+    scale = type_scale() or _SCALE_FALLBACK
+    if role not in scale:
+        raise ValueError(
+            "size_for(): no role %r in this deck's type scale.\n"
+            "  It has: %s\n"
+            "  Or pass size= in points and skip the scale."
+            % (role, ", ".join(sorted(scale))))
+    return float(scale[role])
+
+
+def color(name):
+    """A colour from the template's own palette, by name.
+
+    ``D.color("cyan")``, ``D.color("accent")``, ``D.color("alert")``.  Unknown
+    names raise with the list, and a deck built from no template has no palette
+    at all -- read the colours off the deck with ``probe.py`` rather than
+    inventing them, which is how four decks went out in a corporate orange the
+    corporation does not use.
+    """
+    names = palette()
+    if name in names:
+        return names[name]
+    roles = palette_roles()
+    if name in roles and not isinstance(roles[name], list):
+        return roles[name]
+    raise ValueError(
+        "color(): no colour %r in this template's palette.\n"
+        "  Colours: %s\n"
+        "  Roles: %s\n"
+        "  %s"
+        % (name, ", ".join(sorted(names)) or "(none -- this deck has no "
+                                             "template profile)",
+           ", ".join(sorted(k for k, v in roles.items()
+                            if not isinstance(v, list))) or "(none)",
+           "series() gives the ordered colours for the nth thing on a figure."))
+
+
+def series(n=None):
+    """The palette's colours in the order to use them, longest first.
+
+    ``D.series(3)`` for a three-lobed Venn, three cards, three bars.  Cycles if
+    you ask for more than the palette has, so the fourth thing is not silently
+    black.
+    """
+    colours = palette_roles().get("series") or list(palette().values())
+    if not colours:
+        raise ValueError(
+            "series(): this deck has no palette -- there is no template "
+            "profile to take one from. Pick the colours yourself (probe.py "
+            "prints the ones a deck already uses) or see references/design.md.")
+    if n is None:
+        return list(colours)
+    return [colours[i % len(colours)] for i in range(n)]
 
 
 # ------------------------------------------------------------------- layout
@@ -668,16 +747,26 @@ _venn_hinted = set()
 _VENN_HELP = """\
 [draw] three ellipses on one slide -- if this is a Venn, use D.venn() instead:
 
-    D.venn(doc, page, *area.centre, area.w * 0.15,
-           [0x009EE0, 0xE8730C, 0x6B3FA0],
+    D.venn(doc, page, area, D.series(3),
            labels=["PRIVATE DATA", "UNTRUSTED CONTENT", "EXTERNAL COMMS"],
-           centre=0xC00000, centre_text="DATA EXFILTRATION")
+           centre=D.color("alert"), centre_text="EXFILTRATION")
 
 venn() places the circles so they actually overlap, sizes the figure to the
-area, and puts each label outside its own lobe.  Hand-placed circles come out
+area, and puts each label against its own lobe.  Hand-placed circles come out
 tangent or overlapping their labels, and no automated check catches either --
 that is a rendering defect, and it needs eyes.  D.venn_fit(box) if you want the
 geometry without the drawing."""
+
+_VENN_RADIUS_HELP = """\
+[draw] D.venn() was given a radius rather than an area.  Pass the Box:
+
+    D.venn(doc, page, area, D.series(3), labels=[...])
+
+With the area it solves for the largest figure whose labels still fit and
+centres the result; with a radius it draws exactly what you asked for, and what
+gets asked for is a fraction of the space -- one run's hero slide put a Venn in
+a quarter of its canvas and shipped, because nothing that cannot see the slide
+can tell a small diagram from a small diagram on purpose."""
 
 
 _drawing_venn = False
@@ -904,7 +993,13 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
     navy is invisible, renders clean through every automated check, and is the
     single defect most likely to survive to the deck you present.
 
-    Keywords: ``size`` (pt), ``color``, ``weight`` (``BOLD``/``NORM``),
+    ``role`` takes the size from the deck's own type scale --
+    ``role="footnote"``, ``role="body"``, ``role="caption"`` -- so a footnote is
+    the same size on every slide of the deck instead of 9pt here and 12pt three
+    slides later.  ``D.size_for(role)`` is the number, for the arithmetic
+    around it; an explicit ``size=`` still wins.
+
+    Keywords: ``role``, ``size`` (pt), ``color``, ``weight`` (``BOLD``/``NORM``),
     ``align`` (left/center/right/justify), ``valign`` (top/center/bottom),
     ``font``, ``italic``, ``strike``, ``underline``, ``pad`` (inner margin),
     ``wrap``, ``grow`` (autogrow height), and the ``fill``/``line``/
@@ -918,10 +1013,16 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
         h = None
 
     _OWN = ("fill", "line", "transparence", "line_width", "pad", "valign",
-            "wrap", "grow")
+            "wrap", "grow", "role")
     # Everything not consumed here goes to _char_props, and an unknown name
     # would raise from in there, three frames down, naming a private function.
     _check_kwargs(_char_props, kw, label="text", extra=_OWN)
+
+    # A named size from the deck's scale.  An explicit size= still wins, so a
+    # figure that has measured its own label is not overruled.
+    role = kw.pop("role", None)
+    if role is not None and kw.get("size") is None:
+        kw["size"] = size_for(role)
 
     fill = kw.pop("fill", None)
     line_c = kw.pop("line", None)
@@ -943,7 +1044,19 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
     s = _new(doc, page, "TextShape", x, y, w, h)
     style_fill(s, fill, transparence, line_c, line_width)
 
-    # Text first: setString() on an empty shape re-inherits the drawing
+    # Before the string, not after it.  A new TextShape grows its own height by
+    # default, and a shape that has already grown does not shrink back when the
+    # property is turned off a line later -- so the box a caller measured, cut
+    # and handed over came back a different size, and everything positioned
+    # against its floor (a card's note, the row under it) was left hanging
+    # outside.  Set here, the box keeps the height it was given, and text that
+    # does not fit is reported by qa.py rather than silently rearranging the
+    # slide.
+    s.TextAutoGrowHeight = bool(grow)
+    s.TextAutoGrowWidth = False
+    s.TextWordWrap = bool(wrap)
+
+    # Text after: setString() on an empty shape re-inherits the drawing
     # default and throws away formatting applied before it.
     s.setString("\n".join(str(part) for part in lines))
 
@@ -1011,6 +1124,10 @@ def bullets(doc, page, x, y, w, items, size=12.5, color=BLACK,
 # and bold adds ~6% on top.
 _NARROW = set("ijltfrI.,;:'\"!|()[]{}/\\-")
 _WIDE = set("mwMW@%")
+# An em dash is a full em and an en dash half of one; counted as ordinary
+# letters they were the difference between a line that fits and a line
+# LibreOffice re-broke, on the one slide made of a single sentence.
+_EM = {"—": 1.0, "–": 0.5, "…": 1.0}
 
 
 def advance_em(s, weight=NORM):
@@ -1026,6 +1143,8 @@ def advance_em(s, weight=NORM):
     for ch in s:
         if ch == " ":
             total += 0.28
+        elif ch in _EM:
+            total += _EM[ch]
         elif ch in _NARROW:
             total += 0.26
         elif ch in _WIDE:
@@ -1244,6 +1363,447 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
     return cy
 
 
+# ------------------------------------------------------------ composition
+#
+# Four layouts, because four builds of the same plan produced four hand-rolled
+# versions of each and every one of them got the rhythm wrong somewhere: cards
+# whose content sat in the top third with the bottom half bare, step arrows
+# drawn as 5 mm stubs between tiles, a statement slide hand-broken with "\n"
+# into "it --", "an", "email.", and one genuinely good row of big numbers that
+# existed only because a model chose to build it out of rect and text.
+#
+# None of this is beyond a build script.  All of it is arithmetic nobody should
+# do twice, and a slide's rhythm is exactly the thing that comes out different
+# every time it is done by hand.
+
+#: Inner margin of a card, and the gap between cards, when none is given.
+CARD_PAD, CARD_GAP = 500, 600
+
+#: Below this ratio an accent colour is used as a fill, never as text.  Same
+#: number qa.py fails a build on, checked here so the build never makes the
+#: mistake rather than reporting it afterwards.
+MIN_ACCENT_CONTRAST = 3.0
+
+#: Line widths are estimated to a few percent, and LibreOffice lays the text
+#: out for real.  Wrapping to the full box means every line that lands within a
+#: percent of it gets re-broken on the slide -- so a statement balanced to
+#: three lines renders as four, with the orphan this exists to prevent.
+WRAP_SLACK = 0.94
+
+
+def _as_item(item):
+    """One card's content as a dict, from whatever shape it arrived in."""
+    if isinstance(item, dict):
+        return dict(item)
+    if isinstance(item, str):
+        return {"body": item}
+    parts = list(item) + [None] * 3
+    return {"title": parts[0], "body": parts[1], "note": parts[2]}
+
+
+def _head_metrics(item, inner_w, title_size, numbered):
+    """``(chip_w, chip_gap, text_w, band_h, gap_h)`` for a card's head band.
+
+    One function, used by the measuring pass and the drawing pass alike.  When
+    they disagreed -- the measure assuming a one-line title, the drawing
+    wrapping it to two -- every card whose title wrapped grew past the height
+    it had been given, and the note pinned to its floor was printed outside the
+    panel.
+    """
+    line_h = int(title_size * 35.28 * 1.35)
+    chip_w = line_h if numbered else 0
+    chip_gap = int(chip_w * 0.45)
+    text_w = inner_w - chip_w - chip_gap
+    title_h = (_text_height([item["title"]], text_w, title_size, BOLD)
+               if item.get("title") else line_h)
+    return chip_w, chip_gap, text_w, max(line_h, title_h), \
+        int(title_size * 35.28 * 0.35)
+
+
+def _card_height(item, w, title_size, size, note_size, pad, numbered):
+    """Height this card needs for its own content, in 1/100 mm."""
+    inner = w - 2 * pad
+    total = 2 * pad
+    if numbered or item.get("title"):
+        _, _, _, band_h, gap_h = _head_metrics(item, inner, title_size, numbered)
+        total += band_h + gap_h
+    if item.get("body"):
+        total += _text_height([item["body"]], inner, size)
+    if item.get("note"):
+        total += int(note_size * 35.28 * 1.5)
+    return total
+
+
+def _draw_card(doc, page, box, item, fill, accent, number, title_size, size,
+               note_size, pad, radius, color, title_color, note_color, line):
+    """One card: panel, optional number chip, title, body, and a pinned note."""
+    if fill is not None or line is not None:
+        rect(doc, page, box, fill=fill, radius=radius, line=line)
+    on = fill if fill is not None else bg_color(page)
+    inner = box.inset(pad)
+
+    # The accent titles a card only if it can be read on the card.  Brand
+    # colours are chosen against white, and the panel fill is not white: the
+    # house cyan on #F2F2F2 is 2.7:1, which qa.py reports and a room cannot
+    # read.  The colour still marks the card -- as the chip's fill, with white
+    # on it -- which is where it was legible in the first place.
+    head = title_color
+    if head is None:
+        head = (accent if accent is not None
+                and contrast_ratio(accent, on) >= MIN_ACCENT_CONTRAST
+                else readable_on(on))
+
+    if number is not None or item.get("title"):
+        # Measured, not assumed: a two-word title fits one line and a six-word
+        # one does not, and a title that overruns a fixed band is drawn
+        # straight through the body under it -- which is what the first cut of
+        # this function did on every step of a four-step flow.
+        chip_w, chip_gap, text_w, band_h, gap_h = _head_metrics(
+            item, inner.w, title_size, number is not None)
+        band, inner = inner.cut_top(band_h, gap=gap_h)
+        if number is not None:
+            chip(doc, page,
+                 Box(band.x, band.y, chip_w, int(title_size * 35.28 * 1.35)),
+                 fill=accent if accent is not None else GREY_DK,
+                 label=str(number), size=title_size, radius=radius)
+        if item.get("title"):
+            text(doc, page, Box(band.x + chip_w + chip_gap, band.y, text_w,
+                                band.h),
+                 item["title"], size=title_size, weight=BOLD, color=head,
+                 valign="top")
+
+    if item.get("note"):                      # pinned to the floor, not floated
+        inner, foot = inner.cut_bottom(int(note_size * 35.28 * 1.5))
+        text(doc, page, foot, item["note"], size=note_size,
+             color=note_color, weight=BOLD, valign="bottom")
+
+    if item.get("body"):
+        text(doc, page, inner, item["body"], size=size,
+             color=color if color is not None else readable_on(on),
+             valign="top")
+    return box
+
+
+@takes_box("x", "y", "w", "h")
+def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
+          accent=None, numbered=False, height="equal", size=None,
+          title_size=None, note_size=None, pad=None, radius=None, color=None,
+          title_color=None, note_color=GREY, line=None):
+    """A row (or grid) of cards, all built the same way.  Returns their boxes.
+
+    Each item is a string, a ``(title, body)`` or ``(title, body, note)``
+    tuple, or a dict with any of ``title``, ``body``, ``note``, ``fill`` and
+    ``accent``::
+
+        D.cards(doc, page, area, [
+            ("Inventory", "Classify every agent against A / B / C.",
+             "Owner: ‹name›  ·  By: ‹date›"),
+            ("Gate", "A/B/C classification becomes mandatory in design review."),
+            ("Accept the trade-off", "Cap capability where all three coincide.",
+             "Board decision  ·  today"),
+        ], numbered=True, accent=[0x009EE0, 0xE8730C, 0x6B3FA0])
+
+    ``height`` is the one that matters. ``"equal"`` fills the area, which is
+    what a row of cards with similar content wants. ``"content"`` gives every
+    card the height of the *longest* one's content and centres the row in the
+    area -- use it when one card has three lines and another has ten, or the
+    short ones ship with half a panel of nothing under the text, which is the
+    commonest thing wrong with a finished-looking slide.
+
+    ``note`` sits on the card's floor rather than under the body, so a row of
+    cards has its owner/date line on one baseline instead of three.
+    """
+    if not items:
+        raise ValueError("cards(): nothing to draw -- items is empty")
+    if height not in ("equal", "content"):
+        raise ValueError("cards(): height= is 'equal' (fill the area) or "
+                         "'content' (size to the text), got %r" % (height,))
+    items = [_as_item(item) for item in items]
+    gap = CARD_GAP if gap is None else gap
+    pad = CARD_PAD if pad is None else pad
+    # From the deck's own scale, so a card's body is the size the rest of the
+    # deck calls a body and not a number this function made up.
+    size = size_for("label") if size is None else size
+    title_size = size_for("subtitle") if title_size is None else title_size
+    note_size = size_for("caption") if note_size is None else note_size
+    cols = len(items) if cols is None else max(1, int(cols))
+    rows_n = -(-len(items) // cols)
+    area = Box(x, y, w, h)
+
+    cell_w = (area.w - gap * (cols - 1)) / cols
+    if cell_w < 2 * pad + 1000:               # 10 mm of usable card
+        raise ValueError(
+            "cards(): %d cards across %.0f mm leaves %.0f mm each, which is "
+            "narrower than their own padding. Use cols= to wrap them onto "
+            "rows, or give them the wider box."
+            % (cols, area.w / 100, cell_w / 100))
+
+    if height == "content":
+        needed = max(_card_height(item, int(cell_w), title_size, size,
+                                  note_size, pad, numbered)
+                     for item in items)
+        row_h = min(needed, (area.h - gap * (rows_n - 1)) / rows_n)
+        used = row_h * rows_n + gap * (rows_n - 1)
+        area = Box(area.x, int(area.y + (area.h - used) / 2), area.w, int(used))
+
+    tones = [item.get("accent",
+                      accent[i % len(accent)]
+                      if isinstance(accent, (list, tuple)) else accent)
+             for i, item in enumerate(items)]
+    fills = [item.get("fill", fill) for item in items]
+
+    # One decision for the whole row, not one per card.  A row where two
+    # titles are black because their accent is too pale on the panel and the
+    # third is purple because its accent happens to clear 3:1 reads as three
+    # kinds of card -- and "peers styled differently" is a defect no
+    # measurement reports, because each card on its own is fine.
+    heads = list(title_color if not isinstance(title_color, (list, tuple))
+                 else title_color for _ in items)
+    if title_color is None:
+        page_bg = bg_color(page)
+        readable = all(
+            tone is None
+            or contrast_ratio(tone, f if f is not None else page_bg)
+            >= MIN_ACCENT_CONTRAST
+            for tone, f in zip(tones, fills))
+        heads = [None if readable
+                 else readable_on(f if f is not None else page_bg)
+                 for f in fills]
+
+    out = []
+    for r, band in enumerate(area.rows(rows_n, gap=gap)):
+        for c, cell in enumerate(band.cols(cols, gap=gap)):
+            i = r * cols + c
+            if i >= len(items):
+                break
+            out.append(_draw_card(
+                doc, page, cell, items[i], fills[i], tones[i],
+                i + 1 if numbered else None, title_size, size, note_size, pad,
+                radius, color, heads[i], note_color, line))
+    return out
+
+
+@takes_box("x", "y", "w", "h")
+def steps(doc, page, x, y, w, h, items, captions=None, numbered=True,
+          accent=None, fill=GREY_LT, gap=None, size=None, title_size=None,
+          caption_size=None, arrow_color=None, pad=None, radius=None):
+    """A left-to-right flow: equal tiles, real arrows between them, captions
+    under them.  Returns the tile boxes.
+
+    ``steps`` takes the same items as :func:`cards`; ``captions`` is an
+    optional label per step, drawn *below* the row and colour-matched to
+    ``accent``, which is how a flow says which property each step belongs to
+    without a legend::
+
+        D.steps(doc, page, area,
+                [("Attacker sends an email", "Nothing is breached yet"),
+                 ("Agent reads hidden text", "…"),
+                 ("Agent reads your last 50 emails", "…"),
+                 ("Data leaves via a Google Form URL", "…")],
+                captions=["outside", "untrusted content", "private data",
+                          "external comms"],
+                accent=[0x4A4A4A, 0xE8730C, 0x009EE0, 0x6B3FA0])
+
+    The arrows are drawn in the gap between tiles and sized to it -- a flow
+    whose arrows are 5 mm stubs floating in a 20 mm gap is the hand-rolled
+    version of this.
+    """
+    if not items:
+        raise ValueError("steps(): nothing to draw -- items is empty")
+    gap = CARD_GAP * 2 if gap is None else gap    # room for the arrowhead
+    size = size_for("label") if size is None else size
+    title_size = size_for("label") if title_size is None else title_size
+    caption_size = size_for("caption") if caption_size is None else caption_size
+    area = Box(x, y, w, h)
+    if captions:
+        if len(captions) != len(items):
+            raise ValueError("steps(): %d step(s) but %d caption(s) -- one "
+                             "each, or none" % (len(items), len(captions)))
+        area, foot = area.cut_bottom(int(caption_size * 35.28 * 2.2),
+                                     gap=int(caption_size * 35.28 * 0.5))
+
+    # Content height, not the full band: a flow's tiles hold a line or two
+    # each, and four tiles stretched to fill a half-slide are four panels of
+    # grey with the words along their top edge.
+    boxes = cards(doc, page, area, items, gap=gap, fill=fill, accent=accent,
+                  numbered=numbered, size=size, title_size=title_size,
+                  pad=pad, radius=radius, height="content")
+
+    for left, right in zip(boxes, boxes[1:]):
+        span = right.x - left.x2
+        head = min(span * 0.8, area.h * 0.22)
+        arrow(doc, page,
+              Box(int(left.x2 + (span - head) / 2), int(left.cy - head / 2),
+                  int(head), int(head)),
+              color=arrow_color if arrow_color is not None else GREY)
+
+    if captions:
+        # Under the tiles, wherever the tiles ended up -- ``height="content"``
+        # centres them in the band, and a caption left at the foot of the band
+        # is a label floating half a slide below the thing it labels.
+        foot = Box(foot.x, int(boxes[0].y2 + caption_size * 35.28 * 0.6),
+                   foot.w, foot.h)
+        for i, (box, caption) in enumerate(zip(boxes, captions)):
+            tone = accent[i % len(accent)] if isinstance(accent, (list, tuple)) \
+                else accent
+            text(doc, page, Box(box.x, foot.y, box.w, foot.h), caption,
+                 size=caption_size, weight=BOLD, align="center", valign="top",
+                 color=tone if tone is not None else GREY_DK)
+    return boxes
+
+
+@takes_box("x", "y", "w", "h")
+def kpis(doc, page, x, y, w, h, items, color=None, caption_color=GREY_DK,
+         gap=None, max_size=54.0, caption_size=None, align="center"):
+    """A row of big numbers with captions under them.  Returns their boxes.
+
+    ``items`` are ``(value, caption)`` pairs::
+
+        D.kpis(doc, page, area, [("~47,000", "downloads of the backdoored
+                                  package"), ("3 hours", "it sat on PyPI"),
+                                 ("dozens", "frameworks depend on it")])
+
+    Every value is set at **one** size -- the largest at which the longest of
+    them still fits its column -- because three numbers at three sizes read as
+    three levels of importance rather than three facts.
+    """
+    if not items:
+        raise ValueError("kpis(): nothing to draw -- items is empty")
+    items = [(item, "") if isinstance(item, str) else tuple(item)[:2]
+             for item in items]
+    gap = CARD_GAP * 2 if gap is None else gap
+    caption_size = size_for("caption") if caption_size is None else caption_size
+    area = Box(x, y, w, h)
+    columns = area.cols(len(items), gap=gap)
+
+    value_size = min(max_size, min(
+        fit_size(str(value), columns[0].w, BOLD, max_size=max_size)
+        for value, _ in items))
+    band = int(value_size * 35.28 * 1.35)
+
+    # Centred in the area rather than parked at its top: a number and its
+    # caption need about a third of the height they are usually handed, and the
+    # other two thirds are the bare band that reads as an unfinished slide.
+    caption_h = max((_text_height([caption], columns[0].w, caption_size)
+                     for _, caption in items if caption), default=0)
+    gap_h = int(value_size * 35.28 * 0.2)
+    block = min(area.h, band + (gap_h + caption_h if caption_h else 0))
+    top = int(area.y + (area.h - block) / 2)
+    columns = [Box(c.x, top, c.w, block) for c in columns]
+
+    out = []
+    for column, (value, caption) in zip(columns, items):
+        head, rest = column.cut_top(band, gap=gap_h)
+        text(doc, page, head, str(value), size=value_size, weight=BOLD,
+             align=align, valign="bottom",
+             color=color if color is not None else readable_on(bg_color(page)))
+        if caption:
+            text(doc, page, rest, str(caption), size=caption_size,
+                 align=align, valign="top", color=caption_color)
+        out.append(column)
+    return out
+
+
+def balance_lines(s, width, size, weight=NORM, max_lines=None):
+    """Wrap ``s`` to ``width`` with the lines evened up.  ``[line, ...]``.
+
+    A greedy wrap fills each line to the brim and leaves the remainder on the
+    last one, which is how a statement slide ends on a line reading ``an``.
+    This wraps to the *narrowest* width that still needs the same number of
+    lines, so the slack is shared out instead of all landing at the end.
+    """
+    lines = wrap_words(s, width, size, weight)
+    if len(lines) < 2:
+        return lines
+    if max_lines and len(lines) > max_lines:
+        return lines                          # caller decides: smaller, or wider
+    target, low, high = len(lines), width // 4, width
+    while high - low > width // 100 + 1:
+        mid = (low + high) // 2
+        if len(wrap_words(s, mid, size, weight)) <= target:
+            high = mid
+        else:
+            low = mid
+    return wrap_words(s, high, size, weight)
+
+
+@takes_box("x", "y", "w", "h")
+def statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None,
+              max_size=44.0, min_size=16.0, weight=BOLD, color=None,
+              align="center", valign="center", font=DEFAULT_FONT):
+    """One sentence, as large as it fits, broken where it reads.  The shape.
+
+    For the slide that is a single line of type::
+
+        D.statement(doc, page, area,
+                    "We are deploying software that reliably follows "
+                    "instructions from anyone who can get text in front of it.")
+
+    It picks the largest size at which the text fits ``max_lines`` and the box,
+    then evens the lines up (see :func:`balance_lines`) and writes them as
+    separate paragraphs so LibreOffice cannot re-break them somewhere else.
+
+    Pass several strings for several paragraphs.  Do **not** put ``\\n`` in one
+    -- that is hand-breaking, and hand-breaking is what leaves a slide ending
+    on a line that reads ``an``.
+    """
+    if not paragraphs:
+        raise ValueError("statement(): nothing to write")
+    for part in paragraphs:
+        if "\n" in str(part):
+            raise ValueError(
+                "statement(): the text contains a newline. This call chooses "
+                "the size and the line breaks together, and a hand-broken "
+                "string fights it -- a centred statement broken by hand is "
+                "how a slide ends on a line reading 'an'.\n"
+                "  Pass the sentence whole; pass SEVERAL strings for several "
+                "paragraphs:\n"
+                "      D.statement(doc, page, area, first, second)")
+
+    area = Box(x, y, w, h)
+    inside = area.w * WRAP_SLACK
+    chosen, lines = min_size, None
+    trial = max_size if size is None else float(size)
+    while trial >= min_size:
+        wrapped = []
+        for part in paragraphs:
+            wrapped += balance_lines(str(part), inside, trial, weight)
+        if (len(wrapped) <= max_lines * len(paragraphs)
+                and len(wrapped) * trial * 35.28 * 1.22 <= area.h):
+            chosen, lines = trial, wrapped
+            break
+        if size is not None:                  # a size was asked for: keep it
+            chosen, lines = trial, wrapped
+            break
+        trial -= 1.0
+    if lines is None:                         # nothing fits: smallest, wrapped
+        lines = []
+        for part in paragraphs:
+            lines += balance_lines(str(part), inside, min_size, weight)
+        chosen = min_size
+
+    # Then check it against the layout engine rather than against the estimate.
+    # The estimate is good to a few percent, and a few percent is exactly the
+    # margin a balanced line sits on: the first version of this call put three
+    # measured lines on the slide and LibreOffice re-broke the last one, which
+    # is the orphan the whole function exists to avoid.  Two round trips per
+    # attempt, on the one slide in a deck that is a single sentence.
+    while True:
+        shape = text(doc, page, area, *lines, size=chosen, weight=weight,
+                     align=align, valign=valign, color=color, font=font)
+        try:
+            widest = max(text_width(doc, page, part, shape) for part in lines)
+        except Exception:                     # no layout available: trust the sums
+            return shape
+        if widest <= area.w or chosen <= min_size:
+            return shape
+        # The breaks are balanced and only the type is a shade too big, so the
+        # type gives way and the breaks stay.  A point either way is invisible;
+        # a re-broken line is not.
+        page.remove(shape)
+        chosen = max(min_size, chosen * min(0.98, area.w / widest))
+
+
 # ------------------------------------------------------------------- venn
 
 def venn_geometry(cx, cy, r, n=3):
@@ -1260,45 +1820,34 @@ def venn_geometry(cx, cy, r, n=3):
     return [(cx, cy - d), (cx - r / 2, cy - d + h), (cx + r / 2, cy - d + h)]
 
 
-def _clear_push(ux, uy, r, w, h):
-    """Distance along the unit ray ``(ux, uy)`` at which a ``w`` x ``h`` label
-    centred there stops overlapping a circle of radius ``r``.
-
-    Pushing a fixed multiple of ``r``, as this used to, is what puts a wide
-    horizontal label back inside the circle it belongs to -- the label extends
-    sideways far further than the ray travels.  Solved instead from the
-    rectangle's nearest point to the circle's centre, which is exact and needs
-    no cases for two- versus three-circle figures.
-
-    ``w`` and ``h`` are the *text's* extent, not its box: a centred label in a
-    generous box would otherwise be shoved out by its own empty margins.
-    """
-    hw, hh = w / 2, h / 2
-    gap = r * 1.06                     # a hair of air, so it does not just kiss
-    lo, hi = r * 0.5, r * 4
-    for _ in range(24):
-        mid = (lo + hi) / 2
-        dx = max(0.0, abs(ux * mid) - hw)
-        dy = max(0.0, abs(uy * mid) - hh)
-        if dx * dx + dy * dy >= gap * gap:
-            hi = mid
-        else:
-            lo = mid
-    return hi
+#: Air between a lobe's edge and the label that names it, as a share of r.
+VENN_LABEL_GAP = 0.08
 
 
 def _venn_labels(cx, cy, r, n, labels, label_size=None):
     """Where each outer label goes: ``[(x, y, w, h, size, lines), ...]``.
 
+    **Anchored to the lobe, not pushed along a ray.**  Each label is set
+    against the edge of the circle it names -- above it, below it, or beside
+    it, whichever the lobe's direction from the figure's centre is mostly --
+    and offset by half its own ink so that it touches rather than overlaps.
+
+    The version before this solved for the distance along the ray at which a
+    label centred there stopped overlapping the circle.  That is geometrically
+    correct and reads wrong: a wide label on a diagonal has to travel a long
+    way before its near corner clears, so the two lower labels of a three-lobe
+    Venn ended up far out to the lower left and lower right, close to nothing,
+    with the figure marooned in the middle.  Anchoring instead puts
+    ``UNTRUSTED CONTENT`` against the side of the circle it belongs to, and
+    turns the wasted diagonal into width -- which a 16:9 slide has and height
+    it does not.
+
     Pure geometry, so ``venn_bounds`` can ask the same question without drawing
-    anything -- which is what lets ``venn(box=...)`` size itself to fit.
+    anything, which is what lets ``venn(box=...)`` size itself to fit.
     """
     out = []
     box_w, box_h = r * 1.7, r * 0.62
     for i, label in enumerate(labels[:n]):
-        # Push the label out along the ray from the figure's centre through this
-        # circle's centre, so it clears the circle instead of landing inside it
-        # -- and so two- and three-circle figures need no cases.
         ex, ey = venn_geometry(cx, cy, r, n)[i]
         dx, dy = ex - cx, ey - cy
         norm = (dx * dx + dy * dy) ** 0.5 or 1
@@ -1308,13 +1857,18 @@ def _venn_labels(cx, cy, r, n, labels, label_size=None):
         # that dwarf a 16pt slide title and shove each other onto the footnote.
         # Fit it to the box, but never above body-plus-a-bit.
         size, lines = fit_lines(label, box_w, box_h, BOLD,
-                               max_size=LABEL_MAX_PT)
+                                max_size=LABEL_MAX_PT)
         if label_size:
             size, lines = label_size, wrap_words(label, box_w, label_size, BOLD)
         ink_w = max(text_width_est(ln, size, BOLD) for ln in lines)
         ink_h = len(lines) * size * 35.28 * 1.22
-        push = _clear_push(ux, uy, r, ink_w, ink_h)
-        sx, sy = ex + ux * push, ey + uy * push
+        gap = r * VENN_LABEL_GAP
+        if abs(uy) >= abs(ux):                # over or under its own lobe
+            sx = ex
+            sy = ey + (1 if uy > 0 else -1) * (r + gap + ink_h / 2)
+        else:                                 # beside it, on its own centre line
+            sx = ex + (1 if ux > 0 else -1) * (r + gap + ink_w / 2)
+            sy = ey
         out.append((sx - box_w / 2, sy - box_h / 2, box_w, box_h, size, lines))
     return out
 
@@ -1360,6 +1914,23 @@ def venn_fit(box, n=3, labels=None, label_size=None):
     return (int(box.cx + (box.cx - b.cx)), int(box.cy + (box.cy - b.cy)), int(r))
 
 
+def _centre_fit(parts, fixed, box):
+    """``(size, lines)`` for a Venn's centre label inside a square of ``box``.
+
+    ``fixed`` keeps the caller's own line breaks and sizes to the longest of
+    them; otherwise the string is wrapped on spaces and sized to fit both ways.
+    """
+    if not parts:
+        return CENTRE_MAX_PT, []
+    if not fixed:
+        return fit_lines(" ".join(parts), box, box, BOLD,
+                         max_size=CENTRE_MAX_PT)
+    widest = min(fit_size(line, box, BOLD, max_size=CENTRE_MAX_PT)
+                 for line in parts)
+    tall = box / max(len(parts) * 35.28 * 1.22, 1e-6)
+    return min(widest, tall, CENTRE_MAX_PT), list(parts)
+
+
 def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
          transparence=76, line_width=45, label_size=None, label_color=None,
          centre=None, centre_color=None, centre_text=None, centre_size=None,
@@ -1369,15 +1940,16 @@ def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
 
     ``colors`` is one colour per circle and decides how many are drawn --
     pass a prefix of it to build the diagram up over successive slides.
-    ``labels``, if given, are placed just outside each circle.
-    ``centre`` fills the all-way overlap with that colour.
+    ``labels``, if given, are set against the edge of each circle.
+    ``centre`` fills the all-way overlap with that colour, and ``centre_text``
+    names it: a string wraps, a **list is one line per entry**.
 
     **Give it the area, not a radius** -- a ``Box``, positionally or as
     ``box=``, typically the one ``canvas`` returned::
 
-        D.venn(doc, page, area, [0x009EE0, 0xE8730C, 0x6B3FA0],
+        D.venn(doc, page, area, D.series(3),
                labels=["PRIVATE DATA", "UNTRUSTED CONTENT", "EXTERNAL COMMS"],
-               centre=0xC00000, centre_text="DATA EXFILTRATION")
+               centre=D.color("alert"), centre_text="EXFILTRATION")
 
     The figure then sizes and centres itself to fill it, labels included.  A
     radius picked by eye -- ``mm(40)`` -- either wastes half the area or pushes
@@ -1397,16 +1969,32 @@ def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
     n = len(colors)
     if box is not None:
         cx, cy, r = venn_fit(box, n, labels, label_size)
+    elif "radius" not in _venn_hinted:
+        _venn_hinted.add("radius")
+        print(_VENN_RADIUS_HELP, file=sys.stderr)
     centres = venn_geometry(cx, cy, r, n)
+    # Held for the whole call, not just the lobes: the centre disc is an
+    # ellipse too, so a two-lobe Venn with a filled centre is three ellipses on
+    # the slide and used to trigger this function's own "if this is a Venn, use
+    # D.venn()" nudge -- from inside D.venn().
     _drawing_venn = True
     try:
-        for i, color in enumerate(colors):
-            ex, ey = centres[i]
-            ellipse(doc, page, ex, ey, r, fill=color,
-                    transparence=transparence, line=color,
-                    line_width=line_width)
+        return _venn_body(doc, page, cx, cy, r, n, centres, colors, labels,
+                          transparence, line_width, label_size, label_color,
+                          centre, centre_color, centre_text, centre_size)
     finally:
         _drawing_venn = False
+
+
+def _venn_body(doc, page, cx, cy, r, n, centres, colors, labels, transparence,
+               line_width, label_size, label_color, centre, centre_color,
+               centre_text, centre_size):
+    """The drawing half of :func:`venn`, with the hint suppressed around it."""
+    for i, color in enumerate(colors):
+        ex, ey = centres[i]
+        ellipse(doc, page, ex, ey, r, fill=color,
+                transparence=transparence, line=color,
+                line_width=line_width)
     if labels:
         for i, (lx, ly, lw, lh, size, lines) in enumerate(
                 _venn_labels(cx, cy, r, n, labels, label_size)):
@@ -1414,9 +2002,14 @@ def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
                  align="center", valign="center",
                  color=(label_color or colors[i]))
     if centre is not None:
-        joined = " ".join(str(p) for p in (
-            [centre_text] if isinstance(centre_text, str) else (centre_text or [])
-        ))
+        # A string wraps where it fits; a list is the lines, one each, because
+        # where a two-word label breaks is a wording decision and the caller is
+        # the one holding it.
+        fixed = not isinstance(centre_text, str) and bool(centre_text)
+        parts = ([centre_text] if isinstance(centre_text, str)
+                 else [str(p) for p in (centre_text or [])])
+        joined = " ".join(parts)
+
         # 0.41 r is the inradius of the three-way overlap, so the disc sits
         # exactly inside it.  A long label at that size shrinks to nothing --
         # better to let the disc grow a little into the pair regions than to
@@ -1424,9 +2017,8 @@ def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
         # the two-way overlaps that the figure exists to show.
         cr = r * 0.41
         if joined and not centre_size:
-            while cr < r * 0.54 and fit_lines(
-                    joined, cr * 1.38, cr * 1.38, BOLD,
-                    max_size=CENTRE_MAX_PT)[0] < 11.0:
+            while cr < r * 0.58 and _centre_fit(
+                    parts, fixed, cr * 1.38)[0] < MIN_READABLE_PT + 2.0:
                 cr *= 1.04
         ellipse(doc, page, cx, cy, cr, fill=centre, line=centre,
                 line_width=line_width)
@@ -1437,11 +2029,29 @@ def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
             # makes "DATA EXFILTRATION" unreadably small, and sizing it without
             # regard to wrapping breaks "FORBIDDEN" mid-word.
             box_w = box_h = cr * 1.38
-            size, lines = fit_lines(joined, box_w, box_h, BOLD,
-                                    max_size=CENTRE_MAX_PT)
+            size, lines = _centre_fit(parts, fixed, box_w)
             if centre_size:
                 size = centre_size
-                lines = wrap_words(joined, box_w, size, BOLD)
+                lines = parts if fixed else wrap_words(joined, box_w, size, BOLD)
+            elif size < MIN_READABLE_PT and "centre" not in _venn_hinted:
+                # The disc has already grown as far as it can without eating
+                # the pair regions the figure exists to show, so the only thing
+                # left to change is the wording -- which is the caller's, not
+                # ours.  "DATA EXFILTRATION" inside a 35 mm figure sizes to
+                # about 7pt however the disc is drawn.
+                _venn_hinted.add("centre")
+                print(
+                    "[draw] the Venn centre label %r sizes to %.1fpt inside the "
+                    "centre disc, under the %.0fpt floor -- readable on your "
+                    "monitor, not from a seat.\n"
+                    "  The disc cannot grow further without covering the "
+                    "two-way overlaps the figure is for, so shorten the label:\n"
+                    "      centre_text=\"EXFILTRATION\"      # one short word\n"
+                    "      centre_text=[\"DATA\", \"LEAK\"]     # a list is one "
+                    "line per entry\n"
+                    "  Or name the centre in a caption under the figure and "
+                    "leave the disc plain."
+                    % (joined, size, MIN_READABLE_PT), file=sys.stderr)
             text(doc, page, cx - box_w / 2, cy - box_h / 2, box_w, box_h,
                  *lines, size=size,
                  color=(centre_color or WHITE), weight=BOLD, align="center",
@@ -1608,10 +2218,14 @@ __all__ = [
     "Point", "Size", "BLACK", "WHITE", "GREY", "GREY_DK", "GREY_BD",
     "GREY_MD", "GREY_LT", "BOLD", "NORM", "THIN", "DEFAULT_FONT",
     "rect", "ellipse", "line", "hline", "vline", "polygon", "arrow",
-    "chevron", "text", "chip", "bullets", "table", "venn", "venn_geometry",
+    "chevron", "text", "chip", "bullets", "table",
+    "cards", "steps", "kpis", "statement", "balance_lines",
+    "venn", "venn_geometry",
     "venn_fit", "venn_bounds",
     "pair_spots", "restyle", "style_fill", "walk", "walk_page", "move",
     "resize", "canvas", "est_lines", "set_text", "Box", "Split", "page_box",
     "advance_em", "text_width_est", "fit_size", "fit_lines", "wrap_words",
     "contrast_ratio", "bg_color", "readable_on",
+    "palette", "palette_roles", "color", "series", "type_scale", "size_for",
+    "MIN_READABLE_PT",
 ]

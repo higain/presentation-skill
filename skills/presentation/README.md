@@ -186,8 +186,10 @@ scripts/catalog_build.py catalog/ -o references/company-template.md \
 
 Merges the measured fields from stage A with the judged fields from stage B and
 writes the catalog in its shipped format: header, decision table (with the
-canvas row first), variety rule, coverage gaps, display-title budgets, and one
-entry per design. `references/company-template.example.md` shows that format
+canvas row **last** — it used to be first, where "a diagram, a comparison, a
+matrix" is the first match for almost anything and four runs in a row built
+every slide on it), variety rule, coverage gaps, display-title budgets, the
+palette and type scale read from the asset's profile, and one entry per design. `references/company-template.example.md` shows that format
 annotated with which half each field comes from.
 
 It flags rather than hides what went wrong:
@@ -349,6 +351,7 @@ Two passes and the default is genuinely good.
 | Model reply is not valid JSON | `catalog_gemma.py` strips ``` fences and extracts the first JSON value. If it still fails it prints the reply head — usually the model added prose. Temperature is already 0; trim empty slots from the structure, or use a larger model. |
 | Every design catalogued as "bulleted content" | The model is not seeing the images. Confirm with `--dry-run` that the image part is present and that `--model` names a vision model. |
 | The vision review is generic, or praises slides that are broken | Same cause: a text-only model. It will answer confidently about an image it never received. Check the model's input modalities — `deepseek-v4-flash` is text-only, `gemma-4-31b-it` and `qwen3.6-27b` are not. |
+| A vision finding looks wrong and the string it names is nowhere in the file | Check *how* you looked before deciding it is wrong. A footer is a page property, not a shape, so a shape search cannot see one — that exact reasoning shipped a deck with a German footer on all ten slides. `wireframe.py` and `probe.py` settle most of the rest; a finding nothing can settle stands. |
 | `make_deck.py` prints "No visual review" | `$PRESENTATION_REVIEW_MODEL` is unset. That is the default; set it to enable the reviewer. |
 | `no per-layout entries` on `--aggregate` | Run the per-design pass first; aggregate reads `catalog/entries/*.json`. |
 | Capacity figures look too generous | Expected. Fix them in the overrides file, or in `catalog/entries/slide-NN.json` if the figure itself is wrong, and rebuild. |
@@ -370,6 +373,7 @@ Two passes and the default is genuinely good.
 | `scripts/catalog_build.py` | Stage C — both halves + overrides → the catalog; `--check` for drift | build-time |
 | `scripts/catalog_import.py` | Recovery — a hand-written catalog → the stage B entries it never kept | once, if needed |
 | `scripts/review_renders.py` | The vision reviewer — renders → advisory findings | runtime, when `$PRESENTATION_REVIEW_MODEL` is set |
+| `scripts/wireframe.py` | A render as a text ink-map — emptiness, banding, what is not centred, with no model at all | runtime, and in every report for the slides it flags |
 | `references/gemma-catalog-prompt.md` | The prompt spec (human-readable source of truth) | reference |
 | `references/company-template.example.md` | The finished format, annotated | reference |
 | `references/company-template.md` | The catalog *(generated — do not edit)* | runtime |

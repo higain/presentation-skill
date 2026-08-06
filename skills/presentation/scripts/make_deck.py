@@ -14,7 +14,8 @@ Give it your build script and the deck that script writes, and it will:
 3. schema-check the ``.pptx``,
 4. write the findings to ``<deck>-report.md`` beside the deck,
 5. render every slide to a PNG in ``render/`` beside the deck, and print paths,
-6. print a contact sheet of the whole deck.
+6. print a contact sheet of the whole deck,
+7. leave a per-slide verdict table in the report, with the verdicts blank.
 
 Then **open the PNGs and look at them.**  Steps 2 and 3 cannot see a slide;
 they catch text that runs off the page and words nobody replaced, and they are
@@ -99,8 +100,62 @@ def _finish_render(proc) -> list:
     return [line for line in out.splitlines() if line.strip()]
 
 
+def _verdict_table(checked: int, sparse=()) -> list:
+    """The per-slide verdict table: one row per slide, the last column blank.
+
+    The automated half of this command writes findings, exits 1, and has to
+    come back clean.  The visual half wrote nothing and gated nothing, and it
+    is the half that failed: of four runs measured against the same plan, one
+    opened every render and *listed* three real defects in its closing message
+    rather than fixing them, one opened forty-five renders and called a deck
+    with five identical filler slides finished, and one dismissed a correct
+    finding it could not see.  All three reports said clean, because a report
+    that asks "did you look?" is answered by whoever is already sure they did.
+
+    An empty column is a different kind of question.  It is visible in the
+    file, it survives the transcript, and filling it in is an act.
+    """
+    measured = dict(sparse)
+    rows = ["| Slide | Measured | Verdict — `ok`, or what you will fix |",
+            "|---|---|---|"]
+    for number in range(1, checked + 1):
+        rows.append(f"| {number} | {measured.get(number, '')} | |")
+    return rows
+
+
+def _wireframes(outdir: Path, numbers) -> list:
+    """Text ink-maps for ``numbers``, or ``[]`` if none can be drawn.
+
+    Included for the slides already flagged as worth a look, because those are
+    the ones where "is this empty or is it a statement slide" is the question,
+    and that is a question the grid answers on its own.  For a reviewer with no
+    eyes it is the whole of the visual evidence; for one with eyes it is a
+    second opinion that costs a tenth of a second.
+    """
+    if not numbers:
+        return []
+    try:
+        from wireframe import block, find_renders, slide_number
+    except Exception:                         # no PIL: the grid is optional
+        return []
+    blocks = []
+    for png in find_renders(outdir, set(numbers)):
+        try:
+            blocks.append(block(png, number=slide_number(png)))
+        except Exception:
+            continue
+    if not blocks:
+        return []
+    return ["", "## The slides to look at, as text", "",
+            "Each cell is the mean ink of that patch of the slide, ` ` to `@`. "
+            "It shows emptiness, banding and things that are not centred — not "
+            "whether a slide is any good. `scripts/wireframe.py <png>` draws "
+            "one for any render.", ""] + blocks
+
+
 def _write_report(deck: Path, issues: list, checked: int, outdir=None,
-                  sheet=None, sparse=(), review=None, looked=False) -> Path:
+                  sheet=None, sparse=(), review=None, looked=False,
+                  notes=()) -> Path:
     """Leave the findings on disk, next to the deck, as ``<deck>-report.md``.
 
     A build that ends between "here is what is wrong" and "fixed it" otherwise
@@ -120,10 +175,19 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     and the first instruction in its own report was a path that did not exist.
     """
     report = deck.resolve().with_name(deck.stem + "-report.md")
+    # Line two, not line thirty: a reader who stops after the heading should
+    # already know whether anything has looked at this deck.  It used to be the
+    # last line of the file, under the render paths, and it was read as a
+    # footnote by every run that shipped a deck nobody had opened.
+    eyes = ("a vision model (advisory)" if looked
+            else "nothing — no render has been looked at yet")
     lines = [
         f"# {deck.name}", "",
+        f"**Eyes:** {eyes}", "",
         f"{checked} slide(s) checked.", "",
     ]
+    for note in notes:
+        lines += [note, ""]
     if issues:
         lines += [f"## {len(issues)} unfixed issue(s)", "",
                   "**This deck is not finished.** Every line below is a defect "
@@ -143,7 +207,16 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
                   "first and decide.", ""]
         lines += [f"- [ ] slide {number}: {reason}" for number, reason in sparse]
     if review:
-        lines += ["", review]
+        lines += ["", review, "",
+                  "**A finding here is dismissed only by a measurement you "
+                  "show.** Reasoning about why the reviewer must be wrong is "
+                  "how a German footer shipped on every slide of an English "
+                  "deck: the run searched the shapes, found nothing, and wrote "
+                  "the finding off as a hallucination — the footer is a page "
+                  "property, and the search could never have reached it. "
+                  "`probe.py`, `qa.py` and `wireframe.py` settle most of these; "
+                  "if none of them can, the finding stands and the fix is "
+                  "cheaper than the argument."]
     if outdir is not None:
         lines += ["", "## Renders", "",
                   f"- [ ] Look at every slide in `{outdir}`"]
@@ -152,7 +225,14 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
         lines += ["",
                   "A vision model looked at these. You still have not."
                   if looked else
-                  "Nothing above was seen by anything with eyes."]
+                  "Nothing above was seen by anything with eyes.", "",
+                  "## Verdicts", "",
+                  "One row per slide. **The deck is not finished while a "
+                  "verdict is blank**, and a slide nobody has opened cannot "
+                  "have one. Write them in this file — that is the record that "
+                  "the deck was looked at.", ""]
+        lines += _verdict_table(checked, sparse)
+        lines += _wireframes(outdir, [number for number, _ in sparse])
     try:
         report.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError:
@@ -303,12 +383,14 @@ def main():
         from qa import _parse_slides
         wanted = _parse_slides(args.slides)
     try:
-        issues, checked, sparse = check(deck, args.template, wanted)
+        issues, checked, sparse, notes = check(deck, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
 
     print(f"{checked} slide(s) checked.\n")
+    for note in notes:
+        print(f"{note}\n")
     if issues:
         failed = True
         print(f"## {len(issues)} issue(s) — fix every one\n")
@@ -327,7 +409,7 @@ def main():
             print(f"- slide {number}: {reason}")
 
     _write_report(deck, issues, checked, None if args.no_render else outdir,
-                  sparse=sparse)
+                  sparse=sparse, notes=notes)
 
     if deck.suffix.lower() in PPTX_EXTS and not args.skip_validate:
         code, output = validate_pptx(deck, args.template)
@@ -361,7 +443,7 @@ def main():
         # on a single sheet.
         _write_report(deck, issues, checked, outdir,
                       sheet.resolve() if sheet else None, sparse, review,
-                      looked)
+                      looked, notes)
         if images:
             print(
                 "\n**Open these and look at them.** "
@@ -374,6 +456,8 @@ def main():
                 + (" Start with slide%s %s — measured above as possibly empty."
                    % ("" if len(sparse) == 1 else "s",
                       ", ".join(str(n) for n, _ in sparse)) if sparse else "")
+                + " Then write a verdict per slide in the report's Verdicts "
+                  "table; a blank one is a slide nobody has looked at."
             )
         else:
             print(

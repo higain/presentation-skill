@@ -21,24 +21,30 @@ The five that matter most, if you read nothing else:
 from office.impress import mm
 from office import draw as D
 
-D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=0x009EE0, radius=200)
-D.ellipse(doc, page, mm(50), mm(55), mm(15), fill=0xE8730C, transparence=60)
+D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=D.color("cyan"),
+       radius=200)
+D.ellipse(doc, page, mm(50), mm(55), mm(15), fill=D.color("orange"),
+          transparence=60)
 D.text(doc, page, mm(20), mm(40), mm(60), mm(30), "Phase I", "eight weeks",
-       size=18, color=D.WHITE, weight=D.BOLD, align="center", valign="center")
+       role="body", color=D.WHITE, weight=D.BOLD, align="center",
+       valign="center")
 D.arrow(doc, page, mm(85), mm(50), mm(8), mm(10))
-D.chevron(doc, page, mm(20), mm(80), mm(50), mm(14), fill=0x009EE0)
-D.table(doc, page, area, widths=[3, 2, 2], rows=rows, head_fill=0x009EE0)
-D.venn(doc, page, area, [0x009EE0, 0xE8730C, 0x6B3FA0],
+D.chevron(doc, page, mm(20), mm(80), mm(50), mm(14), fill=D.color("accent"))
+D.table(doc, page, area, widths=[3, 2, 2], rows=rows,
+        head_fill=D.color("accent"))
+D.venn(doc, page, area, D.series(3),
        labels=["Private data", "Untrusted content", "External comms"],
-       centre=0xC00000, centre_text="Exfiltration")
+       centre=D.color("alert"), centre_text="Exfiltration")
 ```
 
 Full list: `rect`, `ellipse`, `line`/`hline`/`vline`, `polygon`, `arrow`,
-`chevron`, `text`, `chip`, `bullets`, `table`, `venn` (+ `venn_geometry`,
-`venn_fit`, `venn_bounds`, `pair_spots`), `canvas`, `Box`/`page_box`, `restyle`,
-`walk`/`walk_page`, `est_lines`/`fit_size`/`fit_lines`/`wrap_words`,
-`contrast_ratio`/`readable_on`/`bg_color`, plus `move`, `resize` and `set_text`
-re-exported from `office.template`.
+`chevron`, `text`, `chip`, `bullets`, `table`, `cards`/`steps`/`kpis`/
+`statement`, `venn` (+ `venn_geometry`, `venn_fit`, `venn_bounds`,
+`pair_spots`), `canvas`, `Box`/`page_box`, `restyle`, `walk`/`walk_page`,
+`est_lines`/`fit_size`/`fit_lines`/`wrap_words`/`balance_lines`,
+`contrast_ratio`/`readable_on`/`bg_color`, `palette`/`color`/`series`,
+`type_scale`/`size_for`, plus `move`, `resize` and `set_text` re-exported from
+`office.template`.
 
 **`D` draws; `office.template` edits what the template already put there.**
 `retext`, `find_shapes`, `shape_by_text`, `strip_annotations`, `shrink_to_fit`
@@ -53,13 +59,18 @@ error says what to write instead: that is true of every keyword
 
 - **Ellipses take a centre and radii**, not a bounding box. Pass a `Box` and it
   is read as the area to fill, which is usually what you meant.
-- **A Venn is `D.venn`.** It places the circles so they actually overlap, sizes
-  the figure to the `Box` you give it, and puts each label outside its own lobe.
-  Hand-placed circles come out tangent, or with their labels on top of each
-  other and off the bottom of the slide — every hand-rolled Venn across six test
-  builds was wrong, and every `D.venn` one was right. `qa.py` cannot see the
-  difference; it is a rendering defect and it needs eyes. `D.venn_fit(box)`
-  gives you `(cx, cy, r)` alone if you want to place the parts yourself.
+- **A Venn is `D.venn`, and it takes the area.** Give it the `Box` and it
+  solves for the largest figure whose labels still fit, then centres it; give it
+  a radius and it draws the radius you guessed — one run's hero slide put its
+  Venn in a quarter of the canvas and shipped, so passing `cx, cy, r` now prints
+  a nudge. Labels are set **against the edge of their own lobe** — above the top
+  one, beside the lower two — rather than pushed out along a diagonal, which is
+  how three labels ended up closer to the slide's corners than to the circles
+  they name. `centre_text` takes a string (wrapped to fit the disc) or a **list,
+  one line per entry**; if the wording cannot be read at the size the disc
+  allows, the call says so and tells you to shorten it. `D.venn_fit(box)` gives
+  you `(cx, cy, r)` alone if you want to place the parts yourself. `qa.py`
+  cannot see any of this; it is a rendering defect and it needs eyes.
 - **`D.table` takes the area and proportions**: `widths=[3, 2, 2, 5]` scaled to
   the box, which cannot overflow. Absolute widths in 1/100 mm still work
   (`widths=[mm(60), mm(40)]`) but a list that looks like points or percentages —
@@ -76,10 +87,29 @@ error says what to write instead: that is true of every keyword
 - **No markdown in slide text.** `~~struck~~` and `**bold**` render as literal
   tildes and asterisks. Style the run instead: `weight=D.BOLD`, `italic=True`,
   `strike=True`. `qa.py` flags these.
-- **Colours are ints** (`0x009EE0`). Take them from the template — `probe.py`
-  prints every fill and line colour — rather than inventing a palette. Check one
-  against its backdrop with `D.contrast_ratio(a, b)` before committing to it;
-  under 3.0 it is not readable from a seat. `D.readable_on(bg)` picks for you.
+- **Take the colours and the sizes from the deck, by name.** The template's own
+  palette and type scale are in `office.draw`:
+
+  ```python
+  D.color("cyan")   D.color("accent")   D.series(3)      # colours
+  D.text(..., role="footnote")          D.size_for("body")   # sizes
+  ```
+
+  Four separate runs against the house template wrote their own hex —
+  `0xE8730C` for orange, `0x6B3FA0` for purple — and neither colour appears
+  anywhere in the deck they were "matching". Four corporate decks, off-brand,
+  and nothing could see it. `D.color` raises with the list of real names;
+  `D.palette()` is the whole dict and `references/company-template.md` prints
+  it with each colour's contrast on white.
+- **Most brand colours are fill colours, not text colours.** The house cyan is
+  3.0:1 on white and its orange is 2.3:1 — fine behind white text, not fine
+  *as* text. Check with `D.contrast_ratio(a, b)` before committing; under 3.0 is
+  not readable from a seat, and `qa.py` reports it. `D.readable_on(bg)` picks
+  black or white for you.
+- **One scale, not a size per call.** `role=` keeps a footnote the same size on
+  every slide; anything under `D.MIN_READABLE_PT` (the smallest size the
+  template itself types at) is a QA finding. Colours are still plain ints when
+  you need one — `probe.py` prints every fill and line colour in a deck.
 - `D.table` draws rectangles and text rather than a real table shape: it takes
   per-cell colour without fighting a table style and survives a round trip
   unchanged. Use a real table only if the recipient must edit it as one.
@@ -199,6 +229,44 @@ icon or drawn shape. A slide that is a title and a bullet list is forgettable,
 and a deck of twelve of them has failed even when every automated check passes.
 That is the single commonest way a build goes wrong now that `office.draw`
 exists: reaching for `bullets()` when the content wanted a diagram.
+
+### Four of them are one call
+
+`D.cards`, `D.steps`, `D.kpis` and `D.statement` are the layouts every build
+draws by hand, drawn once. Reach for these before laying out rectangles: the
+hand-rolled versions come out different every time, and the difference is always
+in the rhythm — a note floating under one card and inside the next, arrows too
+small for their gap, one title in the accent colour and two in black.
+
+```python
+D.cards(doc, page, area, [
+    ("Inventory", "Classify every agent against A / B / C.",
+     "Owner: ‹name› · By: ‹date›"),          # (title, body, note)
+    ("Gate", "MCP installation becomes a privileged change."),
+    ("Accept the trade-off", "Cap capability where all three coincide.",
+     "Board decision · today"),
+], numbered=True, accent=[CY, OR, PU], height="content")
+
+D.steps(doc, page, area, steps, captions=[...], accent=[...])   # flow + arrows
+D.kpis(doc, page, area, [("~47,000", "downloads"), ("3 hours", "on PyPI")])
+D.statement(doc, page, area, "One sentence, as large as it fits.")
+```
+
+- **`height="content"` on `D.cards`** sizes every card to the longest one's
+  content and centres the row. Use it whenever the cards hold different amounts
+  of text; `"equal"` (the default) fills the area and is right only when they
+  hold about the same.
+- **`note` sits on the card's floor**, so a row of cards has its owner/date line
+  on one baseline instead of three.
+- **The accent titles a card only when it can be read on it.** Brand colours are
+  picked against white and a panel fill is not white — the house cyan on the
+  house grey is 2.7:1. If any accent in the row fails, every title in the row
+  falls back to black, because peers styled two ways is a defect nothing
+  measures. The colour still marks the card: it is the number chip's fill.
+- **`D.statement` chooses the size and the line breaks together**, then checks
+  them against the layout engine rather than against its own estimate. Do not
+  hand-break the sentence with `\n` — it refuses, because hand-breaking is what
+  leaves a slide ending on a line reading `an`.
 
 Patterns worth reaching for, roughly in order of how often they earn their keep:
 

@@ -76,14 +76,22 @@ def fill(doc, page, slot, design):
         area = D.canvas(page, keep=(0, 1, 2, 3))    # title, topic, source
         body, foot = area.cut_bottom(mm(14))        # a PAIR -- unpack it
         D.venn(doc, page, body,                     # sizes itself to the box
-               [0x009EE0, 0xE8730C, 0x6B3FA0],
+               D.series(3),                         # the template's own colours
                labels=["Private data", "Untrusted content", "External comms"],
-               centre=0xC00000, centre_text="Exfiltration")
+               centre=D.color("alert"), centre_text="Exfiltration")
         D.text(doc, page, foot, "Any two is safe by design",
-               size=12, align="center")             # colour picked for the bg
+               role="caption", align="center")      # colour picked for the bg
 
-build_deck("assets/company-template.pptx", "out.pptx", [7, 8, 13], fill=fill)
+build_deck("assets/company-template.pptx", "out.pptx", [7, 8, 13], fill=fill,
+           footer="Lethal trifecta · Board briefing · 2026")
 ```
+
+**Vary the designs, and set the footer.** Both are one argument of that last
+call, and four separate runs got both wrong: every one built `[8] * N`, drawing
+every slide from scratch on a template whose twenty other designs it never
+touched, and every one left the template's German `Gegenstand | Titel | Ort |
+Datum` along the bottom of an English deck. The footer is a page property, so
+no amount of `retext` reaches it; `footer=None` hides it instead.
 
 ```bash
 # 4-6. Build, check, render — one command, and it prints the PNG paths.
@@ -105,11 +113,13 @@ black-on-navy text are defects, not noise. **Editing the build script is not
 fixing them** — nothing has changed until the build has re-run and the report
 comes back clean.
 
-**6. Open the PNGs and look at them.** This is not optional and nothing
-substitutes for it. `make_deck.py` cannot see a slide: it will not tell you that
-a diagram is off-centre, that two shapes collide, or that one is still in the
-template's language. If you cannot see images, say so plainly and name the
-slides you could not verify — do not report the deck as checked.
+**6. Open the PNGs, look at them, and write a verdict per slide.** The report
+ends in a table with one row per slide and the verdict column blank. **The deck
+is not finished while a cell is empty** — that is the visual half of the check,
+and it has the same standing as the automated half. If you cannot see images,
+run `scripts/wireframe.py render/` — it prints each slide as an ink grid, which
+shows emptiness, banding and content that is not centred — say plainly that you
+worked from that, and name the slides you could not verify.
 
 Where it prints **slides to look at**, start there: those are the ones measured
 as painting almost nothing, and they are either deliberate statement slides or
@@ -140,6 +150,7 @@ scripts/dump.py deck.odp` does the same thing if the executable bit was lost.
 | `scripts/render.py deck.odp [-o dir] [--dpi N] [--slides 3,7-9]` | One PNG per slide; prints their absolute paths. **This is visual QA** |
 | `scripts/qa.py deck.pptx [--template brand.pptx]` | The checks alone, without the renders: overflow, mid-word breaks, off-slide shapes, leftover template wording and pictures, placeholders, markdown, contrast, occlusion — plus `validate.py` on a `.pptx` |
 | `scripts/review_renders.py render/ --model <vision model>` | **The only check with eyes.** Sends each render to a vision model and reports what it saw. Advisory: always exit 0. `make_deck.py` runs it for you when `$PRESENTATION_REVIEW_MODEL` is set |
+| `scripts/wireframe.py render/slide-03.png` | A render as text: an ink grid, the centroid, the widest blank band, the margins. **What to run when you cannot see images** — it shows emptiness, banding and things that are not centred without a model. `make_deck.py` prints one for every slide it flags |
 | `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** |
 | `scripts/catalog_extract.py` · `scripts/catalog_build.py` | **Build-time only, not per deck:** teach the skill a new company template. See `README.md` |
@@ -151,7 +162,9 @@ The `office` modules a build script imports:
 |---|---|
 | `office.deckbuild` | `build_deck` — a whole deck from a template, in any order |
 | `office.draw` | `rect`, `ellipse`, `line`, `arrow`, `polygon`, `chevron`, `text`, `chip`, `bullets`, `table`, `venn`, `canvas`, `Box`, `page_box`, `restyle`, `contrast_ratio`, `readable_on`, `fit_size`, `fit_lines` — **putting new things on a slide**, and `Box` to lay it out |
-| `office.template` | `retext`, `set_text`, `find_shapes`, `shape_by_text`, `clone_slide`, `strip_annotations`, `fit_pill`, `shrink_to_fit`, `scale_bars`, `text_overflow`, `overflowing`, `colliding` — editing what a template slide already has |
+| `office.draw` — composition | `cards`, `steps`, `kpis`, `statement` — the four layouts every build draws by hand. One call each, with the padding, the equal heights, the arrows and the line breaks already right. See Composition in `references/drawing.md` |
+| `office.draw` — house style | `color`, `series`, `palette`, `size_for`, and `role=` on `text` — **the template's own colours and sizes, by name.** Four runs invented hex the template does not contain and picked a footnote size per slide; these are counted off the asset. `references/company-template.md` prints both tables |
+| `office.template` | `retext`, `set_text`, `find_shapes`, `shape_by_text`, `clone_slide`, `strip_annotations`, `fit_pill`, `shrink_to_fit`, `scale_bars`, `text_overflow`, `overflowing`, `colliding`, `set_footer` — editing what a template slide already has |
 | `office.impress` | open, save, slides, shapes, placeholders, notes, `slide_size`, `mm()`/`pt()` |
 | `office.rasterize` | `rasterize` — deck to images, with the hidden-slide policy as an argument |
 
@@ -220,8 +233,10 @@ slides to a hosted model.
 
 ## QA (required)
 
-**A deck is not finished until `make_deck.py` has run clean and you have looked
-at the renders.** Every deck that shipped broken had skipped one of the two.
+**A deck is not finished until `make_deck.py` has run clean and every slide has
+a verdict written in the report's table.** Every deck that shipped broken had
+skipped one of the two — and the ones that skipped the second had all "looked
+at the renders" first.
 `make_deck.py` reports text that overruns its box or the slide, blocks of text
 printed over each other, leftover template wording and pictures, markdown,
 unreadable colour contrast and occluded shapes, then schema-checks the `.pptx`.
@@ -237,6 +252,15 @@ sends every render to it and prints what it saw.** That is advisory too and
 never fails the build. It does not excuse you from looking — but if you cannot
 see images, it is the difference between a deck nothing has looked at and a
 deck one thing has.
+
+**A visual finding is dismissed only by a measurement you show.** Reasoning
+about why the reviewer must be wrong is not a measurement, and it is how a deck
+shipped with a German footer on all ten slides: the run searched the shapes for
+the string, found nothing, and wrote the finding off as a hallucination — the
+footer is a page property and no shape search could ever have reached it.
+`probe.py` settles geometry, `qa.py` settles wording and colour,
+`wireframe.py` settles emptiness and placement. If none of them can settle it,
+the finding stands, and fixing it is cheaper than arguing with it.
 
 What it **cannot** see: alignment, crowding, a diagram off-centre, a chart
 whose bars are not proportional, a slide still in the template's language. That

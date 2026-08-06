@@ -28,6 +28,15 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# The palette block below reads the same profile the engine reads, through the
+# same accessors, so the catalog cannot document a palette the build would not
+# hand out.  (These pull in ``uno``; this script runs on the infra that ran
+# ``catalog_extract.py``, which needs LibreOffice anyway.)
+from office.draw import contrast_ratio  # noqa: E402
+from office.template import palette, palette_roles, type_scale  # noqa: E402
+
 #: A title box at or above this size is a display slot -- a divider headline
 #: set into master decoration -- where a second line is a defect no check can
 #: see.  Below it, wrapping is normal and a budget would be noise.
@@ -243,6 +252,23 @@ def _decision_table(rules, structures, canvas_number, entries, qualified=True):
     known = set(structures)
     lines = ["| When the content is… | Use slide | Design | Because |",
              "|---|---|---|---|"]
+    for rule in rules:
+        slide = rule.get("use_slide")
+        if slide not in known:
+            because = (f"⚠ the model cited slide {slide}, which this template "
+                       f"does not have — fix or delete this row")
+            lines.append(f"| {rule.get('when', '?')} | `?` | — | {because} |")
+            continue
+        name = (entries.get(slide, {}) or {}).get("name", "")
+        lines.append(f"| {rule.get('when', '?')} | `{slide}` | {name} | "
+                     f"{rule.get('because', '')} |")
+
+    # The canvas row goes LAST, and this is not a cosmetic decision.  It sat at
+    # the top, where "a diagram, chart, matrix, comparison" is the first match
+    # for nearly any slide worth building -- and four separate runs against the
+    # delta template duly built [8] * N, every slide drawn from scratch on a
+    # deck whose twenty other designs they never opened.  Last, and worded as
+    # the fallback it is, the rows above it get read first.
     if canvas_number:
         canvas = structures[canvas_number]["canvas"]
         box = canvas["free_box"]
@@ -254,24 +280,82 @@ def _decision_table(rules, structures, canvas_number, entries, qualified=True):
             "candidate, not a good one: run `probe.py` on it, check the `keep` "
             "tuple by hand, and correct this row.")
         lines.append(
-            "| **a diagram, chart, matrix, comparison — anything no row below "
+            "| **a diagram, chart, matrix, comparison — anything no row above "
             f"fits** | `{canvas_number}` | **Canvas** | Strip design "
             f"{canvas_number} back with `draw.canvas(page, keep=({keep}))` and "
             f"draw in the area the body vacates: **{box['x']}, {box['y']} to "
             f"{box['x'] + box['w']}, {box['y'] + box['h']}**. You keep the "
-            "master, background, chrome, fonts and margins. **Reach for this "
-            f"rather than forcing the content into the nearest bullet list.**{warn} |")
-    for rule in rules:
-        slide = rule.get("use_slide")
-        if slide not in known:
-            because = (f"⚠ the model cited slide {slide}, which this template "
-                       f"does not have — fix or delete this row")
-            lines.append(f"| {rule.get('when', '?')} | `?` | — | {because} |")
-            continue
-        name = (entries.get(slide, {}) or {}).get("name", "")
-        lines.append(f"| {rule.get('when', '?')} | `{slide}` | {name} | "
-                     f"{rule.get('because', '')} |")
+            "master, background, chrome, fonts and margins. Better than forcing "
+            "the content into the nearest bullet list — and worse than a design "
+            f"that already fits it.{warn} |")
     return "\n".join(lines)
+
+
+def _palette_block(asset):
+    """The palette and type scale from the profile beside the asset, as prose.
+
+    Emitted here rather than left to the overrides file because they are
+    measured facts about one template, like the retext keys -- and because the
+    runs that needed them did not have them: four decks went out in an orange
+    and a purple this template does not contain, and a footnote came out 9pt on
+    one slide and 12pt on the next.
+    """
+    profile_path = Path(asset).with_suffix(".profile.json")
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+    colours = palette(profile)
+    roles = palette_roles(profile)
+    scale = type_scale(profile)
+    if not colours and not scale:
+        return []
+
+    out = ["## Palette and type scale", "",
+           "**Counted off the asset, not chosen.** Every colour here is one "
+           "this template fills a shape or sets text in, and every size is one "
+           "it types at. Take them from `office.draw` rather than writing hex "
+           "in a build script:", "",
+           "```python",
+           "D.color(\"cyan\")        D.color(\"accent\")     # by name, or by role",
+           "D.series(3)            # the first three, in order, for n things",
+           "D.text(..., role=\"footnote\")                 # the size, by name",
+           "```", ""]
+
+    if colours:
+        named = {v: k for k, v in colours.items()}
+        out += ["| Colour | Hex | Reads as text on white |", "|---|---|---|"]
+        for name, value in colours.items():
+            ratio = contrast_ratio(value, 0xFFFFFF)
+            verdict = ("yes" if ratio >= 4.5 else
+                       "headlines only" if ratio >= 3.0 else
+                       "**no — fill colour**")
+            out.append(f"| `{name}` | `#{value:06X}` | {ratio:.1f}:1 — {verdict} |")
+        out.append("")
+        pairs = [(role, named.get(v, f"#{v:06X}"))
+                 for role, v in roles.items() if not isinstance(v, list)]
+        if pairs:
+            out.append("**Roles:** " + ", ".join(
+                f"`{role}` → `{name}`" for role, name in pairs) + ".")
+        if isinstance(roles.get("series"), list):
+            out.append("**Series order:** " + ", ".join(
+                f"`{named.get(v, f'#{v:06X}')}`" for v in roles["series"])
+                + " — the nth colour for the nth thing on a figure.")
+        out += ["", "Most of these are **fill** colours: a brand picks them "
+                "against white paper, not against the 3:1 a word has to clear "
+                "to be read from a seat. Set text in them only where the table "
+                "above says so — `qa.py` reports the rest.", ""]
+
+    if scale:
+        out += ["| Role | pt |", "|---|---|"]
+        out += [f"| `{role}` | {size:g} |" for role, size in
+                sorted(scale.items(), key=lambda kv: -kv[1])]
+        out += ["", f"`D.text(..., role=…)` sets these; `D.size_for(role)` is "
+                f"the number. Anything under {min(scale.values()):g}pt is "
+                f"smaller than this template ever types and `qa.py` reports "
+                f"it.", ""]
+    return out
 
 
 def _gaps(rules):
@@ -348,7 +432,9 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
                 ""]
 
     out += ["## Decision table — content → template slide", "",
-            "Apply top to bottom; first match wins.", ""]
+            "Apply top to bottom; first match wins. **Read to the bottom "
+            "before you pick** — the canvas row is last, and it means what it "
+            "says: nothing above fits.", ""]
     out.append(_decision_table(rules, structures, canvas_number, entries,
                                qualified=canvas_ok)
                if rules else
@@ -361,7 +447,7 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
     gaps = _gaps(rules) if rules else []
     if gaps:
         out += ["**No design for:** " + ", ".join(gaps)
-                + ". Build these on the canvas row above rather than forcing "
+                + ". Build these on the canvas row rather than forcing "
                 "them into the nearest design — and say so here once you have "
                 "checked the renders.", ""]
 
@@ -383,6 +469,8 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
         out += ["", "Over budget, in order of preference: **shorten the "
                 "title**; or `shrink_to_fit(doc, page, shape, max_lines=1)`. Do "
                 "not add a second text box beside the placeholder.", ""]
+
+    out += _palette_block(asset)
 
     if "before-design-entries" in blocks:
         out += [blocks.pop("before-design-entries"), ""]

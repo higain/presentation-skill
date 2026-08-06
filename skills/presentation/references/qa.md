@@ -1,7 +1,11 @@
 # QA — what the checks mean, and what they cannot see
 
-**A deck is not finished until the checks have run and you have looked at the
-renders.** Every deck that shipped broken had skipped one of the two.
+**A deck is not finished until the checks have run and every slide has a verdict
+written in the report's table.** Every deck that shipped broken had skipped one
+of the two — and of four runs measured on the same plan, three had looked at
+the renders and shipped the defects anyway. The verdict column is that half of
+the check made into something on disk: one row per slide, blank until you fill
+it in, and a slide nobody has opened cannot have one.
 
 ```bash
 scripts/make_deck.py build.py out.pptx --template brand.pptx   # do this
@@ -22,7 +26,12 @@ They report what a reader would see as broken and nothing else:
 - **two blocks of text printed over each other** — a caption placed where a
   diagram's labels already are, a Venn label on the note beneath it, a title
   long enough to reach the list beside it. Measured on the ink rather than on
-  the boxes, so a big text box holding two words does not report;
+  the boxes, so a big text box holding two words does not report. A pair of
+  *glyphs* is ignored (a tick on the tile it marks, a step number on its card),
+  but a glyph and a block of words is not: a source line drawn under a table ran
+  straight through a row whose cells held `?` and `✓`, and because both sides
+  were tested against the four-character floor separately, the check written for
+  exactly that defect never looked at the pair;
 - **a shape drawn past the edge of the slide**;
 - wording still shared with the template, and leftover placeholders — down to
   six characters, and collapsed to one line naming every slide it is on. The
@@ -35,11 +44,30 @@ They report what a reader would see as broken and nothing else:
 - **a picture still on the slide that came from the template** — `retext`
   replaces words and never pictures, so a design's stock photo and its German
   process diagram survive a deck that reports clean on text;
+- **the template's own footer**, which is a page property (`page.FooterText`)
+  rather than a shape and which nothing that walks shapes can see. Four decks
+  shipped the house template's `Gegenstand | Titel | Ort | Datum` under English
+  slides — every slide of every deck — and all four reports said clean. Fix it
+  with `build_deck(..., footer="…")` or `set_footer(page, …)`; `None` hides it;
 - **markdown** (`~~x~~`, `**x**`) that will render as literal characters;
+- **emoji** — ✅ ⚠️ ❌ and the rest are colour-font pictures, sized and coloured
+  by whatever emoji font is installed and drawn differently by LibreOffice and
+  PowerPoint. One run put them in a status column of a board deck. The
+  monochrome ✓ and ✗ are ordinary glyphs in the deck's own font and are not
+  flagged;
+- **type under the smallest size the template itself sets** — 9pt on the house
+  template. Below that it is legible on the monitor it was built on and not
+  from a seat. `D.text(..., role="footnote")` takes the size from the scale
+  rather than picking one per slide;
 - **contrast** — each run's colour against the fill or slide background behind
   it. Under 1.8:1 the text is not visible at all and is always a bug; between
   that and 3.0:1 it is a brand colour used at a size it was not meant for, and
-  that one is your call;
+  that one is your call. A slide that sets no background of its own counts as
+  **white**, which is what it renders as: treating it as "unknown" meant text
+  on an ordinary body slide was never checked at all, and a label in the
+  brand's own lime — 2.15:1 on white — reported clean. Pairings the template
+  itself ships are baselined out, so what fires is the colour *this build*
+  chose;
 - **occlusion** — an opaque shape covering the one beneath it, which is what a
   `cut_*` pair unpacked in the wrong order looks like on the slide;
 
@@ -104,7 +132,34 @@ instruction from "look at the renders", which is what the runs that shipped
 these decks were given. One of them looked, saw the empty slides, called them
 minor and shipped; the other never opened an image.
 
-If a listed slide is sparse on purpose, it is fine. Say so and move on.
+If a listed slide is sparse on purpose, it is fine. Say so and move on — in the
+verdict column, where saying so is recorded.
+
+**Every listed slide also gets a wireframe in the report**, and any render can
+have one on demand:
+
+```bash
+scripts/wireframe.py render/slide-01.png     # one slide
+scripts/wireframe.py render/ --slides 1,7-9  # several
+```
+
+It draws the slide as a coarse grid of ink — ` ` to `@`, 64 × 24 — with the
+centroid, the widest blank band and the four margins. It says nothing about
+whether a slide is any good, and it is exact about the three things that go
+wrong most: a slide that is empty, a slide banded under its title, and a block
+that is not where the rest of the slide says it should be. It needs no model,
+which is the point: it is the visual evidence for a reviewer with no eyes, and a
+second opinion for one with them.
+
+```
+ 0|    .                                                           |
+ 1|    .:.--.:-:.-:::::=:::-::::--:-.-:--                          |
+   … sixteen blank rows …
+18|                  ----.=--:==--.--:==-:-=---=-                  |
+ink 6% · centroid x=0.45 y=0.47 · largest blank band 67% of the height
+```
+
+That is a title slide nobody finished, and you can tell without seeing it.
 
 ## The vision reviewer
 
@@ -165,8 +220,27 @@ satisfied is a check that gets ignored — taking the measured ones with it. Rea
 the finding, look at the slide, decide. A reviewer that is down, slow, or
 talking nonsense costs you nothing: the run says nobody looked and carries on.
 
-This does not replace your own eyes where you have them. It replaces *nothing*,
-which is what a text-only build model has.
+**But advisory is not the same as dismissible on argument.** A finding here is
+dismissed only by a measurement you show:
+
+| It says | Settle it with |
+|---|---|
+| text in the wrong language | `qa.py --template`, and `footer_text(page)` for the footer |
+| a diagram off-centre, a block not where it belongs | `wireframe.py` — the centroid and the margins |
+| a slide that reads as empty | the ink share and the blank band, same place |
+| cards at different heights, peers styled differently | `probe.py` — the geometry and the colours, per shape |
+| two things printed over each other | `qa.py` — the collision check measures the ink |
+
+The failure this table exists for: a run with no eyes was told, five times over,
+that the footer was in the wrong language. It searched the slide's shapes for
+the string, found nothing — the footer is a page property — and recorded the
+finding as a hallucination in its own report. The search was wrong, the reviewer
+was right, and the deck shipped in two languages. **If nothing can settle it,
+the finding stands.**
+
+This does not replace your own eyes where you have them. Where you have none it
+is one of two things you do have, the other being `wireframe.py` — and unlike
+the reviewer, the wireframe cannot invent anything.
 
 ## Visual QA
 
@@ -203,7 +277,9 @@ when the numbering has to line up.
 contact sheet to scan, then per-slide renders only for the slides that look
 wrong. That is a great deal cheaper than reading fifteen PNGs one at a time.
 
-**If you cannot see images**, say so rather than claiming the deck is checked.
+**If you cannot see images**, run `wireframe.py` over the render directory, say
+that is what you worked from, and name the slides you could not verify — rather
+than claiming the deck is checked.
 Set `$PRESENTATION_REVIEW_MODEL` (see *The vision reviewer* above) so something
 looks — then report what it found *as a model's opinion*, run `qa.py`, and
 still ask the user to eyeball the slides, naming them. A build model without

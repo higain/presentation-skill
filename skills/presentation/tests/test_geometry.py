@@ -523,5 +523,215 @@ class EmptyBand(unittest.TestCase):
         self.assertEqual((widest, at), (900, 0))
 
 
+class BalancedLines(unittest.TestCase):
+    """The wrap behind ``D.statement``.
+
+    A greedy wrap fills each line to the brim and drops the remainder on the
+    last one, which is how a statement slide shipped ending on lines reading
+    ``it --``, ``an``, ``email.``
+    """
+
+    SENTENCE = ("We are deploying software that reliably follows instructions "
+                "from anyone who can get text in front of it \u2014 including "
+                "anyone who can send us an email.")
+
+    def test_no_line_is_a_stub(self):
+        lines = D.balance_lines(self.SENTENCE, 26000, 32.0, D.BOLD)
+        widths = [D.text_width_est(line, 32.0, D.BOLD) for line in lines]
+        # The point of balancing: the last line is not a fragment of the rest.
+        self.assertGreater(min(widths), max(widths) * 0.5)
+
+    def test_it_never_costs_a_line(self):
+        for width in (12000, 20000, 26000, 30000):
+            greedy = D.wrap_words(self.SENTENCE, width, 24.0, D.BOLD)
+            balanced = D.balance_lines(self.SENTENCE, width, 24.0, D.BOLD)
+            self.assertEqual(len(balanced), len(greedy), width)
+
+    def test_no_line_is_wider_than_the_box(self):
+        lines = D.balance_lines(self.SENTENCE, 26000, 32.0, D.BOLD)
+        for line in lines:
+            self.assertLessEqual(D.text_width_est(line, 32.0, D.BOLD), 26000)
+
+    def test_a_short_string_is_left_alone(self):
+        self.assertEqual(D.balance_lines("Two words", 26000, 32.0), ["Two words"])
+
+    def test_a_statement_refuses_a_hand_broken_string(self):
+        with self.assertRaises(ValueError) as caught:
+            D.statement(None, None, D.Box(0, 0, 20000, 8000), "one\ntwo")
+        self.assertIn("newline", str(caught.exception))
+
+    def test_an_em_dash_is_a_full_em(self):
+        # Counted as an ordinary letter it was the few percent that let a line
+        # LibreOffice would re-break look like one that fits.
+        self.assertGreater(D.advance_em("\u2014"), D.advance_em("n"))
+
+
+class DesignVariety(unittest.TestCase):
+    """The line that says a deck was built on one design.
+
+    Four separate runs against the house template built ``[8] * N``, and
+    nothing in the report said so.
+    """
+
+    def setUp(self):
+        from qa import design_note
+        self.note = design_note
+
+    def test_nothing_recorded_says_nothing(self):
+        self.assertIsNone(self.note([]))
+
+    def test_one_design_is_called_out(self):
+        note = self.note([8] * 15, catalog_size=21)
+        self.assertIn("100%", note)
+        self.assertIn("21", note)
+
+    def test_a_varied_deck_is_reported_without_the_lecture(self):
+        note = self.note([7, 8, 12, 13, 8, 1], catalog_size=21)
+        self.assertIn("6 slide(s) on 5 design(s)", note)
+        self.assertNotIn("%", note)
+
+    def test_the_spread_leads_with_the_commonest(self):
+        self.assertIn("3x design 8", self.note([8, 1, 8, 8, 1]))
+
+
+class Wireframe(unittest.TestCase):
+    """The ink map a reviewer with no eyes reads instead of the PNG."""
+
+    def setUp(self):
+        import wireframe
+        self.wf = wireframe
+
+    def grid(self, rows, cols, painted):
+        return [[1.0 if (y, x) in painted else 0.0 for x in range(cols)]
+                for y in range(rows)]
+
+    def test_an_empty_slide_measures_empty(self):
+        self.assertEqual(self.wf.measure(self.grid(10, 10, set()))["ink"], 0.0)
+
+    def test_the_centroid_finds_a_block_off_to_one_side(self):
+        painted = {(y, x) for y in range(4, 6) for x in range(0, 3)}
+        stats = self.wf.measure(self.grid(10, 10, painted))
+        self.assertLess(stats["cx"], 0.3)
+        self.assertAlmostEqual(stats["cy"], 0.5, places=1)
+
+    def test_the_blank_band_is_the_tallest_run(self):
+        stats = self.wf.measure(self.grid(10, 10, {(0, 0), (9, 0)}))
+        self.assertAlmostEqual(stats["band"], 0.8, places=2)
+        self.assertAlmostEqual(stats["band_at"], 0.1, places=2)
+
+    def test_margins_are_the_empty_gutters(self):
+        margins = self.wf.measure(self.grid(10, 10, {(5, 5)}))["margins"]
+        self.assertEqual(margins, (0.5, 0.4, 0.5, 0.4))
+
+    def test_a_blank_cell_draws_as_a_space(self):
+        drawn = self.wf.draw(self.grid(2, 2, {(0, 0)}))
+        self.assertEqual(drawn[1], "  ")
+        self.assertEqual(drawn[0][0], "@")
+
+
+class HouseStyle(unittest.TestCase):
+    """The palette and the type scale, read off the template's own profile.
+
+    Four runs against the house template wrote their own hex -- 0xE8730C for
+    orange, 0x6B3FA0 for purple -- and neither colour is anywhere in the deck.
+    """
+
+    def test_the_palette_is_the_template_s_own(self):
+        colours = D.palette()
+        self.assertIn("cyan", colours)
+        self.assertEqual(colours["cyan"], 0x009EE0)
+        # The two colours four runs invented are not in it, and never were.
+        self.assertNotIn(0xE8730C, colours.values())
+        self.assertNotIn(0x6B3FA0, colours.values())
+
+    def test_roles_resolve_to_colours(self):
+        self.assertEqual(D.color("accent"), D.color("cyan"))
+        self.assertEqual(D.color("alert"), D.palette()["red"])
+
+    def test_series_cycles_rather_than_running_out(self):
+        seven = D.series(7)
+        self.assertEqual(len(seven), 7)
+        self.assertEqual(seven[0], seven[len(D.series())])
+
+    def test_an_unknown_colour_names_the_real_ones(self):
+        with self.assertRaises(ValueError) as caught:
+            D.color("purple")
+        self.assertIn("cyan", str(caught.exception))
+
+    def test_the_scale_descends_and_bottoms_out_at_the_floor(self):
+        scale = D.type_scale()
+        self.assertGreater(scale["title"], scale["footnote"])
+        self.assertEqual(min(scale.values()), D.MIN_READABLE_PT)
+
+    def test_an_unknown_role_names_the_real_ones(self):
+        with self.assertRaises(ValueError) as caught:
+            D.size_for("tiny")
+        self.assertIn("footnote", str(caught.exception))
+
+    def test_most_brand_colours_are_fills_not_text(self):
+        # The point of documenting the ratio: these are chosen against paper,
+        # not against the 3:1 a word has to clear.
+        self.assertLess(D.contrast_ratio(D.color("orange"), 0xFFFFFF), 3.0)
+        self.assertGreater(D.contrast_ratio(D.color("anthracite"), 0xFFFFFF), 4.5)
+
+
+class VennLabels(unittest.TestCase):
+    """Labels belong to the lobe they name.
+
+    They used to be pushed out along the ray from the figure's centre until
+    they cleared the circle, which for a wide label on a diagonal is a long way
+    -- so the two lower labels of a three-lobe Venn ended up nearer the slide's
+    corners than the circles they name.
+    """
+
+    LABELS = ["PRIVATE DATA", "UNTRUSTED CONTENT", "EXTERNAL COMMUNICATION"]
+
+    def labels(self, r=3000):
+        return D._venn_labels(0, 0, r, 3, self.LABELS)
+
+    def test_each_label_touches_its_own_lobe(self):
+        r = 3000
+        centres = D.venn_geometry(0, 0, r, 3)
+        for (lx, ly, lw, lh, size, lines), (ex, ey) in zip(self.labels(r),
+                                                           centres):
+            ink_w = max(D.text_width_est(ln, size, D.BOLD) for ln in lines)
+            ink_h = len(lines) * size * 35.28 * 1.22
+            cx, cy = lx + lw / 2, ly + lh / 2
+            # Nearest edge of the label to the lobe's centre: just outside it,
+            # never a multiple of the radius away.
+            dx = max(0.0, abs(cx - ex) - ink_w / 2)
+            dy = max(0.0, abs(cy - ey) - ink_h / 2)
+            gap = (dx * dx + dy * dy) ** 0.5
+            self.assertGreaterEqual(gap, r * 0.9)
+            self.assertLessEqual(gap, r * 1.35)
+
+    def test_the_top_lobe_is_labelled_above_it_on_its_own_axis(self):
+        (lx, ly, lw, lh, _, _) = self.labels()[0]
+        ex, ey = D.venn_geometry(0, 0, 3000, 3)[0]
+        self.assertAlmostEqual(lx + lw / 2, ex, delta=1)
+        self.assertLess(ly + lh / 2, ey)
+
+    def test_the_lower_lobes_are_labelled_beside_them(self):
+        r = 3000
+        centres = D.venn_geometry(0, 0, r, 3)
+        left, right = self.labels(r)[1], self.labels(r)[2]
+        self.assertLess(left[0] + left[2] / 2, centres[1][0])     # to its left
+        self.assertGreater(right[0] + right[2] / 2, centres[2][0])  # to its right
+        # On the lobe's own centre line, not dragged down the diagonal.
+        self.assertAlmostEqual(left[1] + left[3] / 2, centres[1][1], delta=1)
+
+    def test_a_labelled_figure_still_fits_the_box_it_was_given(self):
+        box = D.Box(2031, 3545, 27972, 12157)
+        cx, cy, r = D.venn_fit(box, 3, self.LABELS)
+        bounds = D.venn_bounds(cx, cy, r, 3, self.LABELS)
+        self.assertLessEqual(bounds.w, box.w + 1)
+        self.assertLessEqual(bounds.h, box.h + 1)
+
+    def test_a_centre_given_as_a_list_keeps_its_own_lines(self):
+        size, lines = D._centre_fit(["DATA", "LEAK"], True, 2000)
+        self.assertEqual(lines, ["DATA", "LEAK"])
+        self.assertGreater(size, 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

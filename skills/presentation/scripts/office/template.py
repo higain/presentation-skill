@@ -211,6 +211,55 @@ def _apply(target, props):
             pass
 
 
+# ------------------------------------------------------------------ footer
+
+def footer_text(page):
+    """The footer line printed on ``page``, or ``""``.
+
+    **Not a shape.**  A ``.pptx`` footer is a ``<p:ph type="ftr">`` placeholder
+    that Impress absorbs into the page's own ``FooterText`` property, so
+    ``walk_shapes`` never sees it and neither does anything built on top of
+    ``walk_shapes`` -- ``retext``, ``find_shapes``, every check in ``qa.py``.
+
+    That gap shipped four decks.  All four were English, all four were built on
+    a German template, and all four carried its ``Gegenstand | Titel | Ort |
+    Datum`` on every slide while their reports said *leftover template wording:
+    clean*.  One of the four went looking for the string, searched the shapes,
+    found nothing, and concluded the reviewer that had flagged it was
+    hallucinating.
+    """
+    try:
+        return page.FooterText if page.IsFooterVisible else ""
+    except Exception:
+        return ""
+
+
+def set_footer(page, text):
+    """Set the footer line on ``page``.  ``None`` hides it.
+
+    One call per page -- it is a page property, not a master one, so setting it
+    on the master changes nothing that renders::
+
+        for page in slides(doc):
+            set_footer(page, "The Lethal Trifecta · Board briefing · 2026")
+
+    ``build_deck(..., footer=...)`` does this for a whole deck.  Returns the
+    text now in force.
+    """
+    try:
+        if text is None:
+            page.IsFooterVisible = False
+            return ""
+        page.FooterText = str(text)
+        page.IsFooterVisible = True
+        return str(text)
+    except Exception:
+        # Not every format carries one: an .odp page without a footer field,
+        # a page property this LibreOffice build does not expose.  Nothing to
+        # do about it here, and it must not lose you the deck.
+        return ""
+
+
 # ------------------------------------------------------------- measurement
 
 def text_width(doc, page, text, like):
@@ -532,7 +581,16 @@ COLLISION = 0.25
 # A badge, a tick, a bullet glyph, a step number.  Templates place these on the
 # corner of the tile they mark, so they overlap it by design -- six of the house
 # template's own slides do it -- and reporting them buries the finding that
-# matters.  Only blocks of actual words are compared.
+# matters.
+#
+# So a *pair* of these is not compared.  A pair where one side is a block of
+# words is, and skipping those cost a shipped deck: a source line drawn under a
+# table ran straight through its last row, and the row's cells held "?" and "✓".
+# Both sides were tested against this number, one side failed, and the check
+# that exists for exactly that defect never looked at the pair.  Where one side
+# is short the two are compared on their plain rectangles rather than on the
+# generous grown ones, which keeps a table's own cells from queueing up for
+# measurement against the neighbours they sit next to by design.
 MIN_COLLISION_CHARS = 4
 
 
@@ -548,7 +606,8 @@ def colliding(doc, page):
     passes, and the render shows two sentences printed through each other.
 
     Measured on the ink (see :func:`ink_box`), not on the boxes, or every
-    designed slide reports.
+    designed slide reports.  A pair of glyphs -- two ticks, a step number and a
+    bullet -- is not compared at all; see :data:`MIN_COLLISION_CHARS`.
     """
     # Two passes.  Measuring ink costs two UNO layout round trips per shape, so
     # the cheap shape rectangles go first: a pair whose *boxes* miss each other
@@ -558,40 +617,49 @@ def colliding(doc, page):
     for address, shape in walk_shapes(page):
         try:
             text = " ".join(shape.getString().split())
-            if len(text) < MIN_COLLISION_CHARS:
+            if not text:
                 continue
             pos, size = shape.getPosition(), shape.getSize()
         except Exception:
             continue
         if size.Width > 0 and size.Height > 0:
+            plain = (pos.X, pos.Y, size.Width, size.Height)
             # Grown by its own height above and below: text that overruns its
             # box is still on the slide, and the pair it collides with is one
             # the raw rectangles would have said could not meet.  Generous on
             # purpose -- this pass only decides what is worth measuring.
-            candidates.append((address, shape,
-                               (pos.X, pos.Y - size.Height,
-                                size.Width, size.Height * 3)))
+            grown = (pos.X, pos.Y - size.Height, size.Width, size.Height * 3)
+            candidates.append((address, shape, plain, grown,
+                               len(text) < MIN_COLLISION_CHARS))
+
+    def _meet(a, b):
+        return (min(a[0] + a[2], b[0] + b[2]) > max(a[0], b[0])
+                and min(a[1] + a[3], b[1] + b[3]) > max(a[1], b[1]))
 
     touching = set()
     for i in range(len(candidates)):
         for j in range(i + 1, len(candidates)):
-            a, b = candidates[i][2], candidates[j][2]
-            if (min(a[0] + a[2], b[0] + b[2]) > max(a[0], b[0])
-                    and min(a[1] + a[3], b[1] + b[3]) > max(a[1], b[1])):
+            short_i, short_j = candidates[i][4], candidates[j][4]
+            if short_i and short_j:
+                continue                      # two glyphs: see MIN_COLLISION_CHARS
+            which = 2 if (short_i or short_j) else 3
+            if _meet(candidates[i][which], candidates[j][which]):
                 touching.add(i)
                 touching.add(j)
 
     boxes = []
     for i in sorted(touching):
-        address, shape, _ = candidates[i]
+        address, shape, _, _, short = candidates[i]
         ink = ink_box(doc, page, shape)
         if ink is not None:
-            boxes.append((address, ink))
+            boxes.append((address, ink, short))
 
     out = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
-            (a_addr, a), (b_addr, b) = boxes[i], boxes[j]
+            (a_addr, a, a_short), (b_addr, b, b_short) = boxes[i], boxes[j]
+            if a_short and b_short:
+                continue
             over_w = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
             over_h = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
             if over_w <= 0 or over_h <= 0:
@@ -1074,9 +1142,9 @@ _PROFILE_PATH = (Path(__file__).resolve().parent.parent.parent
 def template_profile():
     """Per-template facts shipped beside the asset, or ``{}`` if there are none.
 
-    Currently just the annotation strings.  Matched on the whole string, so a
-    slide titled "Vorgehen zum Bilden eines Modells" is not mistaken for the
-    "Vorgehen:" instruction block.
+    The annotation strings, the palette and the type scale.  Annotations are
+    matched on the whole string, so a slide titled "Vorgehen zum Bilden eines
+    Modells" is not mistaken for the "Vorgehen:" instruction block.
     """
     global _PROFILE
     if _PROFILE is None:
@@ -1085,6 +1153,82 @@ def template_profile():
         except (OSError, ValueError):
             _PROFILE = {}
     return _PROFILE
+
+
+def _hex(value):
+    """``"#009EE0"`` or ``9494240`` to an int, or ``None``."""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).lstrip("#"), 16)
+    except (TypeError, ValueError):
+        return None
+
+
+def palette(profile=None):
+    """The template's own colours, ``{name: int}``, or ``{}``.
+
+    **Counted off the asset, not chosen.**  Every colour in it is one the
+    template fills a shape or sets text in; the keys under ``_roles`` say which
+    one means accent, alert and so on, and ``series`` is the order to take them
+    in for the nth thing on a chart or a diagram.
+
+    Use it rather than inventing hex.  Four runs against this template picked
+    their own orange (``0xE8730C``) and purple (``0x6B3FA0``) -- neither colour
+    appears anywhere in the deck, so four "corporate" decks went out in colours
+    the corporation does not use, and no check could see it.  For a deck with no
+    template this is empty, and the palette is a design decision:
+    ``references/design.md``.
+    """
+    raw = (template_profile() if profile is None else profile).get("palette", {})
+    out = {}
+    for name, value in raw.items():
+        if name.startswith("_"):
+            continue
+        colour = _hex(value)
+        if colour is not None:
+            out[name] = colour
+    return out
+
+
+def palette_roles(profile=None):
+    """``{"accent": int, "alert": int, "ok": int, "series": [int, ...]}``.
+
+    The same colours as :func:`palette`, resolved through the profile's
+    ``_roles`` so a build script can ask for "the accent" without knowing that
+    this template's accent is cyan.
+    """
+    raw = (template_profile() if profile is None else profile).get("palette", {})
+    names = palette(profile)
+    out = {}
+    for role, value in (raw.get("_roles") or {}).items():
+        if isinstance(value, list):
+            resolved = [names[n] for n in value if n in names]
+        else:
+            resolved = names.get(value)
+        if resolved:
+            out[role] = resolved
+    return out
+
+
+def type_scale(profile=None):
+    """The template's own type sizes in points, ``{role: float}``, or ``{}``.
+
+    Counted the same way: these are the sizes the template types at.  A build
+    script that picks its own lands a footnote at 9pt on one slide and 12pt on
+    the next, and a caption smaller than anything the designer ever set --
+    which is legible on a monitor and not from a seat.
+    """
+    raw = (template_profile() if profile is None else profile).get("type_scale", {})
+    out = {}
+    for role, value in raw.items():
+        if role.startswith("_"):
+            continue
+        try:
+            out[role] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def strip_annotations(page, exact=None, prefixes=None, profile=None):

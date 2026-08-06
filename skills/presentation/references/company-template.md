@@ -31,22 +31,37 @@ replaced `[1]` on every slide and `[2]` on none — shipping that German label o
 design you are using and account for all of them: replace the ones you want, and
 `strip_annotations` or draw over the ones you do not.
 
-**The footer is on the master, not on the slide.** `Gegenstand | Titel | Ort |
-Datum` renders on every content slide and no per-slide check can see it —
-`walk_shapes(page)` does not reach the master, so a deck with the placeholder
-still in it reports clean. It is the template's own field text, so leaving it is
-a defensible default; if the user wants it filled, set it on the master page
-rather than per slide, and expect it to be visible in every render you look at.
+**The footer is a page property, not a shape and not the master.** `Gegenstand
+| Titel | Ort | Datum` renders along the bottom of every content slide. It is a
+`ftr` placeholder that Impress exposes as `page.FooterText`, so `walk_shapes`
+never reaches it and neither does `retext`, `find_shapes` or anything that
+searches the slide's text.
+
+**It is German, and a deck in any other language must set or hide it.** Four
+runs shipped it under English slides — every slide of every deck — and one of
+them searched the shapes for the string, found nothing, and concluded the
+reviewer that had flagged it was wrong. Set it once for the whole deck, or per
+page in `fill`:
+
+```python
+build_deck("assets/company-template.pptx", "out.pptx", designs, fill=fill,
+           footer="The Lethal Trifecta · Board briefing · 2026")   # None hides it
+
+from office.template import set_footer, footer_text
+set_footer(page, "…")          # per page, inside fill
+```
+
+`qa.py` reports it when it is still the template's, so this is a finding now
+rather than a thing to remember.
 
 **Text inside groups.** Designs 4, 6, 9, 10, 13, 14, 15, 16, 17, 19, 21 carry text in grouped shapes, which `shapes(page)` cannot reach. `retext`, `find_shapes` and `qa.py` all walk groups, and `probe.py` lists them indented as `[6.2]`. Each entry below notes its count. **Retext by wording, never by index.**
 
 ## Decision table — content → template slide
 
-Apply top to bottom; first match wins.
+Apply top to bottom; first match wins. **Read to the bottom before you pick** — the canvas row is last, and it means what it says: nothing above fits.
 
 | When the content is… | Use slide | Design | Because |
 |---|---|---|---|
-| **a diagram, chart, matrix, comparison — anything no row below fits** | `8` | **Canvas** | Strip design 8 back with `draw.canvas(page, keep=(0, 1, 2, 3))` and draw in the area the body vacates: **2031, 3545 to 30003, 15702**. You keep the master, background, chrome, fonts and margins. **Reach for this rather than forcing the content into the nearest bullet list.** |
 | deck opener | `7` | Section Divider Dark | Dark section divider provides a high-impact start; slide 1 is a similar alternative. |
 | agenda | `8` | Content slide with navigator | Content slide with navigator allows for a list of topics with a progress indicator. |
 | section start | `1` | Section divider | Standard section divider for thematic shifts; slide 5 and 7 are alternatives. |
@@ -59,6 +74,7 @@ Apply top to bottom; first match wins.
 | a quote | `5` | Section Divider | Minimalist centered text slot is best for high-impact quotes. |
 | people | `2` | Project Organization Chart | Project Organization Chart is designed for team roles and governance. |
 | closing slide | `7` | Section Divider Dark | Dark section divider provides a clean, definitive end to the deck. |
+| **a diagram, chart, matrix, comparison — anything no row above fits** | `8` | **Canvas** | Strip design 8 back with `draw.canvas(page, keep=(0, 1, 2, 3))` and draw in the area the body vacates: **2031, 3545 to 30003, 15702**. You keep the master, background, chrome, fonts and margins. Better than forcing the content into the nearest bullet list — and worse than a design that already fits it. |
 
 **Variety rule:** Interleave standard bullet slides (8) with visual process flows (13, 18), analysis matrices (6, 12), and high-impact dividers (1, 7) to break the monotony of text.
 
@@ -73,8 +89,10 @@ built: design 8 as a canvas, with title, subtitle and date drawn in the area the
 body text vacates. Do not leave the deck without one.
 
 **Neither is there a design for a diagram.** That is what the canvas row at the
-top of the table is for, and on a deck with any analytical content you should
-expect to use it several times.
+bottom of the table is for, and on a deck with any analytical content you should
+expect to use it several times — several, not every time. `build_deck` records
+the design list on the file and `qa.py` prints the spread, so a deck that is
+100% canvas says so in its own report.
 
 **Display titles hold one line.** These slots set their title large, in a gap the master's decoration leaves. A second line crosses that decoration, and nothing on the page collides — `qa.py` cannot see it. Measured budgets:
 
@@ -85,6 +103,47 @@ expect to use it several times.
 | `7` | 24575 | 60 | ~25 characters |
 
 Over budget, in order of preference: **shorten the title**; or `shrink_to_fit(doc, page, shape, max_lines=1)`. Do not add a second text box beside the placeholder.
+
+## Palette and type scale
+
+**Counted off the asset, not chosen.** Every colour here is one this template fills a shape or sets text in, and every size is one it types at. Take them from `office.draw` rather than writing hex in a build script:
+
+```python
+D.color("cyan")        D.color("accent")     # by name, or by role
+D.series(3)            # the first three, in order, for n things
+D.text(..., role="footnote")                 # the size, by name
+```
+
+| Colour | Hex | Reads as text on white |
+|---|---|---|
+| `cyan` | `#009EE0` | 3.0:1 — headlines only |
+| `orange` | `#F29400` | 2.3:1 — **no — fill colour** |
+| `lime` | `#97BF0D` | 2.1:1 — **no — fill colour** |
+| `green` | `#009036` | 4.2:1 — headlines only |
+| `red` | `#E2001A` | 4.9:1 — yes |
+| `sky` | `#8DDDFF` | 1.5:1 — **no — fill colour** |
+| `grey` | `#CBCCCB` | 1.6:1 — **no — fill colour** |
+| `grey_light` | `#D9D9D9` | 1.4:1 — **no — fill colour** |
+| `anthracite` | `#4A4A4A` | 8.9:1 — yes |
+| `black` | `#000000` | 21.0:1 — yes |
+| `white` | `#FFFFFF` | 1.0:1 — **no — fill colour** |
+
+**Roles:** `accent` → `cyan`, `alert` → `red`, `ok` → `green`.
+**Series order:** `cyan`, `orange`, `lime`, `green`, `sky` — the nth colour for the nth thing on a figure.
+
+Most of these are **fill** colours: a brand picks them against white paper, not against the 3:1 a word has to clear to be read from a seat. Set text in them only where the table above says so — `qa.py` reports the rest.
+
+| Role | pt |
+|---|---|
+| `display` | 60 |
+| `title` | 16 |
+| `subtitle` | 14 |
+| `body` | 14 |
+| `label` | 12 |
+| `caption` | 10 |
+| `footnote` | 9 |
+
+`D.text(..., role=…)` sets these; `D.size_for(role)` is the number. Anything under 9pt is smaller than this template ever types and `qa.py` reports it.
 
 **Why the divider budgets are hard limits.** On designs 1, 5 and 7 the title
 sits in the gap between the two edges of a big white triangle. One line lands in

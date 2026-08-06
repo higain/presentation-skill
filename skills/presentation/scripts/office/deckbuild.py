@@ -35,6 +35,7 @@ from pathlib import Path
 from .impress import (
     load_document, save_as, slides, duplicate_slide, delete_slide,
 )
+from .template import set_footer
 
 #: Set by ``make_deck.py`` around the build script it runs.  QA on a 15-slide
 #: deck is a full LibreOffice load and about a minute of measuring, and
@@ -42,6 +43,17 @@ from .impress import (
 #: -- the documented recipe was paying for it twice.  A build script run on its
 #: own still QAs itself.
 SKIP_QA_ENV = "PRESENTATION_SKIP_BUILD_QA"
+
+#: ``footer=KEEP`` -- the default -- leaves the template's footer alone, which
+#: is not the same instruction as ``footer=None`` (hide it) or ``footer=""``
+#: (blank it).  A plain ``None`` default could not tell the first from the
+#: second.
+KEEP = object()
+
+#: Document property the design list is written to, so what a deck was built
+#: from survives the build script and can be read back off the file.  ``qa.py``
+#: reports the variety from it; nothing depends on it being there.
+DESIGNS_PROPERTY = "Designs"
 
 _SLDID_RE = re.compile(r'<p:sldId[^>]*r:id="rId\d+"[^>]*/>')
 _SLDIDLST_RE = re.compile(r"<p:sldIdLst>.*?</p:sldIdLst>", re.S)
@@ -135,11 +147,22 @@ def find_template(template) -> Path:
     )
 
 
-def build_deck(template, out, designs, fill=None, qa=True) -> Path:
+def build_deck(template, out, designs, fill=None, qa=True, footer=KEEP) -> Path:
     """Write ``out``: one slide per entry of ``designs``, in that order.
 
     ``designs`` holds 1-based slide numbers in ``template`` -- the numbers a
-    layout catalog cites -- and may repeat one.
+    layout catalog cites -- and may repeat one.  **Repeating one for the whole
+    deck is the failure mode to watch**: four separate runs against the house
+    template built ``[8] * N``, because design 8 stripped to a canvas is the
+    documented way to draw anything, and a deck of nothing but drawn white
+    slides uses none of the twenty designs it was handed.  The list is recorded
+    on the file and ``qa.py`` reports what share of the deck sits on one design.
+
+    ``footer`` sets the footer line on every slide -- the template's own is a
+    page property that ``retext`` cannot reach, so a deck built from a template
+    in another language keeps that language along the bottom of every slide
+    unless this is passed.  ``footer=None`` hides it; the default leaves the
+    template's alone.
 
     ``fill(doc, page, slot, design)``, if given, is called on each new page
     before the save.  This is where **all** of the content goes: retexting with
@@ -171,7 +194,7 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
 
     shutil.copyfile(template, out)
     try:
-        return _build(template, out, designs, fill, qa)
+        return _build(template, out, designs, fill, qa, footer)
     except BaseException:
         # The output at this point is a copy of the template -- every design in
         # it, none of your content.  Left on disk it looks like a built deck,
@@ -181,7 +204,7 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
         raise
 
 
-def _build(template: Path, out: Path, designs, fill, qa) -> Path:
+def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP) -> Path:
     """The body of :func:`build_deck`, on an ``out`` that already exists."""
     doc = load_document(out, read_only=False)
     try:
@@ -206,10 +229,17 @@ def _build(template: Path, out: Path, designs, fill, qa) -> Path:
         if sorted(order) != list(range(len(made))):
             raise RuntimeError(f"could not place every duplicate: {order}")
 
+        # Before ``fill``, so a build script that wants a per-slide footer can
+        # still set its own over the top.
+        if footer is not KEEP:
+            for page in made:
+                set_footer(page, footer)
+
         if fill is not None:
             for slot, page in enumerate(made):
                 _call_fill(fill, doc, page, slot, designs[slot])
 
+        _record_designs(doc, designs)
         save_as(doc, out)
     finally:
         doc.close(False)
@@ -217,6 +247,44 @@ def _build(template: Path, out: Path, designs, fill, qa) -> Path:
     reorder_pptx(out, order)
     if qa and not os.environ.get(SKIP_QA_ENV):
         _report_qa(out, template)
+    return out
+
+
+def _record_designs(doc, designs):
+    """Write the design list onto the document as a custom property.
+
+    Which designs a deck used is knowable only while the build script is
+    running -- the built file has twenty duplicated slides and no memory of
+    which template page each came from -- and it is exactly what the run after
+    this one wants to know.  A user-defined document property survives the
+    ``.pptx`` save (it lands in ``docProps/custom.xml``) and costs nothing.
+
+    Best effort: a format or a build that will not take one loses the variety
+    line in the report and nothing else.
+    """
+    value = ",".join(str(d) for d in designs)
+    try:
+        props = doc.DocumentProperties.UserDefinedProperties
+        try:
+            props.addProperty(DESIGNS_PROPERTY, 0, value)
+        except Exception:                     # already there, from the template
+            props.setPropertyValue(DESIGNS_PROPERTY, value)
+    except Exception:
+        pass
+
+
+def recorded_designs(doc):
+    """The design list :func:`build_deck` recorded, or ``[]``."""
+    try:
+        raw = doc.DocumentProperties.UserDefinedProperties.getPropertyValue(
+            DESIGNS_PROPERTY)
+    except Exception:
+        return []
+    out = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
     return out
 
 
@@ -237,11 +305,13 @@ def _report_qa(out: Path, template: Path):
         except ImportError:
             return
     try:
-        issues, checked, sparse = check(out, template=template)
+        issues, checked, sparse, notes = check(out, template=template)
     except Exception as e:                    # QA must never lose you the deck
         print(f"[build_deck] QA could not run: {e}")
         return
     print(f"\n[build_deck] {out.name}: {checked} slide(s) built.")
+    for note in notes:
+        print(f"[build_deck] {note}")
     if issues:
         print(f"[build_deck] {len(issues)} QA issue(s) -- fix these before shipping:")
         for issue in issues:
