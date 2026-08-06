@@ -1,0 +1,32 @@
+{
+  "slide": 5,
+  "layout": 20,
+  "master": "Section_dark",
+  "recovered_from": "company-template.md.bak",
+  "name": "Section Divider",
+  "purpose": "To signal the start of a new section or chapter within the presentation.",
+  "use_when": "A new high-level topic is introduced that requires a visual break.",
+  "avoid_when": "Detailed content, lists, or data-heavy information are needed.",
+  "notes": "The text slot is centered within the decorative triangle and is intended for short identifiers or section titles only. **One line only** — ~18 characters at 60pt; a second line crosses the triangle. See the divider budget above.",
+  "content_types": [
+    "section-divider",
+    "one-big-idea"
+  ],
+  "capacity": {
+    "headline": false,
+    "body_slots": 1,
+    "max_bullets_per_body": 1,
+    "images": 0,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a white outlined stylized triangle",
+      "role": "decorative"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

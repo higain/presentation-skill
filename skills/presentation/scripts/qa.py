@@ -47,6 +47,9 @@ SKILL.md.
 """
 
 import argparse
+import hashlib
+import json
+import os
 import re
 import subprocess
 import sys
@@ -185,10 +188,90 @@ def _collision_key(reason):
     return frozenset(re.findall(r"'((?:[^']|\\')*)'", reason)[:2])
 
 
+#: Where a computed baseline is remembered between runs.  Override with
+#: ``$PRESENTATION_CACHE_DIR``; set ``$PRESENTATION_NO_CACHE`` to skip it.
+CACHE_DIR_ENV = "PRESENTATION_CACHE_DIR"
+NO_CACHE_ENV = "PRESENTATION_NO_CACHE"
+
+
+def _cache_dir():
+    override = os.environ.get(CACHE_DIR_ENV)
+    if override:
+        return Path(override)
+    base = os.environ.get("XDG_CACHE_HOME") or (Path.home() / ".cache")
+    return Path(base) / "presentation-skill"
+
+
+def _baseline_key(path):
+    """A cache key over the template *and* the code that measures it.
+
+    Hashing the checker sources as well as the template means editing a rule in
+    ``qa.py`` or ``office/template.py`` invalidates every cached baseline by
+    itself.  A cache that can serve an answer the current code would not
+    produce is worse than no cache: it hides exactly the finding someone just
+    taught the checker to make.
+    """
+    h = hashlib.sha256()
+    h.update(Path(path).read_bytes())
+    for src in (Path(__file__).resolve(),
+                Path(__file__).resolve().parent / "office" / "template.py"):
+        try:
+            h.update(src.read_bytes())
+        except OSError:                     # running from a zip or read-only
+            return None
+    return h.hexdigest()[:32]
+
+
+def _baseline_load(cache_file):
+    try:
+        d = json.loads(cache_file.read_text())
+    except (OSError, ValueError):
+        return None
+    return _Baseline(
+        strings=d["strings"],
+        bleeds={(b[0], b[1]) for b in d["bleeds"]},
+        contrast={(c[0], c[1]) for c in d["contrast"]},
+        occlusion={(o[0], o[1]) for o in d["occlusion"]},
+        collisions={frozenset(c) for c in d["collisions"]},
+    )
+
+
+def _baseline_save(cache_file, base):
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        # Written via a temp file: two make_deck runs in parallel must never
+        # leave a half-written cache for a third to read.
+        tmp = cache_file.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({
+            "strings": sorted(base.strings),
+            "bleeds": [list(b) for b in base.bleeds],
+            "contrast": [list(c) for c in base.contrast],
+            "occlusion": [list(o) for o in base.occlusion],
+            "collisions": [sorted(c) for c in base.collisions],
+        }))
+        tmp.replace(cache_file)
+    except OSError:
+        pass                                # a cache that cannot write is fine
+
+
 def _template_baseline(path):
-    """Everything the template already does, in one document load."""
+    """Everything the template already does, in one document load.
+
+    **Cached on disk**, because it is a pure function of the template and it is
+    expensive: measured on the 21-design house template it is 37-43 s, against
+    29 s to check a 10-slide deck -- well over half of a QA run, paid again on
+    every build iteration.  The key covers the template bytes and the checker
+    sources, so any change to either recomputes it.
+    """
     if not path:
         return _Baseline()
+
+    key = None if os.environ.get(NO_CACHE_ENV) else _baseline_key(path)
+    cache_file = _cache_dir() / f"baseline-{key}.json" if key else None
+    if cache_file is not None:
+        cached = _baseline_load(cache_file)
+        if cached is not None:
+            return cached
 
     doc = load_document(path, read_only=True)
     try:
@@ -204,8 +287,11 @@ def _template_baseline(path):
     finally:
         doc.close(False)
 
-    return _Baseline(strings, offslide_baseline(path), contrast, occlusion,
+    base = _Baseline(strings, offslide_baseline(path), contrast, occlusion,
                      collisions)
+    if cache_file is not None:
+        _baseline_save(cache_file, base)
+    return base
 
 
 def _geometry(shape):

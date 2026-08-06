@@ -1,0 +1,48 @@
+{
+  "slide": 15,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Process Steps with Details",
+  "purpose": "To visualize a sequential process or list of steps where specific steps are highlighted with detailed explanatory text.",
+  "use_when": "Use when presenting a multi-step process where one or more steps require expanded descriptions or examples.",
+  "avoid_when": "Avoid for simple lists without detailed call-outs or for complex timelines with specific dates.",
+  "notes": "The layout uses a bracket-style visual connector to link specific process steps to their corresponding detail boxes on the right.",
+  "content_types": [
+    "process-steps",
+    "bulleted-content"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 7,
+    "max_bullets_per_body": 3,
+    "images": 0,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a pie chart icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a magnifying glass over a document icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a list with a magnifying glass icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a human head profile icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a bar chart with an upward arrow icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "slide": 18,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Process flow with images",
+  "purpose": "To visualize a linear multi-step process where each phase is supported by a representative image and a descriptive label.",
+  "use_when": "You need to show a 4-step sequence where each step requires a visual aid and a short caption.",
+  "avoid_when": "The process has more or fewer than four steps, or requires detailed bulleted explanations for each phase.",
+  "notes": "The layout is strictly locked to 4 columns; the chevron headers and bottom labels must be kept concise to avoid text overflow.",
+  "content_types": [
+    "process-steps",
+    "image-showcase"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 8,
+    "max_bullets_per_body": 1,
+    "images": 4,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a pie chart and line graph icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a compass icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a lightbulb icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a strategy map with X and O markers icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a magnifying glass over documents",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a hand drawing arrows on a blackboard",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "people looking at maps or blueprints on a table",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a movie clapperboard",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

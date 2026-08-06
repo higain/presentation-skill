@@ -1,0 +1,52 @@
+{
+  "slide": 16,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Process List",
+  "purpose": "To outline a sequential process or a series of steps with corresponding detailed descriptions.",
+  "use_when": "Use when presenting a linear workflow or a list of five key phases that require brief explanatory bullets.",
+  "avoid_when": "Avoid for complex diagrams, large data tables, or processes with more than five steps.",
+  "notes": "The layout features a central column of placeholder graphics that should be replaced with icons or visuals representing each process step.",
+  "content_types": [
+    "process-steps",
+    "bulleted-content"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 5,
+    "max_bullets_per_body": 3,
+    "images": 0,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a data table",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a funnel",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a bar chart with an upward arrow",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a funnel",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a document with charts",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a blue vertical arrow shape",
+      "role": "decorative"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

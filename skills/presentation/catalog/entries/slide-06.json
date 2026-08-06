@@ -1,0 +1,52 @@
+{
+  "slide": 6,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Analysis Matrix",
+  "purpose": "To present two parallel analysis streams (e.g., competitor vs. target group) with their respective findings.",
+  "use_when": "When you need to show a structured breakdown of two different analysis categories and their resulting outcomes.",
+  "avoid_when": "When presenting a linear process, a single deep-dive analysis, or data-heavy charts.",
+  "notes": "The layout uses a mirrored structure: left-side context, center image, and right-side detailed findings with icons.",
+  "content_types": [
+    "bulleted-content",
+    "comparison"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 6,
+    "max_bullets_per_body": 3,
+    "images": 2,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a laptop showing a chart on screen",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a hand holding a pen writing on a document",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "crossed swords icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a target/bullseye icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a speech bubble icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a document/checklist icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "slide": 4,
+  "layout": 20,
+  "master": "Default 36",
+  "recovered_from": "company-template.md.bak",
+  "name": "Project Timeline and Costing",
+  "purpose": "To present a detailed project schedule with associated effort (BT) and total cost calculations.",
+  "use_when": "When providing a detailed breakdown of project phases, milestones, and the resulting financial quote.",
+  "avoid_when": "When a high-level roadmap is needed without granular task-level effort or pricing.",
+  "notes": "The central table is a manual construction of shapes; the builder must ensure the total cost box (bottom right) is updated in sync with the table totals.",
+  "content_types": [
+    "timeline",
+    "metrics-kpi",
+    "bulleted-content"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 3,
+    "max_bullets_per_body": 4,
+    "images": 0,
+    "supports_chart": false
+  },
+  "imagery": []
+}

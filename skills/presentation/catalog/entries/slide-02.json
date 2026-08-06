@@ -1,0 +1,36 @@
+{
+  "slide": 2,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Project Organization Chart",
+  "purpose": "To visualize the project governance structure, key roles, and communication flow.",
+  "use_when": "When showing a project org chart with associated communication guidelines.",
+  "avoid_when": "When a simple list of team members or a complex multi-level corporate hierarchy is needed.",
+  "notes": "The left side is a fixed-structure org chart with 6 specific role boxes; the right side is for communication bullet points.",
+  "content_types": [
+    "bulleted-content",
+    "team-people"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 2,
+    "max_bullets_per_body": 6,
+    "images": 2,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a speech bubble icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a yellow square placeholder for a customer logo",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

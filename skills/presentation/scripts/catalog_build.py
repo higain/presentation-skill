@@ -24,6 +24,7 @@ capacity, and this script cannot tell that it did.
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -36,18 +37,28 @@ DISPLAY_PT = 32.0
 #: that would appear in a rule covering it.  Anything missing gets a warning in
 #: the catalog rather than silence: "there is no cover design" is exactly the
 #: kind of thing a deck-builder must be told once, loudly.
+#:
+#: Each entry is a *word stem*, matched at a word boundary -- ``compar`` covers
+#: "comparison" and "comparing", ``end`` covers "end" and "ending".  Matching
+#: these as bare substrings, which is what this did first, is silently wrong in
+#: the expensive direction: ``end`` is inside **agenda**, and the aggregation
+#: prompt demands an agenda row, so "there is no closing design" could never be
+#: reported for any template.  ``recommendations`` and ``trend`` hid it too.
 EXPECTED_RULES = [
     ("a cover or deck opener", ("opener", "cover", "title slide", "front")),
     ("an agenda", ("agenda", "contents", "overview")),
     ("a section divider", ("section", "divider", "chapter")),
     ("a single headline idea", ("headline", "one big", "single idea", "statement")),
     ("bulleted content", ("bullet", "prose", "body text", "standard content")),
-    ("a comparison", ("compar", "versus", " vs", "two things", "before/after")),
+    ("a comparison", ("compar", "versus", "vs", "two things", "before/after")),
     ("a process or timeline", ("process", "timeline", "roadmap", "phase", "step")),
     ("numbers or KPIs", ("kpi", "number", "metric", "financial", "cost")),
-    ("a chart", ("chart", "graph", "data")),
+    # No bare "data": a row about "customer data" is not a chart design, and
+    # matching it hides the gap.  "chart" and "graph" name the thing itself.
+    ("a chart", ("chart", "graph", "plot")),
     ("a quote", ("quote", "testimonial")),
-    ("people", ("people", "team", "org", "person")),
+    # "person" would match "personal"; the words a real rule uses are these.
+    ("people", ("people", "team", "org chart", "personnel", "headshot")),
     ("a closing slide", ("closing", "close", "final", "thank", "end")),
 ]
 
@@ -78,7 +89,7 @@ def _capacity(cap):
 def _imagery(entry, structure):
     """What the model saw, cross-checked against how many pictures there are."""
     seen = entry.get("imagery") or []
-    described = " ; ".join(
+    described = "; ".join(
         f"{i.get('depicts', '?')} ({i.get('role', '?')})" for i in seen)
     count = len(structure.get("images", []))
     if not seen:
@@ -88,7 +99,47 @@ def _imagery(entry, structure):
     return described
 
 
-def _entry_block(number, entry, structure):
+#: The places an overrides file may splice prose into the generated catalog.
+#: ``design-N`` is accepted for any design as well.
+ANCHORS = ("header", "after-decision-table", "before-design-entries",
+           "design-entries-intro", "footer")
+
+
+def _load_overrides(path):
+    """``{anchor: markdown}`` from a file of ``## anchor`` sections.
+
+    **The reason this exists.**  Everything below the model's judgement is
+    generated, so a reviewer who improves the catalog by editing it improves a
+    file the next run overwrites.  That is not hypothetical: the house
+    catalog's hardest-won paragraphs -- that the footer lives on the master and
+    no per-slide check can see it, that design 20 is a dense slide rather than
+    a blank one, that a title slide has to be built on a canvas because the
+    template has no cover -- existed only in the shipped file, while the same
+    file had silently fallen twelve retext keys behind its own template.
+    Prose goes here; measurements come from the extractor; neither overwrites
+    the other.
+    """
+    if not path:
+        return {}
+    text = Path(path).read_text(encoding="utf-8")
+    blocks = {}
+    # An anchor is a level-2 heading holding exactly one word, and the
+    # lookahead must be that same rule -- not a laxer version of it.  When it
+    # was laxer, the first ordinary ``## Multi word heading`` *inside* a block
+    # ended the block, and everything after it vanished from the catalog with
+    # no warning: the failure this file exists to prevent, reintroduced in the
+    # file that prevents it.  Write headings inside a block as ``###`` or as
+    # several words.
+    for m in re.finditer(
+            r"^##[ \t]+(\S+)[ \t]*$(.*?)(?=^##[ \t]+\S+[ \t]*$|\Z)",
+            text, re.M | re.S):
+        body = m.group(2).strip("\n")
+        if body.strip():
+            blocks[m.group(1).strip().lower()] = body
+    return blocks
+
+
+def _entry_block(number, entry, structure, extra=None):
     name = entry.get("name") or f"Design {number}"
     out = [f"### Slide {number} — {name}"]
     out.append(f"- **Purpose:** {entry.get('purpose', '_(not catalogued)_')}")
@@ -132,6 +183,8 @@ def _entry_block(number, entry, structure):
     out.append(f"- **Imagery:** {_imagery(entry, structure)}")
     if entry.get("notes"):
         out.append(f"- **Notes:** {entry['notes']}")
+    if extra:
+        out.append(extra)
     return "\n".join(out)
 
 
@@ -143,7 +196,7 @@ MAX_CANVAS_SHARE = 0.85
 
 
 def _canvas_design(structures, slide_area):
-    """The design a canvas should be cut from.
+    """``(number, qualified)`` -- the design a canvas should be cut from.
 
     The biggest free area that still leaves the design's own chrome standing:
     a title, a topic label, a source line.  That is the whole point -- you keep
@@ -153,6 +206,15 @@ def _canvas_design(structures, slide_area):
 
     A catalog with no canvas row is a catalog that pushes every diagram into
     the nearest bullet list, which is the defect this row exists to prevent.
+
+    ``qualified`` is False when nothing cleared the bar and the answer is the
+    least-bad candidate rather than a good one.  **The fallback obeys the
+    full-bleed guard too.**  It used to be tracked before the guards ran, so on
+    a template where no design cleared ``single_body`` -- and on the delta
+    template exactly one does -- it returned the design with the largest free
+    area of all, which is the full-bleed cover this function exists to reject.
+    The catalog would then have told every deck to draw on a blank page, in the
+    confident voice of a measured field.
     """
     best, best_area, fallback, fallback_area = None, 0, None, 0
     for number, s in structures.items():
@@ -161,6 +223,8 @@ def _canvas_design(structures, slide_area):
         if not box:
             continue
         area = box["w"] * box["h"]
+        if area > slide_area * MAX_CANVAS_SHARE:
+            continue                      # full bleed: no chrome to inherit
         if area > fallback_area:
             fallback, fallback_area = number, area
         # Two conditions, and the second is the one that matters: the free area
@@ -170,13 +234,12 @@ def _canvas_design(structures, slide_area):
         # content slide the designer left room on.
         keeps_chrome = len(canvas.get("keep", [])) >= 2
         single_body = len(canvas.get("drops", [])) <= 2
-        if (keeps_chrome and single_body
-                and area <= slide_area * MAX_CANVAS_SHARE and area > best_area):
+        if keeps_chrome and single_body and area > best_area:
             best, best_area = number, area
-    return best or fallback
+    return (best, True) if best else (fallback, False)
 
 
-def _decision_table(rules, structures, canvas_number, entries):
+def _decision_table(rules, structures, canvas_number, entries, qualified=True):
     known = set(structures)
     lines = ["| When the content is… | Use slide | Design | Because |",
              "|---|---|---|---|"]
@@ -184,6 +247,12 @@ def _decision_table(rules, structures, canvas_number, entries):
         canvas = structures[canvas_number]["canvas"]
         box = canvas["free_box"]
         keep = ", ".join(str(k) for k in canvas["keep"])
+        warn = "" if qualified else (
+            " ⚠ **Unverified:** no design in this template strips back cleanly "
+            "— every one of them either keeps too little of its own chrome or "
+            "drops a slideful of sample content. This is the least-bad "
+            "candidate, not a good one: run `probe.py` on it, check the `keep` "
+            "tuple by hand, and correct this row.")
         lines.append(
             "| **a diagram, chart, matrix, comparison — anything no row below "
             f"fits** | `{canvas_number}` | **Canvas** | Strip design "
@@ -191,7 +260,7 @@ def _decision_table(rules, structures, canvas_number, entries):
             f"draw in the area the body vacates: **{box['x']}, {box['y']} to "
             f"{box['x'] + box['w']}, {box['y'] + box['h']}**. You keep the "
             "master, background, chrome, fonts and margins. **Reach for this "
-            "rather than forcing the content into the nearest bullet list.** |")
+            f"rather than forcing the content into the nearest bullet list.**{warn} |")
     for rule in rules:
         slide = rule.get("use_slide")
         if slide not in known:
@@ -210,14 +279,18 @@ def _gaps(rules):
 
     Crude on purpose: a false positive costs a line the reviewer deletes, a
     false negative costs a deck-builder an hour discovering that the template
-    has no cover design.
+    has no cover design.  So the match is anchored at a **word boundary** and
+    nowhere else -- see ``EXPECTED_RULES``.  A stem that matched mid-word
+    reported silence, which is the costly answer.
     """
     covered = " ".join((r.get("when") or "").lower() for r in rules)
     return [label for label, words in EXPECTED_RULES
-            if not any(word in covered for word in words)]
+            if not any(re.search(rf"\b{re.escape(word)}", covered)
+                       for word in words)]
 
 
-def build(catalog: Path, asset: str, title: str) -> str:
+def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
+    blocks = _load_overrides(overrides)
     manifest = _load(catalog / "manifest.json")
     if manifest is None:
         raise SystemExit(
@@ -235,7 +308,7 @@ def build(catalog: Path, asset: str, title: str) -> str:
     variety = aggregate.get("variety_rule")
 
     missing_entries = [n for n, e in entries.items() if not e]
-    canvas_number = _canvas_design(
+    canvas_number, canvas_ok = _canvas_design(
         structures, manifest["slide_width"] * manifest["slide_height"])
     masters = sorted({row["master"] for row in manifest["slides"]})
     grouped = [row["number"] for row in manifest["slides"]
@@ -263,6 +336,9 @@ def build(catalog: Path, asset: str, title: str) -> str:
            "`probe.py` reports as `layout` — on a designed template it is the "
            "same on every slide and distinguishes nothing.", ""]
 
+    if "header" in blocks:
+        out += [blocks.pop("header"), ""]
+
     if grouped:
         out += [f"**Text inside groups.** Designs {', '.join(str(g) for g in grouped)} "
                 f"carry text in grouped shapes, which `shapes(page)` cannot "
@@ -273,7 +349,8 @@ def build(catalog: Path, asset: str, title: str) -> str:
 
     out += ["## Decision table — content → template slide", "",
             "Apply top to bottom; first match wins.", ""]
-    out.append(_decision_table(rules, structures, canvas_number, entries)
+    out.append(_decision_table(rules, structures, canvas_number, entries,
+                               qualified=canvas_ok)
                if rules else
                "_No decision table: run the aggregation pass "
                "(`catalog_gemma.py catalog/ --aggregate`) and rebuild._")
@@ -287,6 +364,9 @@ def build(catalog: Path, asset: str, title: str) -> str:
                 + ". Build these on the canvas row above rather than forcing "
                 "them into the nearest design — and say so here once you have "
                 "checked the renders.", ""]
+
+    if "after-decision-table" in blocks:
+        out += [blocks.pop("after-decision-table"), ""]
 
     budgets = [(n, b) for n in sorted(structures)
                for b in (structures[n].get("title_budgets") or [])
@@ -304,29 +384,49 @@ def build(catalog: Path, asset: str, title: str) -> str:
                 "title**; or `shrink_to_fit(doc, page, shape, max_lines=1)`. Do "
                 "not add a second text box beside the placeholder.", ""]
 
+    if "before-design-entries" in blocks:
+        out += [blocks.pop("before-design-entries"), ""]
+
     out += ["## Design entries", "",
             "Each entry's **Retext keys** are the strings the design actually "
             "carries, in `retext`/`find_shapes` form, transcribed from the file "
             "— copy one from here rather than guessing. Any distinctive "
             "substring of a listed string works. `[3.1]` addresses a shape "
             "*inside* the group at `[3]`.", ""]
+    if "design-entries-intro" in blocks:
+        out += [blocks.pop("design-entries-intro"), ""]
     for row in manifest["slides"]:
         n = row["number"]
-        out += [_entry_block(n, entries[n], structures[n]), ""]
+        out += [_entry_block(n, entries[n], structures[n],
+                             blocks.pop(f"design-{n}", None)), ""]
+
+    if "footer" in blocks:
+        out += [blocks.pop("footer"), ""]
 
     out += ["---", "",
             "**Provenance.** Structure, retext keys, canvas indices and title "
             "budgets are measured by `catalog_extract.py`; purpose, capacity, "
             "imagery and the decision table are written by a local vision model "
-            "from each slide's render and reviewed by hand. The asset, the "
-            "renders and this file are brand-internal: commit them to the "
-            "internal fork only."]
+            "from each slide's render and reviewed by hand; the prose blocks "
+            "come from the overrides file. The asset, the renders and this file "
+            "are brand-internal: commit them to the internal fork only."]
 
     if missing_entries:
         out += ["", f"> **Incomplete:** no model entry for design(s) "
                 f"{', '.join(str(n) for n in missing_entries)} — their "
                 f"judgement fields read _(not catalogued)_. Run the per-layout "
                 f"pass for those slides and rebuild."]
+
+    # An override that no longer lands is prose someone wrote and nobody will
+    # ever read again -- the same silent loss this mechanism exists to stop.
+    if blocks:
+        for anchor in sorted(blocks):
+            print(f"WARNING: override block '{anchor}' matched no anchor in "
+                  f"this catalog", file=sys.stderr)
+        out += ["", f"> ⚠ **Unplaced overrides:** "
+                + ", ".join(f"`{a}`" for a in sorted(blocks))
+                + f". Valid anchors are {', '.join(f'`{a}`' for a in ANCHORS)} "
+                + "and `design-N` for a design this template has."]
     return "\n".join(out) + "\n"
 
 
@@ -338,9 +438,35 @@ def main():
     ap.add_argument("--asset", default="assets/company-template.pptx",
                     help="Path the skill will load the template from")
     ap.add_argument("--title", default="Company template — layout catalog")
+    ap.add_argument("--overrides",
+                    help="Markdown file of '## anchor' prose blocks spliced "
+                         "into the generated catalog. Anchors: "
+                         + ", ".join(ANCHORS) + ", design-N")
+    ap.add_argument("--check", action="store_true",
+                    help="Do not write: rebuild and diff against --output, "
+                         "exit 1 if it has drifted. Re-extract first, so this "
+                         "compares the shipped catalog with the template as it "
+                         "is now.")
     args = ap.parse_args()
 
-    text = build(Path(args.catalog), args.asset, args.title)
+    text = build(Path(args.catalog), args.asset, args.title, args.overrides)
+
+    if args.check:
+        if not args.output:
+            ap.error("--check needs --output: the catalog to compare against")
+        current = Path(args.output).read_text(encoding="utf-8")
+        if current == text:
+            print(f"{args.output} is up to date with {args.catalog}")
+            return
+        import difflib
+        sys.stdout.writelines(difflib.unified_diff(
+            current.splitlines(keepends=True), text.splitlines(keepends=True),
+            fromfile=f"{args.output} (shipped)", tofile="rebuilt", n=1))
+        print(f"\n{args.output} has drifted from the template. Rebuild it, or "
+              f"move whatever is only in the shipped file into --overrides.",
+              file=sys.stderr)
+        sys.exit(1)
+
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
         print(f"Wrote {args.output} ({len(text.splitlines())} lines)")

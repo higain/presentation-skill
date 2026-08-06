@@ -1,0 +1,44 @@
+{
+  "slide": 20,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Two-column process detail",
+  "purpose": "To explain a specific module or process step by splitting the approach and the sources into two distinct lists.",
+  "use_when": "When you need to present a 'how-to' (Vorgehen) alongside the 'where from' (Recherchequellen) for a specific project phase.",
+  "avoid_when": "When you have a single long list of items or need to present complex data charts.",
+  "notes": "The layout features a central circular image placeholder that overlaps the two text columns; ensure text does not wrap into the image area.",
+  "content_types": [
+    "bulleted-content",
+    "two-column"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 2,
+    "max_bullets_per_body": 5,
+    "images": 1,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a person wearing a VR headset seen through a magnifying glass",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a gear and document icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "a book/library icon",
+      "role": "icon"
+    },
+    {
+      "depicts": "three blue chevron arrows",
+      "role": "decorative"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

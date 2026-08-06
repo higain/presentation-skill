@@ -1,0 +1,56 @@
+{
+  "slide": 9,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Navigator Showcase",
+  "purpose": "To demonstrate or explain different navigation elements and frameworks used throughout a presentation.",
+  "use_when": "When explaining the presentation's navigation logic or showcasing specific framework icons.",
+  "avoid_when": "When presenting primary data, complex tables, or long-form text documents.",
+  "notes": "The layout is designed for a mix of explanatory text on the left and a gallery of visual examples on the right.",
+  "content_types": [
+    "bulleted-content",
+    "image-showcase"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 1,
+    "max_bullets_per_body": 3,
+    "images": 6,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a grey puzzle piece",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a puzzle piece partially filled with blue",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a puzzle piece partially filled with blue",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a puzzle piece partially filled with blue",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a sequence of four document icons with a grey arrow",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a simplified Business Model Canvas diagram with blue and green blocks",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a chevron process arrow sequence in grey and green",
+      "role": "decorative"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

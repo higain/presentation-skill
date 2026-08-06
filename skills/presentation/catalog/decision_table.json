@@ -1,0 +1,65 @@
+{
+  "decision_table": [
+    {
+      "when": "deck opener",
+      "use_slide": 7,
+      "because": "Dark section divider provides a high-impact start; slide 1 is a similar alternative."
+    },
+    {
+      "when": "agenda",
+      "use_slide": 8,
+      "because": "Content slide with navigator allows for a list of topics with a progress indicator."
+    },
+    {
+      "when": "section start",
+      "use_slide": 1,
+      "because": "Standard section divider for thematic shifts; slide 5 and 7 are alternatives."
+    },
+    {
+      "when": "single headline idea",
+      "use_slide": 5,
+      "because": "Designed for a single centered title or short identifier."
+    },
+    {
+      "when": "standard bulleted content",
+      "use_slide": 8,
+      "because": "Standard content slide with a headline and a single body slot for bullets."
+    },
+    {
+      "when": "comparing two things",
+      "use_slide": 12,
+      "because": "Two-column comparison with examples; slide 6 is an alternative for analysis matrices."
+    },
+    {
+      "when": "process or timeline",
+      "use_slide": 13,
+      "because": "Three-phase process flow is the standard roadmap; slide 3, 10, 15, 16, 17, 18, 19, 21 offer specific variations."
+    },
+    {
+      "when": "numbers/KPIs",
+      "use_slide": 4,
+      "because": "Project Timeline and Costing is the only slide specifically for financial/effort metrics."
+    },
+    {
+      "when": "a chart",
+      "use_slide": 11,
+      "because": "Phased Data Comparison is the only layout that explicitly supports a data chart."
+    },
+    {
+      "when": "a quote",
+      "use_slide": 5,
+      "because": "Minimalist centered text slot is best for high-impact quotes."
+    },
+    {
+      "when": "people",
+      "use_slide": 2,
+      "because": "Project Organization Chart is designed for team roles and governance."
+    },
+    {
+      "when": "closing slide",
+      "use_slide": 7,
+      "because": "Dark section divider provides a clean, definitive end to the deck."
+    }
+  ],
+  "variety_rule": "Interleave standard bullet slides (8) with visual process flows (13, 18), analysis matrices (6, 12), and high-impact dividers (1, 7) to break the monotony of text."
+}

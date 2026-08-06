@@ -57,6 +57,18 @@ fires per object rather than per cell, and a `--template` run baselines the
 decorations the template itself hangs past the edge. Lay out from the `Box`
 `D.canvas` returns and it stays quiet.
 
+**The template baseline is cached, and you want it to be.** Measuring what the
+template already does — its wording, its bleeds, its brand colour pairings, the
+shapes it stacks — costs 37–43 s on the 21-design house template, against 29 s
+to check a ten-slide deck: well over half of a `--template` run, and it used to
+be paid again on every build iteration. It is a pure function of the template,
+so it is now written to `$XDG_CACHE_HOME/presentation-skill/` and reused. The
+key covers the template bytes **and** the checker sources, so editing a rule in
+`qa.py` or `office/template.py` recomputes every baseline by itself — a cache
+that could serve an answer the current code would not produce would hide the
+finding someone just taught the checker to make. `PRESENTATION_NO_CACHE=1`
+disables it; `PRESENTATION_CACHE_DIR` moves it.
+
 Calibrated against six decks built from one brand template: silent on the
 untouched template, and on the rest it finds precisely the defects their authors
 missed and shipped — a leftover template paragraph, pill labels breaking

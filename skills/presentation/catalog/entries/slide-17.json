@@ -1,0 +1,32 @@
+{
+  "slide": 17,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Iterative Process Flow",
+  "purpose": "To visualize a cyclical development process that transforms initial specifications into a final model through iterative feedback loops.",
+  "use_when": "Use when showing a non-linear workflow where inputs are refined through a central iterative cycle to reach a set of outcomes.",
+  "avoid_when": "Avoid for simple linear timelines or slides requiring heavy data visualization.",
+  "notes": "The central cycle contains three fixed text areas; the left and right columns are for bulleted lists of inputs and outputs respectively.",
+  "content_types": [
+    "process-steps",
+    "bulleted-content"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 3,
+    "max_bullets_per_body": 5,
+    "images": 0,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a circular arrow diagram representing a cycle",
+      "role": "decorative"
+    },
+    {
+      "depicts": "the company logo 'delta'",
+      "role": "logo"
+    }
+  ]
+}

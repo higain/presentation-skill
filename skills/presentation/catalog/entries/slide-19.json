@@ -1,0 +1,44 @@
+{
+  "slide": 19,
+  "layout": 20,
+  "master": "AT_ST",
+  "recovered_from": "company-template.md.bak",
+  "name": "Three-column process analysis",
+  "purpose": "To present three parallel analysis streams, each with a visual representation, descriptive bullets, and a resulting outcome.",
+  "use_when": "When comparing three distinct strategic modules or analysis steps that lead to specific foundations or conclusions.",
+  "avoid_when": "When there are more or fewer than three categories, or when long-form text is required.",
+  "notes": "The layout relies on a strict three-column symmetry; ensure text in the bottom 'Grundlage' slots is concise to avoid overlapping the blue accent lines.",
+  "content_types": [
+    "process-steps",
+    "bulleted-content"
+  ],
+  "capacity": {
+    "headline": true,
+    "body_slots": 3,
+    "max_bullets_per_body": 2,
+    "images": 3,
+    "supports_chart": false
+  },
+  "imagery": [
+    {
+      "depicts": "a colored grid matrix",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a value chain diagram with arrows",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "a Business Model Canvas diagram",
+      "role": "photo-placeholder"
+    },
+    {
+      "depicts": "three blue chevron arrows",
+      "role": "decorative"
+    },
+    {
+      "depicts": "the delta company logo",
+      "role": "logo"
+    }
+  ]
+}

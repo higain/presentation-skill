@@ -15,12 +15,14 @@ them to a remote outside the company.
 
 ## What you are building
 
-Three artifacts, dropped into the skill:
+Five artifacts, dropped into the skill:
 
 | Artifact | Path | What it is |
 |---|---|---|
 | **Asset** | `assets/company-template.pptx` | The template itself — one slide per design. `build_deck` duplicates slides out of it. |
-| **Catalog** | `references/company-template.md` | Which design for which content, what each design holds, and the exact strings to `retext`. The skill reads this to choose designs. |
+| **Catalog** | `references/company-template.md` | Which design for which content, what each design holds, and the exact strings to `retext`. The skill reads this to choose designs. **Generated — never edit it by hand.** |
+| **Overrides** | `references/company-template.overrides.md` | The prose no script can measure, spliced into the catalog at named anchors. **This is where your review notes go.** |
+| **Judged half** | `catalog/entries/*.json`, `catalog/decision_table.json` | What the model wrote, per design. Commit these: they cost a model pass and a human review, and nothing can recreate them from the template. |
 | **Profile** | `assets/company-template.profile.json` | The template's own authoring annotations — an "example" flag, a customer-logo marker — so `strip_annotations` can delete them without the engine knowing any company's wording. |
 
 No wiring step: `SKILL.md` already points at those paths. Drop the files in and
@@ -34,6 +36,15 @@ the default is live.
 | **B. Judge** | `catalog_gemma.py` (or opencode) | **yes, locally** | per-design purpose, capacity, imagery + a decision table |
 | **C. Assemble** | `catalog_build.py` | no | `references/company-template.md`, ready to review |
 | **D. Calibrate** | `make_deck.py` on real briefs | no | a catalog that is actually good |
+
+**The catalog is a build output.** Stages A and C run again every time the
+template changes, and a rebuild overwrites the file completely. Anything you
+learn while reviewing goes in the **overrides file**, never in the catalog
+itself — see [Stage C](#stage-c--assemble). This is not a style preference: the
+house catalog was edited in place for a month, and by the end it had silently
+fallen twelve `retext` keys behind its own template while carrying paragraphs
+that existed in no other file. `catalog_build.py --check` now fails on exactly
+that.
 
 **The split between A and B is the point.** The first version of this pipeline
 asked the model for the catalog wholesale. What made the resulting catalog
@@ -169,7 +180,8 @@ More forgiving of a nonstandard serving setup, less repeatable than the script.
 ## Stage C — Assemble
 
 ```bash
-scripts/catalog_build.py catalog/ -o references/company-template.md
+scripts/catalog_build.py catalog/ -o references/company-template.md \
+    --overrides references/company-template.overrides.md
 ```
 
 Merges the measured fields from stage A with the judged fields from stage B and
@@ -183,12 +195,70 @@ It flags rather than hides what went wrong:
 - a decision-table row citing a slide the template does not have gets a ⚠ row;
 - a design with no model entry reads _(not catalogued)_ and is listed at the
   foot as incomplete;
-- a design whose imagery count disagrees with the model's description says so.
+- a design whose imagery count disagrees with the model's description says so;
+- an override block whose anchor does not land warns, and is listed at the foot.
 
 **Then review it against the renders.** Every capacity figure and every
 decision-table row. The model overstates capacity — that is its most common
 failure and no script can catch it. This human pass is where the catalog earns
 its keep.
+
+### Write review notes into the overrides file, not the catalog
+
+The catalog is regenerated from `catalog/` every time; edits to it are lost on
+the next run, silently. Everything you want to keep goes in
+`references/company-template.overrides.md`, as a `## anchor` section:
+
+| Anchor | Lands |
+|---|---|
+| `header` | after the generated asset/identity paragraphs |
+| `after-decision-table` | after the table, variety rule and coverage gaps |
+| `before-design-entries` | after the display-title budgets |
+| `design-entries-intro` | after the "Retext keys are…" preamble |
+| `design-N` | at the end of that design's entry |
+| `footer` | after the last entry, before the provenance note |
+
+Blocks **add to** the generated text rather than replacing it, so write them as
+additions. An anchor that no longer lands — `design-14` on a template that lost
+design 14 — prints a warning and appears as a ⚠ line in the catalog, so prose
+cannot go quietly missing the way it did before this existed.
+
+That file is where the hard-won things live: that the footer sits on the master
+where no per-slide check can see it, that design 20 is a dense slide rather than
+a blank one, that this template has no cover design and a title slide has to be
+built on a canvas.
+
+### Check that the shipped catalog still matches the template
+
+```bash
+scripts/catalog_extract.py company.pptx -o catalog/     # re-measure
+scripts/catalog_build.py catalog/ -o references/company-template.md \
+    --overrides references/company-template.overrides.md --check
+```
+
+`--check` writes nothing: it rebuilds, diffs against the committed catalog, and
+exits 1 with a unified diff if they differ. Run it whenever the template file
+changes. A drifted catalog is not a cosmetic problem — its `retext` keys are
+what a build script copies, and a missing key is a German label on a finished
+English slide.
+
+### Recovering a catalog written before this pipeline
+
+If the judged half was never committed — `catalog/entries/` deleted as scratch,
+or a catalog assembled by hand before stage B existed — the catalog cannot be
+rebuilt at all, and its measured fields can never be refreshed.
+`catalog_import.py` reads them back out of the markdown:
+
+```bash
+scripts/catalog_extract.py company.pptx -o catalog/
+scripts/catalog_import.py references/company-template.md catalog/
+scripts/catalog_build.py catalog/ -o references/company-template.md \
+    --overrides references/company-template.overrides.md --check
+```
+
+It recovers only the judged fields — name, purpose, capacity, use/avoid,
+imagery, notes, decision table. The measured ones are deliberately ignored:
+the hand-maintained file is exactly where those went stale.
 
 Finally, place the other two artifacts:
 
@@ -240,12 +310,21 @@ Two passes and the default is genuinely good.
 
 ## Privacy & git rules
 
-- The template, the renders in `catalog/`, `references/company-template.md` and
+- The template, the renders in `catalog/`, `references/company-template.md`,
+  `references/company-template.overrides.md` and
   `assets/company-template.profile.json` are brand-internal. Commit them to the
   **internal fork only**.
-- `catalog/` is a working directory — `.gitignore` it once the catalog and the
-  asset are written; the committed artifacts are the asset, the profile and the
-  catalog.
+- **Commit `catalog/entries/*.json` and `catalog/decision_table.json`.** They
+  are the model pass's output: a model call and a human review each, and nothing
+  can recreate them from the template. The rest of `catalog/` — the renders, the
+  per-slide `structure.json`, the manifest — is regenerated in 30 seconds by
+  `catalog_extract.py`, so `catalog/.gitignore` leaves it out.
+
+  This is the one instruction here that was wrong before, and it cost something:
+  the advice used to be "`.gitignore catalog/` once the catalog is written",
+  which threw away the only copy of the judged half. The catalog then could not
+  be regenerated, so its measured half was maintained by hand, so it drifted.
+  `catalog_import.py` exists to recover from exactly that.
 - Nothing in this pipeline calls a hosted model *by default*. Two steps can, and
   both are opt-in and explicit: `catalog_gemma.py --openrouter`, and
   `review_renders.py` once `$PRESENTATION_REVIEW_MODEL` is set. If any other
@@ -272,7 +351,11 @@ Two passes and the default is genuinely good.
 | The vision review is generic, or praises slides that are broken | Same cause: a text-only model. It will answer confidently about an image it never received. Check the model's input modalities — `deepseek-v4-flash` is text-only, `gemma-4-31b-it` and `qwen3.6-27b` are not. |
 | `make_deck.py` prints "No visual review" | `$PRESENTATION_REVIEW_MODEL` is unset. That is the default; set it to enable the reviewer. |
 | `no per-layout entries` on `--aggregate` | Run the per-design pass first; aggregate reads `catalog/entries/*.json`. |
-| Capacity figures look too generous | Expected. Fix them by hand in stage C against the renders. |
+| Capacity figures look too generous | Expected. Fix them in the overrides file, or in `catalog/entries/slide-NN.json` if the figure itself is wrong, and rebuild. |
+| My edits to `references/company-template.md` disappeared | It is generated; the next `catalog_build.py` overwrote them. Put them in `references/company-template.overrides.md` under an anchor, and rebuild. |
+| `--check` reports drift after the template changed | Expected, and the point of it. Re-extract, rebuild, re-read the diff — the `retext` keys are what changed. |
+| An override block warns that it "matched no anchor" | The anchor name is misspelled, or it is a `design-N` for a design this template no longer has. Valid names are listed in stage C. |
+| The first QA run after touching the template is a minute slower | The template baseline is recomputed and re-cached; it is a pure function of the template and the checker sources, so any change to either invalidates it. Later runs are ~40 s faster. |
 | A ⚠ row in the built catalog | The model cited a slide number the template does not have. Correct the row or delete it. |
 | The canvas row picked a design you would not have | It picks the largest free area whose canvas keeps the design's chrome and drops one body shape. Override it by editing the row; if it is wrong for your template, say so and the heuristic can be tightened. |
 
@@ -284,11 +367,14 @@ Two passes and the default is genuinely good.
 |---|---|---|
 | `scripts/catalog_extract.py` | Stage A — template → `catalog/` dossiers | build-time |
 | `scripts/catalog_gemma.py` | Stage B — dossiers → judged entries + decision table | build-time |
-| `scripts/catalog_build.py` | Stage C — both halves → the catalog | build-time |
+| `scripts/catalog_build.py` | Stage C — both halves + overrides → the catalog; `--check` for drift | build-time |
+| `scripts/catalog_import.py` | Recovery — a hand-written catalog → the stage B entries it never kept | once, if needed |
 | `scripts/review_renders.py` | The vision reviewer — renders → advisory findings | runtime, when `$PRESENTATION_REVIEW_MODEL` is set |
 | `references/gemma-catalog-prompt.md` | The prompt spec (human-readable source of truth) | reference |
 | `references/company-template.example.md` | The finished format, annotated | reference |
-| `references/company-template.md` | The catalog *(generated)* | runtime |
+| `references/company-template.md` | The catalog *(generated — do not edit)* | runtime |
+| `references/company-template.overrides.md` | The prose spliced into it *(edit this instead)* | build-time |
+| `catalog/entries/`, `catalog/decision_table.json` | The judged half *(commit these)* | build-time |
 | `assets/company-template.pptx` | The template asset *(you copy it in)* | runtime |
 | `assets/company-template.profile.json` | The template's authoring annotations | runtime |
 | `SKILL.md` | The runtime documentation — how decks get built | runtime |
