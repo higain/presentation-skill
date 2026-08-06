@@ -30,7 +30,9 @@ geometry and character formatting of every slide, which is what you need to
 know which ``s[i]`` to write to.
 """
 
+import json
 import re
+from pathlib import Path
 
 import uno
 
@@ -1059,33 +1061,52 @@ def retext(page, mapping, **kw):
 
 
 # A pattern-collection template carries flags addressed to whoever builds from
-# it -- "Beispiel", "Layout", a fill-in marker for a customer logo.  They are
-# ordinary shapes, so nothing flags them, and they ship unless deleted.  These
-# are the house template's, matched on the whole string so that a slide titled
-# "Vorgehen zum Bilden eines Modells" is not mistaken for the "Vorgehen:" block.
-HOUSE_ANNOTATIONS = (
-    "Beispiel",
-    "Layout",
-    "Kundenlogo",
-    "Alternatives Design zum Master",
-)
-HOUSE_ANNOTATION_PREFIXES = (
-    "Vorgehen: 1.",
-    "Viele nützliche Informationen rund um das Thema Pricing",
-)
+# it -- an "example" marker, a fill-in note for a customer logo, a block of
+# build instructions.  They are ordinary shapes, so nothing flags them, and they
+# ship unless deleted.  Which strings those are is a fact about one template, so
+# they live beside that template rather than in this module: the engine should
+# not know any company's German.
+_PROFILE = None
+_PROFILE_PATH = (Path(__file__).resolve().parent.parent.parent
+                 / "assets" / "company-template.profile.json")
 
 
-def strip_annotations(page, exact=HOUSE_ANNOTATIONS,
-                      prefixes=HOUSE_ANNOTATION_PREFIXES):
+def template_profile():
+    """Per-template facts shipped beside the asset, or ``{}`` if there are none.
+
+    Currently just the annotation strings.  Matched on the whole string, so a
+    slide titled "Vorgehen zum Bilden eines Modells" is not mistaken for the
+    "Vorgehen:" instruction block.
+    """
+    global _PROFILE
+    if _PROFILE is None:
+        try:
+            _PROFILE = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _PROFILE = {}
+    return _PROFILE
+
+
+def strip_annotations(page, exact=None, prefixes=None, profile=None):
     """Delete a template's authoring annotations from a slide.
 
-    Reaches inside groups -- design 10 keeps its ``Beispiel`` flag in one.
+    Reaches inside groups -- a template's "example" flag is routinely in one.
     ``exact`` matches a shape's whole text (case-insensitively, whitespace
     collapsed); ``prefixes`` matches the start of it, for the multi-sentence
-    build-instruction blocks.  Pass your own for another template.
+    build-instruction blocks.
+
+    With neither given the strings come from the shipped template profile
+    (``assets/company-template.profile.json``).  For another template pass
+    ``profile={"exact": [...], "prefixes": [...]}``, or the two lists directly.
 
     Returns the texts it removed, so you can see what went.
     """
+    if profile is None:
+        profile = template_profile().get("annotations", {})
+    exact = tuple(profile.get("exact", ())) if exact is None else exact
+    prefixes = tuple(profile.get("prefixes", ())) if prefixes is None else prefixes
+    if not exact and not prefixes:
+        return []
     wanted = {_norm(t).lower() for t in exact}
     starts = tuple(_norm(p).lower() for p in prefixes)
     removed = []

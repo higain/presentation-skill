@@ -18,90 +18,23 @@ changes where text wraps.  See the Typography section of SKILL.md.
 """
 
 import argparse
-import re
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from office.impress import PRESENTATION_EXTS, SofficeError  # noqa: E402
-from office.soffice import run_soffice  # noqa: E402
+from office.impress import PRESENTATION_EXTS, SofficeError, parse_slide_spec  # noqa: E402
+from office.rasterize import rasterize  # noqa: E402
+
+_parse_slides = parse_slide_spec          # kept: qa.py and make_deck.py use it
 
 
-def _parse_slides(spec: str) -> list[int]:
-    """'3,7-9' -> [3, 7, 8, 9]."""
-    out: set[int] = set()
-    for part in spec.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            lo, _, hi = part.partition("-")
-            try:
-                lo, hi = int(lo), int(hi)
-            except ValueError:
-                raise ValueError(f"not a slide range: {part!r}") from None
-            if lo > hi:
-                raise ValueError(f"reversed slide range: {part!r}")
-            out.update(range(lo, hi + 1))
-        else:
-            try:
-                out.add(int(part))
-            except ValueError:
-                raise ValueError(f"not a slide number: {part!r}") from None
-    if not out or min(out) < 1:
-        raise ValueError("slide numbers start at 1")
-    return sorted(out)
-
-
-def to_pdf(source: Path, outdir: Path) -> Path:
-    """Convert a deck to PDF and return the path."""
-    result = run_soffice(
-        ["--headless", "--convert-to", "pdf", "--outdir", str(outdir), str(source)],
-        timeout=300,
-    )
-    pdf = outdir / f"{source.stem}.pdf"
-    if not pdf.is_file():
-        detail = (result.stderr or result.stdout or "").strip()
-        raise SofficeError(
-            f"LibreOffice produced no PDF for {source}"
-            + (f": {detail[:400]}" if detail else "")
-        )
-    return pdf
-
-
-def render(source: Path, outdir: Path, dpi: int, wanted: list[int] | None) -> list[Path]:
-    outdir.mkdir(parents=True, exist_ok=True)
-    for stale in outdir.glob("slide-*.png"):
-        stale.unlink()
-
-    with tempfile.TemporaryDirectory(prefix="render-pdf-") as tmp:
-        pdf = to_pdf(source, Path(tmp))
-        cmd = ["pdftoppm", "-png", "-r", str(dpi)]
-        if wanted:
-            cmd += ["-f", str(min(wanted)), "-l", str(max(wanted))]
-        cmd += [str(pdf), str(outdir / "slide")]
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-        except FileNotFoundError:
-            raise SofficeError(
-                "pdftoppm not found; install it with: apt install poppler-utils"
-            ) from None
-        if proc.returncode != 0:
-            raise SofficeError(f"pdftoppm failed: {(proc.stderr or '').strip()[:400]}")
-
-    images = sorted(outdir.glob("slide-*.png"))
-    if wanted:
-        keep = set(wanted)
-        for image in list(images):
-            match = re.search(r"slide-(\d+)\.png$", image.name)
-            if match and int(match.group(1)) not in keep:
-                image.unlink()
-                images.remove(image)
-    return images
+def render(source: Path, outdir: Path, dpi: int,
+           wanted: list[int] | None = None, hidden: str = "drop") -> list[Path]:
+    """One PNG per rendered slide.  See ``office.rasterize`` for ``hidden``."""
+    return rasterize(source, outdir, dpi=dpi, fmt="png", wanted=wanted,
+                     hidden=hidden)
 
 
 def main():

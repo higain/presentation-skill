@@ -5,7 +5,7 @@ Validator for PowerPoint presentation XML files against XSD schemas.
 import re
 from pathlib import Path
 
-from helpers import opc_target, rels_source_part, safe_extract
+from office.helpers import opc_target, rels_source_part, safe_extract
 
 from .base import BaseSchemaValidator
 
@@ -88,7 +88,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
         }
 
     def validate_master_theme_uniqueness(self):
-        from helpers.pptx_theme import _NOTES_MASTERS, live_shared_master_themes
+        from office.helpers.pptx_theme import _NOTES_MASTERS, live_shared_master_themes
 
         shared = live_shared_master_themes(self._package_map())
         if shared:
@@ -107,7 +107,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
         return True
 
     def validate_charts(self):
-        from helpers.pptx_chart import find_chart_problems
+        from office.helpers.pptx_chart import find_chart_problems
 
         problems = find_chart_problems(self._package_map())
         if problems:
@@ -124,7 +124,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
         import tempfile
         import zipfile
 
-        from helpers.pptx_slide import SLIDE_PART_RE, fatal_slide_errors
+        from office.helpers.pptx_slide import SLIDE_PART_RE, fatal_slide_errors
 
         if self.original_file is None:
             return set()
@@ -151,7 +151,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
         return found
 
     def validate_slides(self):
-        from helpers.pptx_slide import (
+        from office.helpers.pptx_slide import (
             SLIDE_PART_RE,
             fatal_slide_errors,
             is_schema_verdict,

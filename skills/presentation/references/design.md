@@ -6,7 +6,8 @@ need it: the template already made these decisions, and you should follow it.
 
 **What goes *on* a slide is a different question, and this file does not answer
 it.** The visual-per-slide rule, layout variety, spacing and the list of tells
-that make a deck look generated live in SKILL.md's **Composition** section, and
+that make a deck look generated live in `references/drawing.md`'s **Composition**
+section, and
 they apply to every deck — template or not. This file is only about the look.
 
 ### Choosing the palette
@@ -49,5 +50,5 @@ Composition section says why.
 
 - **Don't style one slide and leave the rest plain.** Whatever you choose here,
   apply it everywhere — a half-styled deck looks worse than an unstyled one.
-- Fonts: pick from the trustworthy list in SKILL.md's Typography section, or
+- Fonts: pick from the trustworthy list in `references/authoring.md`, or
   accept that the overflow check cannot be relied on.

@@ -55,11 +55,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from office.impress import (  # noqa: E402
-    PRESENTATION_EXTS, SofficeError, load_document, shapes, slides,
+    PRESENTATION_EXTS, SofficeError, load_document, parse_slide_spec, shapes,
+    slides,
 )
+from office.deckbuild import find_template  # noqa: E402
 from office.draw import contrast_ratio  # noqa: E402
 from office.template import (  # noqa: E402
-    _bleed_key, colliding, offslide, offslide_baseline, overflowing,
+    _bleed_key, colliding, ink_box, offslide, offslide_baseline, overflowing,
     walk_shapes,
 )
 
@@ -72,11 +74,22 @@ PLACEHOLDER = re.compile(
     re.I,
 )
 
-# Only prose this long counts as leftover template wording.  A designed deck
-# reuses its template's short headers on purpose -- "Agenda", "What we found" --
-# and flagging those buries the real defect, which is always a body paragraph
-# nobody replaced.
-MIN_LEFTOVER = 25
+# Text this long, still verbatim from the template, counts as leftover wording.
+#
+# This was 25 -- long enough that only a body paragraph could trip it -- on the
+# theory that a designed deck reuses its template's short headers on purpose
+# ("Agenda", "What we found") and flagging those would bury the real defect.
+# Two runs measured against the delta template say otherwise: the label
+# `"Navigator (1/2)"` -- 15 characters, a documented retext key of design 8 --
+# survived on 13 of 15 slides in one deck and 9 of 10 in the other, in German,
+# on a finished English deck, and both reports said clean.  Nothing else in
+# either deck came within nine characters of the old threshold.
+#
+# At 6 the only other template strings either deck still held were the single
+# digits "1" to "4", which is why a leftover must also contain a letter: a
+# numbered step that happens to match a template's numbered step is a
+# coincidence, not a leftover.
+MIN_LEFTOVER = 6
 
 # Markdown that reached a slide.  A slide is not a document: these render as
 # literal tildes and asterisks, and they only ever arrive because the wording
@@ -103,19 +116,25 @@ OCCLUSION = 0.75
 # for its own content, and it is still on the slide because nobody removed it.
 MIN_STRAY_IMAGE = 0.004
 
+# When a slide is worth a second look because there may be nothing on it.
+#
+# Measured on two agent decks whose slides had already been judged by eye: the
+# ones that read as unfinished painted 9-24% of the slide, the ones that read
+# as designed painted 32-89%, and nothing landed between 24% and 32%.  A
+# quarter is the middle of that gap.  The band rule catches the other shape of
+# the same defect -- content packed against the title with the bottom half of
+# the slide bare -- which scored 30-51% where a finished slide scored 8%, the
+# margin under the footer.
+#
+# Neither is a defect a machine can be sure of: a one-sentence statement slide
+# is sparse on purpose and scores the same. That is why these are reported as
+# slides to look at rather than as findings, and why they do not fail a build.
+SPARSE_AREA = 0.25
+SPARSE_BAND = 0.30
+
 
 def _parse_slides(spec):
-    out = set()
-    for part in spec.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            lo, hi = part.split("-", 1)
-            out.update(range(int(lo), int(hi) + 1))
-        else:
-            out.add(int(part))
-    return out
+    return set(parse_slide_spec(spec))
 
 
 def _norm(text):
@@ -176,7 +195,7 @@ def _template_baseline(path):
         strings, contrast, occlusion, collisions = set(), set(), set(), set()
         for page in slides(doc):
             for _, text in _page_texts(page):
-                if len(text) >= MIN_LEFTOVER:
+                if len(text) >= MIN_LEFTOVER and any(c.isalpha() for c in text):
                     strings.add(text)
             contrast.update(pair for pair, *_ in _contrast_findings(page))
             occlusion.update(pair for pair, *_ in _occlusion_findings(page))
@@ -410,6 +429,93 @@ def markdown_issues(page, number):
     return out
 
 
+def _painted_boxes(doc, page):
+    """``(x, y, w, h)`` of what each shape on the page actually paints.
+
+    Text goes through ``ink_box``, which lays the words out and measures the
+    block they make.  Its own box is nearly always bigger -- and a build that
+    drops one full-slide text frame holding two lines would otherwise measure
+    as a slide covered corner to corner.  Everything else is its geometry: an
+    empty panel is still something to look at.
+    """
+    out = []
+    for _, shape in walk_shapes(page):
+        try:
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if size.Width <= 0 or size.Height <= 0:
+            continue
+        ink = ink_box(doc, page, shape)
+        out.append(ink[:4] if ink else (pos.X, pos.Y, size.Width, size.Height))
+    return out
+
+
+def _widest_empty_band(bands, top, bottom):
+    """The tallest run of slide between ``top`` and ``bottom`` nothing paints.
+
+    ``bands`` are ``(top, bottom)`` pairs, in any order and overlapping freely;
+    this is the classic sweep over them, keeping the largest hole.
+    """
+    spans = sorted((max(t, top), min(b, bottom)) for t, b in bands
+                   if b > top and t < bottom)
+    widest, at, cursor = 0, top, top
+    for start, end in spans:
+        if start - cursor > widest:
+            widest, at = start - cursor, cursor
+        cursor = max(cursor, end)
+    if bottom - cursor > widest:
+        widest, at = bottom - cursor, cursor
+    return widest, at
+
+
+def sparse_slides(doc, wanted=None):
+    """``[(number, reason)]`` for slides that may have nothing on them.
+
+    Not findings.  The two checks a deck build actually needs eyes for are "is
+    this slide half empty" and "is this diagram off-centre", and the second one
+    genuinely cannot be measured.  The first one can: a slide that paints a
+    tenth of itself, or leaves a third of its height in one bare band under the
+    title, is either a deliberate statement slide or a slide somebody forgot to
+    finish, and no measurement tells those apart.
+
+    So this does not fail a build -- it names the slides, and naming four of
+    fifteen is a different instruction from "open the PNGs and look at them",
+    which is what the last two runs were given.  One of them looked and shipped
+    the empty slides anyway; the other never opened an image at all.
+    """
+    out = []
+    for number, page in enumerate(slides(doc), start=1):
+        if wanted and number not in wanted:
+            continue
+        try:
+            width, height = page.Width, page.Height
+        except Exception:
+            continue
+        if width <= 0 or height <= 0:
+            continue
+
+        boxes = _painted_boxes(doc, page)
+        if not boxes:
+            out.append((number, "nothing on it at all"))
+            continue
+
+        # Overlapping shapes are counted twice, so this runs over 100% on a
+        # busy slide.  That is harmless and deliberately not corrected: the
+        # question is only ever "is this under a quarter", and double-counting
+        # can push a slide *out* of that, never into it.
+        area = sum(w * h for _, _, w, h in boxes) / (width * height)
+        bands = [(y, y + h) for _, y, _, h in boxes]
+        band, at = _widest_empty_band(bands, min(t for t, _ in bands), height)
+
+        if area < SPARSE_AREA:
+            out.append((number, f"paints {area:.0%} of the slide"))
+        elif band >= SPARSE_BAND * height:
+            out.append((number, f"{band / height:.0%} of its height is one "
+                                f"empty band, from {at / height:.0%} down"))
+    return out
+
+
 def stray_template_images(deck, template, wanted=None):
     """Pictures still on a slide that came from the template, with their size.
 
@@ -506,8 +612,14 @@ def stray_template_images(deck, template, wanted=None):
 
 
 def check(path, template=None, wanted=None):
-    """``(issues, slides_checked)`` -- issues are ready-to-print strings."""
+    """``(issues, slides_checked, sparse)`` -- all three ready to print.
+
+    ``sparse`` is advisory and deliberately not part of ``issues``: see
+    ``sparse_slides``.  A caller that fails a build on findings must not fail
+    it on these.
+    """
     issues = []
+    leftovers = {}
     # Whatever the template already does -- its wording, the decorations it
     # bleeds past the trim on purpose, its brand colour pairings, the shapes it
     # stacks -- is duplicated into the deck unchanged, and is not a defect this
@@ -558,23 +670,37 @@ def check(path, template=None, wanted=None):
                         f"{hit.group(0)!r} in {text[:60]!r}"
                     )
                 elif text in tpl_strings:
-                    issues.append(
-                        f"slide {number} shape [{address}]: still the template's "
-                        f"own wording -- {text[:60]!r}"
-                    )
+                    leftovers.setdefault(text, []).append((number, address))
 
             issues.extend(markdown_issues(page, number))
             issues.extend(contrast_issues(page, number, base.contrast))
             issues.extend(occlusion_issues(page, number, base.occlusion))
+
+        sparse = sparse_slides(doc, wanted)
     finally:
         doc.close(False)
+
+    # One label nobody replaced, on thirteen slides, is one thing to fix.  It
+    # is also the single most repeated defect these runs produce, so it is
+    # reported with every slide it is on: the fix is one retext key, and the
+    # list is what makes that obvious rather than thirteen near-identical
+    # lines that read as thirteen separate mistakes.
+    for text, places in sorted(leftovers.items(), key=lambda kv: -len(kv[1])):
+        numbers = sorted({number for number, _ in places})
+        where = (f"slide {numbers[0]}" if len(numbers) == 1
+                 else f"slides {', '.join(str(n) for n in numbers)}")
+        issues.append(
+            f"{where} shape [{places[0][1]}]: still the template's own wording "
+            f"-- {text[:60]!r}. Replace it with `retext`, or draw over the "
+            f"design that carries it"
+        )
 
     # Read from the zip, so it runs after the document is closed.
     if template and Path(path).suffix.lower() in PPTX_EXTS \
             and Path(template).suffix.lower() in PPTX_EXTS:
         issues.extend(stray_template_images(path, template, wanted))
 
-    return issues, checked
+    return issues, checked, sparse
 
 
 def validate_pptx(path, template=None):
@@ -619,14 +745,20 @@ def main():
             file=sys.stderr,
         )
         return 2
-    if args.template and not Path(args.template).exists():
-        print(f"Error: {args.template} does not exist", file=sys.stderr)
-        return 2
+    # Same resolver build_deck uses, for the same reason: the template path in
+    # the documentation is written relative to the skill, and a build script
+    # runs next to the deck.
+    if args.template:
+        try:
+            args.template = str(find_template(args.template))
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 2
 
     wanted = _parse_slides(args.slides) if args.slides else None
 
     try:
-        issues, checked = check(path, args.template, wanted)
+        issues, checked, sparse = check(path, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
@@ -641,6 +773,15 @@ def main():
     else:
         print("No overflow, collisions, leftovers, markdown, contrast or "
               "occlusion defects.")
+
+    if sparse:
+        print(f"\n## {len(sparse)} slide(s) to look at\n")
+        for number, reason in sparse:
+            print(f"- slide {number}: {reason}")
+        print(
+            "\nNot findings -- a statement slide is sparse on purpose. These "
+            "are the slides where that is worth confirming."
+        )
 
     failed = bool(issues)
 

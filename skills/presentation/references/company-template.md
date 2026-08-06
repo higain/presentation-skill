@@ -10,8 +10,8 @@ in 1/100 mm (*not* the LibreOffice default 28000 × 15750 — read
 too far left). Masters `AT_ST` (content), `Section_dark` (dividers),
 `Default 36` (design 4).
 
-**Build with `build_deck`** — see "Building from a template at full fidelity" in
-SKILL.md. It duplicates rather than rebuilds, so this template's bullets, inline
+**Build with `build_deck`** — see the recipe in SKILL.md and the detail in
+`references/templates.md`. It duplicates rather than rebuilds, so this template's bullets, inline
 colour and think-cell objects survive; `clone_slide` loses all three here. Check
 every build with
 `make_deck.py build.py out.pptx --template assets/company-template.pptx`, and
@@ -29,13 +29,27 @@ carry text in grouped shapes, which `shapes(page)` cannot reach — design 10 ha
 all walk groups, and `probe.py` lists them indented as `[6.2]`. Each entry below
 notes its count. Retext by wording, never by index.
 
+**Every retext key of a design is a key you have to replace, not just the
+title.** Design 8's `[2]` is the label `"Navigator (1/2)"`, and two runs
+replaced `[1]` on every slide and `[2]` on none — shipping that German label on
+13 of 15 and 9 of 10 finished English slides. Read the *Retext keys* line of
+the design you are using and account for all of them: replace the ones you
+want, and `strip_annotations` or draw over the ones you do not.
+
+**The footer is on the master, not on the slide.** `Gegenstand | Titel | Ort |
+Datum` renders on every content slide and no per-slide check can see it —
+`walk_shapes(page)` does not reach the master, so a deck with the placeholder
+still in it reports clean. It is the template's own field text, so leaving it
+is a defensible default; if the user wants it filled, set it on the master page
+rather than per slide, and expect it to be visible in every render you look at.
+
 ## Decision table — content → template slide
 
 Apply top to bottom; first match wins.
 
 | When the content is… | Use slide | Design | Because |
 |---|---|---|---|
-| **a diagram, chart, matrix, comparison — anything no row below fits** | `8` | **Canvas** | Strip design 8 back with `draw.canvas(page, keep=(0, 1, 2, 3))` — think-cell stub, title, topic label, source line — and draw in the area the body text vacates: **2031, 3545 to 30003, 15702**. You keep the master, background, chrome, fonts and margins. **Reach for this rather than forcing the content into the nearest bullet list** — see "The canvas pattern" in SKILL.md. |
+| **a diagram, chart, matrix, comparison — anything no row below fits** | `8` | **Canvas** | Strip design 8 back with `draw.canvas(page, keep=(0, 1, 2, 3))` — think-cell stub, title, topic label, source line — and draw in the area the body text vacates: **2031, 3545 to 30003, 15702**. You keep the master, background, chrome, fonts and margins. **Reach for this rather than forcing the content into the nearest bullet list** — see "The canvas pattern" in `references/drawing.md`. |
 | deck opener | `7` | Section Divider Dark | Dark section divider provides a high-impact start; slide 1 is a similar alternative. |
 | agenda | `8` | Content slide with navigator | Content slide with navigator allows for a list of topics with a progress indicator. |
 | section start | `1` | Section divider | Standard section divider for thematic shifts; slide 5 and 7 are alternatives. |
@@ -472,5 +486,11 @@ Generated 2026-07-28 from `delta-sammlung-21f.pptx` (21 slides):
 2. `scripts/catalog_gemma.py --openrouter --model google/gemma-4-31b-it` —
    per-layout pass, then the aggregation pass for the decision table.
 
-To regenerate after the template changes, repeat both passes (see *Maintaining
-the default* in SKILL.md) and re-review every row against the renders.
+3. The measured fields — retext keys, empty slots, group counts, canvas
+   indices, title budgets — were then added by hand. `catalog_extract.py`
+   extracts all of them now and `scripts/catalog_build.py` assembles the whole
+   file, so a regeneration no longer loses them.
+
+To regenerate after the template changes, re-run the pipeline in README.md
+(extract → model pass → `catalog_build.py`) and re-review every capacity figure
+and decision-table row against the renders.

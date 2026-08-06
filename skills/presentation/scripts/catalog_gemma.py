@@ -11,7 +11,7 @@ Stdlib only -- talks to any OpenAI-compatible /chat/completions endpoint
     python3 scripts/catalog_gemma.py catalog/ \
         --base-url http://localhost:11434/v1 --model gemma3:27b
 
-    # 2. fold the entries into a decision table
+    # 2. aggregate the entries into a decision table
     python3 scripts/catalog_gemma.py catalog/ --aggregate \
         --base-url http://localhost:11434/v1 --model gemma3:27b
 
@@ -32,6 +32,9 @@ text-only model (glm-5.2, say) can run --aggregate but not the first pass.
 Writes to:
     catalog/entries/slide-NN.json   one per layout (per-layout pass)
     catalog/decision_table.json     the aggregate (--aggregate pass)
+
+Then assemble the catalog:
+    python3 scripts/catalog_build.py catalog/ -o references/company-template.md
 
 The human-readable spec for these prompts is references/gemma-catalog-prompt.md;
 the strings below mirror it. If you tune one, tune the other.
@@ -88,7 +91,12 @@ pictures. The shape list will not tell you this -- only the rendered image does.
 
 Be honest about capacity -- if a body box is sized for one line, say
 max_bullets_per_body 1. Overstating capacity is what makes decks overflow. Do
-not invent slots the layout does not have."""
+not invent slots the layout does not have.
+
+Do NOT produce retext keys, shape indices, geometry, slot counts or character
+budgets. Those are measured from the file and are already in the catalog;
+anything you write about them is guesswork that will be believed. If a field
+above needs one, describe it in words instead."""
 
 AGGREGATE = """Here are the catalogue entries for every design in our template, \
 as a JSON array. Each entry's "slide" field is that design's number in the \

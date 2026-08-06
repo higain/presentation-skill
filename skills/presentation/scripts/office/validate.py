@@ -23,8 +23,18 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from helpers import OOXML_FAMILY, rezip, safe_extract
-from validators import PPTXSchemaValidator
+# Run as a script, ``sys.path[0]`` is this file's own directory -- which is
+# *inside* the package, so ``office.*`` would not resolve.  Put the directory
+# that holds ``office/`` on the path instead: the same one a build script uses,
+# so the whole tree has one import root.  (``from helpers import ...`` used to
+# work here and nowhere else, which made ``office.validators`` unimportable
+# from a build script and gave two copies of one module to anything that
+# managed both spellings.)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import office  # noqa: E402,F401  -- picks the writable temp dir for the unzip
+from office.helpers import OOXML_FAMILY, rezip, safe_extract  # noqa: E402
+from office.validators import PPTXSchemaValidator  # noqa: E402
 
 ODF_PRESENTATION_EXTS = {".odp", ".otp", ".fodp"}
 

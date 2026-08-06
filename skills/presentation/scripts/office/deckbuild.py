@@ -26,6 +26,7 @@ slide between two open documents, use ``clone_slide``.
 from __future__ import annotations
 
 import inspect
+import os
 import re
 import shutil
 import zipfile
@@ -34,6 +35,13 @@ from pathlib import Path
 from .impress import (
     load_document, save_as, slides, duplicate_slide, delete_slide,
 )
+
+#: Set by ``make_deck.py`` around the build script it runs.  QA on a 15-slide
+#: deck is a full LibreOffice load and about a minute of measuring, and
+#: ``make_deck.py`` runs exactly the same check on the same file moments later
+#: -- the documented recipe was paying for it twice.  A build script run on its
+#: own still QAs itself.
+SKIP_QA_ENV = "PRESENTATION_SKIP_BUILD_QA"
 
 _SLDID_RE = re.compile(r'<p:sldId[^>]*r:id="rId\d+"[^>]*/>')
 _SLDIDLST_RE = re.compile(r"<p:sldIdLst>.*?</p:sldIdLst>", re.S)
@@ -98,7 +106,7 @@ def _call_fill(fill, doc, page, slot, design):
     return fill(doc, page, slot, design) if wants_doc else fill(page, slot, design)
 
 
-def _find_template(template) -> Path:
+def find_template(template) -> Path:
     """Resolve a template path, falling back to the skill's own folder.
 
     A build script is written next to the deck and run from there, but the
@@ -107,6 +115,12 @@ def _find_template(template) -> Path:
     working directory, and every first build died on ``FileNotFoundError``
     before the script had a chance to be wrong about anything else.  Resolving
     it here costs nothing and an absolute path still wins.
+
+    Anything that takes a template path from the caller comes through here.
+    ``make_deck.py`` used to test ``--template`` with a bare ``Path.exists()``,
+    so the *same string* the documentation prints twice -- once for
+    ``build_deck``, once for ``--template`` -- resolved in one place and died
+    in the other.
     """
     path = Path(template)
     if path.exists():
@@ -136,7 +150,9 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
 
     ``qa=True`` runs ``scripts/qa.py``'s checks on the result and prints what it
     finds -- overflow and leftover template wording, the two defects that are
-    invisible without rendering.  It never raises; it reports.
+    invisible without rendering.  It never raises; it reports.  Under
+    ``make_deck.py`` it is skipped (see :data:`SKIP_QA_ENV`), because that
+    command runs the same check itself a moment later.
 
     The two traps this handles, both of which silently produce the wrong deck:
     ``duplicate_slide`` inserts each copy next to its original, so every later
@@ -144,7 +160,7 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
     end up interleaved with the originals, so the originals have to be deleted
     by identity rather than by index.
     """
-    template, out = _find_template(template), Path(out)
+    template, out = find_template(template), Path(out)
     if out.suffix.lower() != ".pptx":
         raise ValueError(
             f"build_deck writes .pptx only (got {out.suffix or 'no suffix'}); "
@@ -154,6 +170,19 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
         raise ValueError("no designs given")
 
     shutil.copyfile(template, out)
+    try:
+        return _build(template, out, designs, fill, qa)
+    except BaseException:
+        # The output at this point is a copy of the template -- every design in
+        # it, none of your content.  Left on disk it looks like a built deck,
+        # and the next command to touch it (a bare make_deck.py, a QA run, a
+        # human opening it) is looking at the template and does not know.
+        out.unlink(missing_ok=True)
+        raise
+
+
+def _build(template: Path, out: Path, designs, fill, qa) -> Path:
+    """The body of :func:`build_deck`, on an ``out`` that already exists."""
     doc = load_document(out, read_only=False)
     try:
         pages = slides(doc)
@@ -186,7 +215,7 @@ def build_deck(template, out, designs, fill=None, qa=True) -> Path:
         doc.close(False)
 
     reorder_pptx(out, order)
-    if qa:
+    if qa and not os.environ.get(SKIP_QA_ENV):
         _report_qa(out, template)
     return out
 
@@ -208,7 +237,7 @@ def _report_qa(out: Path, template: Path):
         except ImportError:
             return
     try:
-        issues, checked = check(out, template=template)
+        issues, checked, sparse = check(out, template=template)
     except Exception as e:                    # QA must never lose you the deck
         print(f"[build_deck] QA could not run: {e}")
         return
@@ -220,6 +249,9 @@ def _report_qa(out: Path, template: Path):
     else:
         print("[build_deck] QA: no overflow, no collisions, no leftover "
               "template text.")
+    if sparse:
+        print(f"[build_deck] {len(sparse)} slide(s) worth looking at -- "
+              f"{', '.join(str(n) for n, _ in sparse)}: may be half empty.")
     print("[build_deck] QA cannot see the slides. Render them "
           "(python3 scripts/render.py) and look.\n")
 

@@ -53,6 +53,7 @@ from office.impress import (  # noqa: E402
     is_empty_placeholder,
     layout_slots,
     load_document,
+    parse_slide_spec,
     placeholder_kind,
     shapes,
     slides,
@@ -214,15 +215,7 @@ def _background(page):
 def _wanted(spec, total):
     if not spec:
         return set(range(1, total + 1))
-    out = set()
-    for part in spec.split(","):
-        part = part.strip()
-        if "-" in part:
-            lo, hi = part.split("-", 1)
-            out.update(range(int(lo), int(hi) + 1))
-        elif part:
-            out.add(int(part))
-    return out
+    return set(parse_slide_spec(spec))
 
 
 def probe(path: Path, slide_spec=None) -> str:

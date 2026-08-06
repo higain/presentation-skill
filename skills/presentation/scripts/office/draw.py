@@ -30,6 +30,7 @@ after it, never before.
 from __future__ import annotations
 
 import functools
+import inspect
 import sys
 
 import uno
@@ -126,6 +127,55 @@ _SPLIT_HELP = (
     "Those return a single Box and cannot come out in the wrong order."
 )
 
+# What a caller reached for on a Box, and what this one is called.  Every entry
+# is a name an agent run actually wrote before the build died on a bare
+# "'Box' object has no attribute ...", which says nothing about what to write
+# instead -- the kwarg table below does the same job for keywords, and the
+# misses it covered cost one build each against three or four for the misses
+# it did not.
+_BOX_ALIASES = {
+    "move": "inset(left=…, top=…), or Box(box.x + dx, box.y + dy, box.w, box.h)",
+    "shift": "inset(left=…, top=…), or build a Box at the offset you want",
+    "offset": "inset(…) -- it takes left/top/right/bottom separately",
+    "translate": "inset(left=…, top=…)",
+    "pad": "inset(all=mm(6))",
+    "shrink": "inset(all=mm(6))",
+    "split": "cols(n, gap=…), rows(n, gap=…) or grid(rows, cols, gap=…)",
+    "split_vertical": "rows(n, gap=…) -- n boxes stacked down the page",
+    "split_horizontal": "cols(n, gap=…) -- n boxes across the page",
+    "split_v": "rows(n, gap=…)",
+    "split_h": "cols(n, gap=…)",
+    "columns": "cols(n, gap=…)",
+    "column": "cols(n, gap=…)[i]",
+    "row": "rows(n, gap=…)[i]",
+    "divide": "cols(n, gap=…) or rows(n, gap=…)",
+    "subdivide": "grid(rows, cols, gap=…)",
+    "width": "w",
+    "height": "h",
+    "left_edge": "x",
+    "right_edge": "x2",
+    "top_edge": "y",
+    "bottom_edge": "y2",
+    "center": "centre, or box.cx / box.cy",
+    "center_x": "cx",
+    "center_y": "cy",
+    "middle": "centre",
+    "area": "box.w * box.h",
+    "band": "cut_top(…).band -- a Box is not a pair, it has no band",
+    "rest": "cut_top(…).rest -- a Box is not a pair, it has no rest",
+}
+
+_BOX_HELP = (
+    "  parts:     box.x  box.y  box.w  box.h  box.x2  box.y2  box.cx  box.cy"
+    "  box.centre\n"
+    "  slice:     box.cols(3, gap=mm(6))   box.rows(2)   box.grid(2, 3)\n"
+    "             box.top(mm(14))   box.bottom(mm(14))   box.left(mm(60))"
+    "   box.right(mm(60))\n"
+    "             box.inset(all=mm(6))   box.square()\n"
+    "  pairs:     head, body = box.cut_top(mm(14), gap=mm(6))   "
+    "-- also cut_bottom/cut_left/cut_right"
+)
+
 
 class Split(tuple):
     """The two boxes a ``cut_*`` returns, in reading order.
@@ -214,10 +264,35 @@ class Box:
     def __iter__(self):
         return iter((self.x, self.y, self.w, self.h))
 
+    def __getitem__(self, index):
+        # `canvas(page)[1]` and `area[0]` both get written, by callers who
+        # expect the pair a cut_* returns.  Python's "'Box' object is not
+        # subscriptable" says nothing about what to write instead.
+        raise TypeError(
+            "a Box is one rectangle, not a sequence -- there is no [%r].\n"
+            "  Its parts are named:   box.x  box.y  box.w  box.h  "
+            "box.x2  box.y2  box.cx  box.cy\n"
+            "  Pass it whole:         D.rect(doc, page, box, fill=0xEEEEEE)\n"
+            "  Slice it for pieces:   box.top(mm(14))   box.cols(3, gap=mm(6))"
+            "   head, body = box.cut_top(mm(14))\n"
+            "  canvas() returns ONE Box, not a pair." % (index,))
+
     def __repr__(self):
         return "Box(x=%d, y=%d, w=%d, h=%d)  # %.0f,%.0fmm %.0fx%.0fmm" % (
             self.x, self.y, self.w, self.h,
             self.x / 100, self.y / 100, self.w / 100, self.h / 100)
+
+    def __getattr__(self, name):
+        # Only reached on a miss -- __slots__ and the properties are found
+        # first.  Dunders go back the normal way: copy, pickle and inspect all
+        # probe for methods that are meant to be absent, and answering those
+        # with a wall of layout advice breaks them.
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        hint = _BOX_ALIASES.get(name)
+        raise AttributeError(
+            "a Box has no %r.%s\n%s"
+            % (name, ("  Use %s" % hint) if hint else "", _BOX_HELP))
 
     @property
     def x2(self):
@@ -420,12 +495,126 @@ def takes_box(*names, at=2):
                         "%s(): got two boxes where one goes.  You splatted a "
                         "cut_* result, and `*box.cut_top(h)` expands to TWO "
                         "boxes.\n%s" % (fn.__name__, _SPLIT_HELP))
+                # A box AND a coordinate keyword: the box already supplies all
+                # four, so Python would raise "got multiple values for argument
+                # 'y'" from inside the callee, naming an argument the caller
+                # never wrote positionally.  Say what actually happened.
+                clash = [n for n in names if n in kw]
+                if clash:
+                    raise TypeError(
+                        "%s(): got the area as a Box and %s= as well.  The box "
+                        "already supplies %s -- there is nothing left for %s to "
+                        "mean.\n"
+                        "  To move or resize the area, slice the box:\n"
+                        "      %s(doc, page, area.bottom(mm(20)), ...)   # a band\n"
+                        "      %s(doc, page, area.inset(mm(6)), ...)     # padded\n"
+                        "      %s(doc, page, D.Box(area.x, area.y + mm(60), "
+                        "area.w, mm(20)), ...)\n"
+                        "  Or drop the box and pass all four numbers."
+                        % (fn.__name__, "=, ".join(clash), ", ".join(names),
+                           clash[0], fn.__name__, fn.__name__, fn.__name__))
                 box = args[at]
                 args = (args[:at] + tuple(_BOX_PARTS[n](box) for n in names)
                         + args[at + 1:])
+            _check_kwargs(fn, kw)
             return fn(*args, **kw)
         return wrapper
     return decorate
+
+
+# Names a caller reaches for that this module spells differently.  Each one was
+# written by a model building a real deck; the bare Python error ("unexpected
+# keyword argument 'opacity'") says which word is wrong and never which word is
+# right, so the next guess is as likely to be wrong as the first.
+_KWARG_ALIASES = {
+    "opacity": "transparence= (0-100, opaque to invisible -- not a 0-1 alpha)",
+    "alpha": "transparence= (0-100, opaque to invisible)",
+    "transparency": "transparence=",
+    "colour": "color=",
+    "fill_color": "fill=",
+    "fill_colour": "fill=",
+    "fillcolor": "fill=",
+    "background": "fill=",
+    "bg": "fill=",
+    "line_color": "line=",
+    "linecolor": "line=",
+    "border": "line=",
+    "border_color": "line=",
+    "border_width": "line_width=",
+    "stroke": "line=",
+    "stroke_width": "line_width=",
+    "font_size": "size=",
+    "fontsize": "size=",
+    "font_name": "font=",
+    "bold": "weight=D.BOLD",
+    "corner_radius": "radius=",
+    "rounded": "radius= (in 1/100 mm)",
+    "padding": "pad=",
+    "text_color": "color=",
+    "halign": "align=",
+    "vertical_align": "valign=",
+    "row_height": "row_h=",
+    "header_fill": "head_fill=",
+    "columns": "widths= (proportions, with the area as the box)",
+    # There is no "nudge it a bit" keyword anywhere in here: the geometry comes
+    # from the Box, so an offset is a different Box.  Every one of these was
+    # written by a run that had a Box in hand and reached for a keyword.
+    "y_offset": "nothing -- move the Box instead: box.inset(top=mm(8)), or "
+                "head, body = box.cut_top(mm(8))",
+    "x_offset": "nothing -- move the Box instead: box.inset(left=mm(8))",
+    "offset": "nothing -- move the Box instead: box.inset(left=…, top=…)",
+    "dx": "nothing -- move the Box instead: box.inset(left=…)",
+    "dy": "nothing -- move the Box instead: box.inset(top=…)",
+    "top": "nothing -- the y comes from the Box you pass",
+    "margin": "pad= (inside the shape), or box.inset(all=…) (outside it)",
+    "line_spacing": "nothing -- one string per paragraph, not a spacing knob",
+    "italics": "italic=",
+    "underlined": "underline=",
+    "strikethrough": "strike=",
+    "weight_bold": "weight=D.BOLD",
+    "font_weight": "weight= (D.BOLD or D.NORM)",
+    "font_family": "font=",
+    "text_align": "align=",
+    "justify": "align='justify'",
+    "auto_fit": "grow= (autogrow height), or D.fit_size to pick the size",
+    "shrink_to_fit": "nothing here -- D.fit_size/D.fit_lines measure, and "
+                     "office.template.shrink_to_fit resizes a template's shape",
+}
+
+
+@functools.lru_cache(maxsize=None)
+def _accepted(fn):
+    params = inspect.signature(fn).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return None                      # takes **kw and checks them itself
+    return frozenset(params)
+
+
+def _check_kwargs(fn, kw, label=None, extra=()):
+    """Refuse an unknown keyword with the name that was meant instead.
+
+    ``label`` names the function the caller actually wrote, and ``extra`` are
+    keywords it consumed before delegating -- both for a wrapper like
+    ``text()``, which pops its own and hands the rest to ``_char_props``.
+    """
+    accepted = _accepted(fn)
+    if accepted is None:
+        return
+    accepted = accepted | frozenset(extra)
+    fn_name = label or fn.__name__
+    unknown = [k for k in kw if k not in accepted]
+    if not unknown:
+        return
+    lines = []
+    for name in unknown:
+        hint = _KWARG_ALIASES.get(name.lower())
+        lines.append("  %s= -> %s" % (name, hint) if hint
+                     else "  %s= is not one of them" % name)
+    raise TypeError(
+        "%s(): unknown keyword(s) %s.\n%s\n  It accepts: %s"
+        % (fn_name, ", ".join(sorted(unknown)), "\n".join(lines),
+           ", ".join(sorted(n for n in accepted
+                            if n not in ("doc", "page")))))
 
 
 def _new(doc, page, kind, x, y, w, h):
@@ -728,6 +917,12 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
         lines = (h,) + lines
         h = None
 
+    _OWN = ("fill", "line", "transparence", "line_width", "pad", "valign",
+            "wrap", "grow")
+    # Everything not consumed here goes to _char_props, and an unknown name
+    # would raise from in there, three frames down, naming a private function.
+    _check_kwargs(_char_props, kw, label="text", extra=_OWN)
+
     fill = kw.pop("fill", None)
     line_c = kw.pop("line", None)
     transparence = kw.pop("transparence", 0)
@@ -910,8 +1105,56 @@ def est_lines(s, width, size, font_factor=None):
 
 # ------------------------------------------------------------------ table
 
-def table(doc, page, x=None, y=None, widths=(), rows=(), row_h=None,
-          header_h=None,
+MIN_COL_W = 800          # 8 mm: narrower than this and a word breaks mid-word
+
+
+def _column_widths(widths, box, x, page):
+    """Column widths in 1/100 mm, and the check that they can possibly work.
+
+    With a ``box`` the widths are proportions and cannot overflow.  Without
+    one they are absolute, and absolute widths are the one place in this module
+    where a plausible-looking number silently wrecks the slide: ``[80, 60, 40,
+    120]`` reads like points or pixels, is 0.8 mm to 1.2 mm here, and produces
+    a table every label breaks mid-word inside.  Measured on one such build:
+    54 QA findings, all of them from two calls shaped like that.
+
+    So absolute widths are checked against the slide before anything is drawn.
+    """
+    if box is not None:
+        total = float(sum(widths)) or 1.0
+        return [box.w * (w / total) for w in widths]
+
+    widths = [_num(w, "widths[%d]" % i, "table") for i, w in enumerate(widths)]
+    span = sum(widths)
+    slide_w = getattr(page, "Width", 0) or 0
+    narrow = [i for i, w in enumerate(widths) if w < MIN_COL_W]
+    if narrow or (slide_w and span < slide_w * 0.2):
+        raise ValueError(
+            "table(): these column widths cannot hold text -- %s "
+            "(%s in 1/100 mm, so column %d is %.1f mm wide).  Widths here are "
+            "1/100 mm like every other coordinate, not points and not "
+            "percentages.\n"
+            "  Pass the area and give widths as PROPORTIONS -- they are then "
+            "scaled to fit it exactly and cannot overflow:\n"
+            "      D.table(doc, page, area, widths=[3, 2, 2, 5], rows=rows)\n"
+            "  Or, for absolute widths, use mm(): widths=[mm(60), mm(40)]."
+            % (widths, span, (narrow or [0])[0] + 1,
+               widths[(narrow or [0])[0]] / 100.0 if widths else 0.0))
+    if slide_w and x is not None and x + span > slide_w * 1.02:
+        raise ValueError(
+            "table(): the columns run %.0f mm past the right edge of the slide "
+            "(x=%d + widths=%d against a slide %d wide).  Nothing would report "
+            "this -- every cell holds its own text perfectly, the last column "
+            "is simply over the trim.\n"
+            "  Pass the area and give widths as proportions instead:\n"
+            "      D.table(doc, page, area, widths=[3, 2, 2, 5], rows=rows)"
+            % ((x + span - slide_w) / 100.0, x, span, slide_w))
+    return widths
+
+
+@takes_box("x", "y", "w", "h")
+def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
+          row_h=None, header_h=None,
           head_fill=GREY_DK, head_color=WHITE, size=12.0, head_size=12.0,
           zebra=GREY_LT, body_fill=WHITE, align=None, pad=200,
           cell_colors=None, cell_weights=None, row_heights=None,
@@ -923,21 +1166,26 @@ def table(doc, page, x=None, y=None, widths=(), rows=(), row_h=None,
     and needs no column-model bookkeeping.  Use a real table only when the
     recipient has to edit it as one.
 
+    **Give it the area and proportional widths**, like every other call here::
+
+        D.table(doc, page, area, widths=[3, 2, 2, 5], rows=rows,
+                head_fill=0x009EE0)
+
+    The columns are then scaled to the box exactly, ``row_h`` defaults to the
+    box height divided between the rows, and nothing can land off the slide.
+    Absolute widths still work -- ``widths=[mm(60), mm(40), mm(40)]`` with an
+    ``x, y`` -- but they are checked against the slide first, because a number
+    that looks like points is 25x too small and every cell then breaks its
+    own label mid-word.
+
     ``cell_colors``/``cell_weights`` are ``{(row, col): value}`` with row 1 the
     first body row.  Returns the y just past the last row.
-
-    **Pass ``box`` and give ``widths`` as proportions** -- ``[3, 2, 2, 2, 2]``,
-    or fractions summing to 1 -- and the columns are scaled to fit it exactly::
-
-        D.table(doc, page, widths=[3, 2, 2, 2, 2], rows=rows,
-                row_h=mm(14), box=area, head_fill=0x009EE0)
-
-    Absolute widths are easy to get wrong by the width of one column, and the
-    result is a last column over the edge of the slide that every text check
-    passes.  Proportions cannot overflow.
     """
-    # ``x`` is where a Box naturally lands when the call is written positionally.
-    if isinstance(x, Box):
+    # The pre-box signature was ``table(doc, page, x, y, widths, rows, ...)``,
+    # so a sequence in the ``w`` slot is that call, not a width.
+    if isinstance(w, (list, tuple)):
+        widths, rows, w, h = w, (h if h is not None else rows), None, None
+    if isinstance(x, Box):                    # box passed as a bare positional
         box, x = x, None
     head_color = kw.pop("head_text_color", head_color)   # the other obvious name
     if kw:
@@ -946,11 +1194,30 @@ def table(doc, page, x=None, y=None, widths=(), rows=(), row_h=None,
             "head_color, body_fill, zebra, rule and cell_colors={(row, col): "
             "colour}; sizes are size, head_size, row_h, header_h, row_heights."
             % ", ".join(sorted(kw)))
+    if box is None and None not in (x, y, w, h):
+        box = Box(x, y, w, h)                 # the @takes_box form
+    if not rows:
+        raise ValueError("table(): no rows to draw")
+    if not widths:
+        widths = [1] * len(rows[0])           # even columns, the obvious default
     if box is not None:
         x = box.x if x is None else x
         y = box.y if y is None else y
-        total = float(sum(widths)) or 1.0
-        widths = [box.w * (w / total) for w in widths]
+    if box is None and (x is None or y is None):
+        raise TypeError(
+            "table(): nowhere to draw it.  Pass the area -- "
+            "D.table(doc, page, area, widths=[3, 2, 2], rows=rows) -- or an "
+            "x and y with absolute widths.")
+    widths = _column_widths(widths, box, x, page)
+    if row_h is None and row_heights is None:
+        if box is None:
+            raise TypeError(
+                "table(): give it the area -- D.table(doc, page, area, "
+                "widths=[3, 2, 2], rows=rows) -- or say how tall a row is "
+                "with row_h=mm(12).")
+        # Fill the box: a table drawn to two-thirds of its area and a dead
+        # band underneath is the commonest composition defect in a built deck.
+        row_h = box.h / max(len(rows), 1)
     align = align or ["left"] * len(widths)
     header_h = header_h or row_h
     cy = y
@@ -1241,6 +1508,18 @@ def canvas(page, keep=(), remove=()):
     nothing substantial was removed the page inset by the kept chrome's own
     left margin is returned instead.
     """
+    if not keep and not remove:
+        raise TypeError(
+            "canvas(): say what to keep.  With neither keep= nor remove= this "
+            "would delete nothing and hand you an area guessed from the page, "
+            "so you would draw ON TOP of the template's own text -- which "
+            "renders as a slide in two languages and reports as 'still the "
+            "template's own wording'.\n"
+            "  Run probe.py on the design and keep its chrome:\n"
+            "      area = D.canvas(page, keep=(0, 1, 2, 3))   # title, topic, source\n"
+            "  The catalog entry for each design lists the tuple that works.\n"
+            "  For the whole slide with nothing removed, that is "
+            "D.page_box(page).")
     current = shapes(page)
     if keep:
         doomed = [s for i, s in enumerate(current) if i not in set(keep)]
@@ -1279,6 +1558,50 @@ def canvas(page, keep=(), remove=()):
             top = max(top, pos.Y + size.Height)
     return Box(left, top, page.Width - 2 * left,
                page.Height - top - page.Height // 12)
+
+
+def __getattr__(name):
+    """Name the module a missing ``D.<something>`` actually lives in.
+
+    ``office.draw`` is imported as ``D`` and is the module a build script has
+    in its hands, so it is where every slide-shaped verb gets tried first --
+    ``D.find_shapes``, ``D.shrink_to_fit``, ``D.retext``.  Those are real
+    functions in ``office.template``, and Python's own "module 'office.draw'
+    has no attribute 'find_shapes'" gives no hint that they exist at all: one
+    run spent four builds on two of them, guessing at spellings.
+
+    Only called on a miss, so it costs nothing until something is already
+    wrong.
+    """
+    if name.startswith("__"):
+        raise AttributeError(name)
+
+    from . import impress, template            # lazy: only on a miss
+    if not name.startswith("_"):
+        found = [m for m in (template, impress) if hasattr(m, name)]
+        # Where it is *defined*, not where it is also visible: template imports
+        # add_slide from impress, so a plain first-hit wins sends the caller to
+        # the wrong module -- which still works, and teaches the wrong home for
+        # everything else they look for next.
+        home = next(
+            (m for m in found
+             if getattr(getattr(m, name), "__module__", None) == m.__name__),
+            found[0] if found else None,
+        )
+        if home is not None:
+            raise AttributeError(
+                "office.draw has no %r -- it is in %s.\n  from %s import %s"
+                % (name, home.__name__, home.__name__, name))
+
+    close = [n for n in __all__ if name.lower() in n.lower()
+             or n.lower() in name.lower()]
+    raise AttributeError(
+        "office.draw has no %r.%s\n"
+        "  draw is shapes and text on a slide; office.template is the one that"
+        " reads and rewrites\n  what a template already put there "
+        "(retext, find_shapes, shrink_to_fit, strip_annotations)."
+        % (name, ("  Closest here: %s" % ", ".join(sorted(close)[:6]))
+           if close else ""))
 
 
 __all__ = [

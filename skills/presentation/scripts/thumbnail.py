@@ -20,7 +20,6 @@ Examples:
 """
 
 import argparse
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -28,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from office.impress import PRESENTATION_EXTS, load_document, slides as doc_slides
-from office.soffice import run_soffice
+from office.rasterize import existing_images, rasterize
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -191,52 +190,15 @@ def create_hidden_placeholder(size: tuple[int, int]) -> Image.Image:
     return img
 
 
-def existing_images(directory: Path) -> list[Path]:
-    """Per-slide images already rendered into ``directory``, in slide order.
-
-    ``render.py`` names them ``slide-01.png``; anything matching ``slide-*``
-    with an image extension is taken, sorted by the number in the name so 10
-    does not sort before 2.
-    """
-    found = [p for p in directory.glob("slide-*")
-             if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
-
-    def number(path):
-        digits = "".join(c for c in path.stem if c.isdigit())
-        return int(digits) if digits else 0
-
-    return sorted(found, key=number)
-
-
 def convert_to_images(deck_path: Path, temp_dir: Path) -> list[Path]:
-    pdf_path = temp_dir / f"{deck_path.stem}.pdf"
+    """Thumbnail-resolution JPEGs, one per rendered slide.
 
-    result = run_soffice(
-        ["--headless", "--convert-to", "pdf", "--outdir", str(temp_dir), str(deck_path)],
-        timeout=300,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0 or not pdf_path.exists():
-        detail = (result.stderr or result.stdout or "").strip()
-        raise RuntimeError(f"PDF conversion failed: {detail}" if detail else "PDF conversion failed")
-
-    result = subprocess.run(
-        [
-            "pdftoppm",
-            "-jpeg",
-            "-r",
-            str(CONVERSION_DPI),
-            str(pdf_path),
-            str(temp_dir / "slide"),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError("Image conversion failed")
-
-    return sorted(temp_dir.glob("slide-*.jpg"))
+    ``hidden="drop"`` because this is the one caller that has something better
+    to put in the gap: ``build_slide_list`` draws a crossed-out placeholder and
+    labels it, which a reader of a contact sheet wants to see.
+    """
+    return rasterize(deck_path, temp_dir, dpi=CONVERSION_DPI, fmt="jpeg",
+                     hidden="drop")
 
 
 def create_grids(

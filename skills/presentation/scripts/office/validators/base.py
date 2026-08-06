@@ -10,7 +10,7 @@ from functools import lru_cache
 
 import lxml.etree
 
-from helpers import safe_extract
+from office.helpers import safe_extract
 
 
 @lru_cache(maxsize=None)

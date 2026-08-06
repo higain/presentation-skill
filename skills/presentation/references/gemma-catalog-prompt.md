@@ -1,10 +1,14 @@
 # Gemma prompt — author the company layout catalog
 
-Stage B of building the baked-in company template (see "Company template" in
-SKILL.md). Runs on your internal infra. `catalog_extract.py` has already
-produced one `slide-NN/` per template layout, each with a `render.png` and a
-`structure.json`. This prompt turns those into catalog entries a slide-builder
-can act on.
+Stage B of building the baked-in company template (see `README.md`). Runs on
+your internal infra. `catalog_extract.py` has already produced one `slide-NN/`
+per template layout, each with a `render.png` and a `structure.json`.
+
+**Ask the model only for what needs eyes.** The retext keys, the empty slots,
+the group counts, the canvas indices and the title budgets are all measured in
+stage A and assembled by `catalog_build.py`; a model asked to produce them
+invents plausible wrong ones. What is left here is genuine judgement: what a
+layout is *for*, what it holds, what its pictures depict.
 
 Run it **once per layout** (best quality), then run the aggregation prompt once
 over all the per-layout answers. Keep a human in the loop on the output — the
@@ -120,7 +124,15 @@ layout ids shows up there rather than in the shipped catalog.
 
 ## What you do with the output
 
-Fold the per-layout entries and the decision table into
-`references/company-template.md` (skeleton alongside this file), review every
-row against the real renders, and commit both that file and the template
-`.pptx` asset to your **internal** fork only.
+Nothing by hand:
+
+```bash
+scripts/catalog_build.py catalog/ -o references/company-template.md
+```
+
+`catalog_build.py` merges these judged fields with the measured ones from stage
+A and writes the catalog in its shipped format. Then **review every capacity
+figure and every decision-table row against the renders** -- that human pass is
+where the catalog earns its keep -- and commit the catalog and the `.pptx` asset
+to your **internal** fork only. `references/company-template.example.md` shows
+the finished shape, annotated with which half comes from where.

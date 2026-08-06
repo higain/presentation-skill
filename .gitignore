@@ -14,3 +14,11 @@ template-testdir/
 # from disk, so being untracked costs nothing locally.
 skills/*/assets/
 testing/delta-extract/
+
+# Contact sheets of that same template -- the brand's own slides, as images.
+# Same reason as above, and they sit outside assets/.
+skills/*/company-template-*.jpg
+
+# Scratch space, when /tmp is not writable. Normally removed on exit; this
+# catches the runs that are killed before they get there.
+.presentation-tmp/

@@ -67,14 +67,66 @@ class SofficeError(RuntimeError):
     pass
 
 
+#: No slide is a metre across -- a 16:9 brand template is about 320 mm.  A
+#: value this large reached ``mm()`` already in 1/100 mm and is being converted
+#: twice: ``mm(26000)`` is 26 metres.  Measured on a real build, that is where
+#: "extends 2471929 past the right edge" comes from, three steps downstream of
+#: the mistake and reported against a shape rather than against the number.
+MAX_MM = 1000
+
+
 def mm(value: float) -> int:
     """Millimetres to UNO's 1/100 mm."""
+    if abs(value) > MAX_MM:
+        raise ValueError(
+            f"mm({value:g}) is {value / 1000:g} metres.  mm() takes "
+            f"MILLIMETRES -- a slide is about 320 mm wide, so nothing on one "
+            f"is over {MAX_MM} mm.\n"
+            f"  Geometry you read back -- from probe.py, slide_size(doc), "
+            f"canvas() or a Box -- is ALREADY in 1/100 mm.  Pass it straight "
+            f"through:\n"
+            f"      D.rect(doc, page, area.top(mm(20)), ...)   # not mm(area.y)\n"
+            f"      D.Box(area.x, area.y + mm(10), area.w, mm(20))\n"
+            f"  If {value:g} really is a 1/100 mm figure, drop the mm(): it is "
+            f"{value / 100:g} mm."
+        )
     return int(round(value * 100))
 
 
 def pt(value: float) -> int:
     """Points to UNO's 1/100 mm (1 pt = 1/72 inch)."""
     return int(round(value * 2540 / 72))
+
+
+def parse_slide_spec(spec: str) -> list[int]:
+    """``'3,7-9'`` -> ``[3, 7, 8, 9]``.  The ``--slides`` argument, once.
+
+    Lives here because every entry point that takes ``--slides`` -- render,
+    qa, probe, make_deck -- had grown its own copy, and they disagreed about
+    whether a reversed range was an error.
+    """
+    out: set[int] = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            lo, _, hi = part.partition("-")
+            try:
+                lo, hi = int(lo), int(hi)
+            except ValueError:
+                raise ValueError(f"not a slide range: {part!r}") from None
+            if lo > hi:
+                raise ValueError(f"reversed slide range: {part!r}")
+            out.update(range(lo, hi + 1))
+        else:
+            try:
+                out.add(int(part))
+            except ValueError:
+                raise ValueError(f"not a slide number: {part!r}") from None
+    if not out or min(out) < 1:
+        raise ValueError("slide numbers start at 1")
+    return sorted(out)
 
 
 class _Server:
