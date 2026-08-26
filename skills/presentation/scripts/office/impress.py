@@ -20,7 +20,7 @@ All geometry is in **1/100 mm** (UNO's drawing unit), not points or EMU.
 
 **Read the slide size, never assume it.**  ``slide_size(doc)`` is the only
 answer that is right for the deck in front of you: a LibreOffice default page
-is 28000 x 15750, but a brand template is usually its own size -- delta's is
+is 28000 x 15750, but a brand template is usually its own size -- one is
 32001 x 18000.  Hardcoding the default silently shifts every shape you place
 on a template that is 14% wider.
 

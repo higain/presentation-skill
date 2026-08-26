@@ -30,7 +30,7 @@ stays OOXML. Nothing here rewrites a file format by hand.
 2. **A new deck defaults to `.pptx`** unless the user asks for `.odp` or names
    an output path that says otherwise.
 3. **A deck with no template of the user's own is built from our house
-   template** — see [Company template](#company-template-default) — not from a
+   template** — see [The company template](#the-company-template-default) — not from a
    blank document and not from an invented look. Their template always wins if
    they supply one.
 
@@ -61,21 +61,27 @@ still have never made a point.
 
 ## The recipe
 
-**This is the commonest job — a `.pptx` on the house template — and this is the
-whole of it.** Six steps in order, and **only once step 0 sent you here**.
+**This is the commonest job — a `.pptx` on the company template — and this is
+the whole of it.** Six steps in order, and **only once step 0 sent you here**.
+
+The template and everything known about it is a **pack**: `templates/<name>/`,
+holding the asset, its catalog and its palette. `acme` below is a pack name —
+substitute the one installed, and if none is, see
+[No pack installed](#no-pack-installed).
 
 ```bash
 # 1. See what the template offers.
-scripts/thumbnail.py assets/company-template.pptx
-scripts/probe.py assets/company-template.pptx --slides 8,13
+scripts/thumbnail.py templates/acme/template.pptx
+scripts/probe.py templates/acme/template.pptx --slides 4,9   # the ones you want
 ```
 
-**2. Pick a design per section** from `references/company-template.md` — a
-decision table, top to bottom, first match wins. Its numbers are the slide
-numbers you pass to `build_deck`, and each entry lists the **retext keys** that
-design actually carries. Content the table has no design for — a diagram, a
-chart, a comparison you want to draw — goes on **design 8 stripped to a
-canvas**; see `references/drawing.md`.
+**2. Pick a design per section** from the pack's `catalog.md` — a decision
+table, top to bottom, first match wins. Its numbers are the slide numbers you
+pass to `build_deck`, and each entry lists the **retext keys** that design
+actually carries. Content the table has no design for — a diagram, a chart, a
+comparison you want to draw — goes on the **canvas design stripped back**; the
+catalog's *Designs by role* table names it, and `references/drawing.md` says
+how.
 
 **3. Write one build script.** One `fill` per page, retexting *and* drawing.
 Never reopen the finished file to add more: that is a second `.pptx` save, it
@@ -85,8 +91,9 @@ nobody replaced.
 **Branch on `slot`, the position in your deck — not on `design`, and never on
 both.** `if design == 8 and slot == 1` is false whenever slot 1 holds a
 different design, and a branch that never fires leaves that slide exactly as the
-template drew it: German body text under whatever you drew on top. **Every slot
-needs a branch**; end `fill` with an `else` that raises if you want to be sure.
+template drew it: its own body text, in its own language, under whatever you
+drew on top. **Every slot needs a branch**; end `fill` with an `else` that
+raises if you want to be sure.
 
 ```python
 from office.deckbuild import build_deck
@@ -94,11 +101,15 @@ from office.template import retext
 from office.impress import mm
 from office import draw as D
 
+# Both from the catalog: the retext key of the design in that slot, and the
+# canvas design's keep tuple. Never from memory -- they differ per design.
+TITLE_KEY, KEEP = "Chapter title", (0, 1, 2, 3)
+
 def fill(doc, page, slot, design):
     if slot == 0:
-        retext(page, {"Potentielle Navigatoren": "How we got here"})
+        retext(page, {TITLE_KEY: "How we got here"})
     if slot == 1:                                   # a drawn slide
-        area = D.canvas(page, keep=(0, 1, 2, 3))    # title, topic, source
+        area = D.canvas(page, keep=KEEP)            # what the body vacates
         body, foot = area.cut_bottom(mm(14))        # a PAIR -- unpack it
         D.venn(doc, page, body,                     # sizes itself to the box
                D.series(3),                         # the template's own colours
@@ -107,20 +118,21 @@ def fill(doc, page, slot, design):
         D.text(doc, page, foot, "Any two is safe by design",
                role="caption", align="center")      # colour picked for the bg
 
-build_deck("assets/company-template.pptx", "out.pptx", [7, 8, 13], fill=fill,
+build_deck("acme", "out.pptx", [7, 8, 13], fill=fill,
            footer="Lethal trifecta · Board briefing · 2026")
 ```
 
 **Vary the designs, and set the footer.** Both are one argument of that last
 call, and four separate runs got both wrong: every one built `[8] * N`, drawing
 every slide from scratch on a template whose twenty other designs it never
-touched, and every one left the template's German `Gegenstand | Titel | Ort |
-Datum` along the bottom of an English deck. The footer is a page property, so
-no amount of `retext` reaches it; `footer=None` hides it instead.
+touched, and every one left the template's own footer — `subject | title |
+place | date`, in the template's language — along the bottom of a deck written
+in another. The footer is a page property, so no amount of `retext` reaches it;
+`footer=None` hides it instead.
 
 ```bash
 # 4-6. Build, check, render — one command, and it prints the PNG paths.
-scripts/make_deck.py build.py out.pptx --template assets/company-template.pptx
+scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx
 ```
 
 **Give this command a timeout of at least five minutes.** It opens LibreOffice
@@ -160,7 +172,7 @@ timeline, a table of real numbers. See Composition in `references/drawing.md`.
 where you are working.** Find it once — the directory holding the `SKILL.md`
 you are reading — and prefix it, or `cd` there. `assets/` and `references/` are
 inside it. (`build_deck` resolves a template against it for you, so
-`build_deck("assets/company-template.pptx", ...)` works from anywhere.)
+`build_deck("acme", ...)` works from anywhere.)
 
 **Run each script directly** — every one carries a shebang and the executable
 bit, so `scripts/dump.py deck.odp` is the whole invocation. `python3
@@ -188,7 +200,7 @@ The `office` modules a build script imports:
 | `office.deckbuild` | `build_deck` — a whole deck from a template, in any order |
 | `office.draw` | `rect`, `ellipse`, `line`, `arrow`, `polygon`, `chevron`, `text`, `chip`, `bullets`, `table`, `venn`, `canvas`, `Box`, `page_box`, `restyle`, `contrast_ratio`, `readable_on`, `fit_size`, `fit_lines` — **putting new things on a slide**, and `Box` to lay it out |
 | `office.draw` — composition | `cards`, `steps`, `kpis`, `statement` — the four layouts every build draws by hand. One call each, with the padding, the equal heights, the arrows and the line breaks already right. See Composition in `references/drawing.md` |
-| `office.draw` — house style | `color`, `series`, `palette`, `size_for`, and `role=` on `text` — **the template's own colours and sizes, by name.** Four runs invented hex the template does not contain and picked a footnote size per slide; these are counted off the asset. `references/company-template.md` prints both tables |
+| `office.draw` — house style | `color`, `series`, `palette`, `size_for`, and `role=` on `text` — **the template's own colours and sizes, by name.** Four runs invented hex the template does not contain and picked a footnote size per slide; these are counted off the asset. the pack's `catalog.md` prints both tables |
 | `office.template` | `retext`, `set_text`, `find_shapes`, `shape_by_text`, `clone_slide`, `strip_annotations`, `fit_pill`, `shrink_to_fit`, `scale_bars`, `text_overflow`, `overflowing`, `colliding`, `set_footer` — editing what a template slide already has |
 | `office.impress` | open, save, slides, shapes, placeholders, notes, `slide_size`, `mm()`/`pt()` |
 | `office.rasterize` | `rasterize` — deck to images, with the hidden-slide policy as an argument |
@@ -206,7 +218,7 @@ import sys; sys.path.insert(0, "/absolute/path/to/presentation/scripts")
 
 | File | When |
 |---|---|
-| `references/company-template.md` | **Always, for a house-style deck** — which design for which content, the retext keys, the capacities |
+| the pack's `catalog.md` | **Always, for a house-style deck** — which design for which content, the retext keys, the capacities |
 | `references/drawing.md` | Drawing anything: `Box` layout, every primitive, the canvas pattern, composition |
 | `references/templates.md` | The user brought their own template: probe, `clone_slide`, `retext`, charts, pills, long titles |
 | `references/qa.md` | What each check means, visual QA, `validate.py`, what a round trip preserves |
@@ -227,47 +239,73 @@ is step 0 above, and `references/storyline.md` runs before anything on this
 page. If you have already written a build script, you are past the point where
 reading it helps.
 
-## Company template (default)
+## The company template (default)
 
-This skill ships our house template as the default. **When a deck is requested
-and the user names no template of their own, build from
-`assets/company-template.pptx`.**
+**This skill ships no template.** A company installs one as a **pack** —
+`templates/<name>/` — and everything below is about building on it. `templates/README.md`
+says what a pack holds; the setup skill makes one.
 
-1. **Choose designs from the catalog.** `references/company-template.md` maps
-   content to **design numbers** — the slide numbers in the asset — as a
-   decision table applied top to bottom, first match wins. Read it first, pick a
-   design per section, and vary them per its variety rule. Do not eyeball the
-   thumbnail and guess.
+**When a deck is requested and the user names no template of their own, build
+from the default pack**: the one named in `templates/default`, or the only one
+installed. `build_deck("acme", ...)` and `--template acme` both take the pack
+name, so no path inside the skill is ever spelled out in a build script.
 
-   **"Design 8" always means the catalog's design 8**, which is the number you
-   put in `build_deck`'s list. It is never an Impress autolayout number: the
-   autolayout `probe.py` prints is `20` for every slide in this template and
-   identifies nothing.
+1. **Choose designs from the pack's `catalog.md`.** It maps content to **design
+   numbers** — the slide numbers in the asset — as a decision table applied top
+   to bottom, first match wins. Read it first, pick a design per section, and
+   vary them per its variety rule. Do not eyeball the thumbnail and guess.
+
+   **A catalog design number is a slide number in that asset**, and it is what
+   goes in `build_deck`'s list. It is never an Impress autolayout number: the
+   autolayout `probe.py` prints is usually the same on every slide of a
+   designed template and identifies nothing.
 2. **Respect the catalog's capacities.** Each entry states how many bullets a
    body holds, how many columns, how many images. When content exceeds that,
    split the slide rather than overflow it.
 
    **Take `retext` keys from the entry's *Retext keys* line, never from
-   memory.** They differ per design, and reusing design 8's
-   `"Potentielle Navigatoren"` on design 5 or 12 is the single commonest way a
-   build script dies. A slot that is **absent from a design's key list** — or
-   listed under *Empty slots* — holds no text at all, and `retext` cannot match
-   an empty shape: write it with `set_text(shapes(page)[i], ...)` or draw your
-   own.
-3. **Anything the table has no design for goes on design 8 stripped to a
-   canvas.** Do not force it into the nearest design's bullet list, and do not
-   start from a blank slide.
-4. **Build with `build_deck`** against the asset, passing the design numbers in
+   memory.** They differ per design, and reusing one design's key on another is
+   the single commonest way a build script dies — the key matches nothing, the
+   call succeeds, and the template's own words ship. A slot that is **absent
+   from a design's key list** — or listed under *Empty slots* — holds no text at
+   all, and `retext` cannot match an empty shape: write it with
+   `set_text(shapes(page)[i], ...)` or draw your own.
+3. **Anything the table has no design for goes on the canvas design**, stripped
+   back — the catalog's *Designs by role* table names which one it is. Do not
+   force the content into the nearest design's bullet list, and do not start
+   from a blank slide.
+4. **Build with `build_deck`** against the pack, passing the design numbers in
    final order and doing all retexting *and* drawing in its `fill` callback. It
-   duplicates rather than rebuilds, so this template's bullets, inline colour
-   and think-cell objects survive; `clone_slide` loses all three here.
+   duplicates rather than rebuilds, so a template's bullets, inline colour and
+   OLE objects (think-cell charts, embedded sheets) survive; `clone_slide`
+   loses all three.
 5. **Check and look:**
-   `scripts/make_deck.py build.py out.pptx --template assets/company-template.pptx`,
-   then open every PNG it prints.
+   `scripts/make_deck.py build.py out.pptx --template acme`, then open every
+   PNG it prints.
 
-**Maintaining the default** — extracting the catalog from a new company
-template — is `README.md`. It runs once, on internal infra; never send company
-slides to a hosted model.
+### No pack installed
+
+Then there is no house style to build in, and inventing one is the failure this
+skill exists to prevent — four runs drew corporate decks in colours their
+company does not own. In order:
+
+1. **Ask for the template.** Most companies have one, and one file makes every
+   deck after it right.
+2. **Point the `presentation-setup` skill at it.** Twenty minutes, and the pack
+   is permanent.
+3. Only if there is genuinely no template: `references/authoring.md` builds
+   from a blank document and `references/design.md` invents a look on purpose,
+   declaring it rather than pretending it is the company's.
+
+`D.color()` raises rather than guessing when no pack is in force, and
+`role=` falls back to a neutral type scale so a build still runs. Both are
+deliberate: drawing without a palette is handled, drawing in *another
+company's* palette is not.
+
+**Making or updating a pack** — extracting a catalog from a template — is the
+`presentation-setup` skill, with `README.md` as the same pipeline in manual
+form. It runs on your own infrastructure; never send company slides to a hosted
+model.
 
 ## QA (required)
 
@@ -310,10 +348,13 @@ is what the renders are for. Details, and what each finding means:
 - **apt only.** Never run `pip` or `npm`. Everything needed is installed; if
   something is missing, say so and stop.
 - **Geometry is 1/100 mm.** Use `mm()`/`pt()`; read `slide_size(doc)` rather
-  than assuming — the house template is 32001 × 18000, not LibreOffice's
-  28000 × 15750.
+  than assuming. A brand template is usually its own size: one is
+  32001 × 18000 against LibreOffice's 28000 × 15750, and every offset computed
+  against the default lands 14% too far left.
 - **`from com.sun.star... import ...` only works after `import uno`.**
-- The locale is German (`de_DE.UTF-8`); German content is normal.
+- **The deck's language is the user's, not the machine's.** Write in the
+  language of the brief, leave a template's own footer in its language only if
+  the deck is in that language, and expect content in any language to be normal.
 - Each script starts its own headless LibreOffice with a private profile and
   port, so parallel runs never collide. If `/tmp` is not writable, set
   `PRESENTATION_TMPDIR` — see `references/authoring.md`.

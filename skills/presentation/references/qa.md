@@ -37,17 +37,18 @@ They report what a reader would see as broken and nothing else:
 - wording still shared with the template, and leftover placeholders — down to
   six characters, and collapsed to one line naming every slide it is on. The
   threshold used to be twenty-five, on the theory that only a body paragraph
-  could be a real leftover; two runs against the delta template shipped the
-  15-character design-8 label `"Navigator (1/2)"` on 13 of 15 and 9 of 10
+  could be a real leftover; two runs against a corporate template shipped a
+  15-character label off its canvas design on 13 of 15 and 9 of 10
   slides, in German, on finished English decks, and both reports said clean.
   A design's short labels are retext keys like any other — the catalog lists
   them;
 - **a picture still on the slide that came from the template** — `retext`
-  replaces words and never pictures, so a design's stock photo and its German
-  process diagram survive a deck that reports clean on text;
+  replaces words and never pictures, so a design's stock photo and its process
+  diagram survive a deck that reports clean on text, still in the template's
+  own language;
 - **the template's own footer**, which is a page property (`page.FooterText`)
   rather than a shape and which nothing that walks shapes can see. Four decks
-  shipped the house template's `Gegenstand | Titel | Ort | Datum` under English
+  shipped the template's own `subject | title | place | date` under English
   slides — every slide of every deck — and all four reports said clean. Fix it
   with `build_deck(..., footer="…")` or `set_footer(page, …)`; `None` hides it;
 - **markdown** (`~~x~~`, `**x**`) that will render as literal characters;
@@ -76,7 +77,7 @@ then `validate.py` on a `.pptx`. Exit code 1 means findings. Pass `--template`
 for any template-derived deck; without it neither the leftover-wording nor the
 stray-picture check can run, and a bleed the template does on purpose cannot be
 told from one you introduced. For a house-default deck the template to pass is
-`assets/company-template.pptx`.
+`templates/acme/template.pptx`.
 
 **The off-slide check is the one that catches bad arithmetic.** A table whose
 column widths add up to more than the slide, or a diagram given a radius too
@@ -200,7 +201,7 @@ on eleven slides of sixteen. Nothing else noticed. The build was clean, the rend
 were fine, and the deck argued nothing.
 
 **Placement is deliberately not checked** — only presence. The display title of
-designs 1, 5 and 7 is not readable as a title at all, and on the title slide the
+a divider design is not readable as a title at all, and on the title slide the
 governing thought belongs in the subtitle, so a check on *which slot* the sentence
 landed in would report three correct slides as broken on every deck this template
 builds.

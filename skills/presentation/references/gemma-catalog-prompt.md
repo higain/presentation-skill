@@ -127,12 +127,12 @@ layout ids shows up there rather than in the shipped catalog.
 Nothing by hand:
 
 ```bash
-scripts/catalog_build.py catalog/ -o references/company-template.md
+scripts/catalog_build.py catalog/ -o the pack's catalog.md
 ```
 
 `catalog_build.py` merges these judged fields with the measured ones from stage
 A and writes the catalog in its shipped format. Then **review every capacity
 figure and every decision-table row against the renders** -- that human pass is
 where the catalog earns its keep -- and commit the catalog and the `.pptx` asset
-to your **internal** fork only. `references/company-template.example.md` shows
+to your **internal** fork only. `references/catalog.example.md` shows
 the finished shape, annotated with which half comes from where.

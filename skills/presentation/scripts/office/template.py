@@ -118,7 +118,7 @@ def walk_shapes(page):
     """``[(address, shape)]`` for every shape on ``page``, groups included.
 
     ``shapes(page)`` stops at the top level, and on a designed template that is
-    routinely less than half the words on the slide: delta's phase-plan slide
+    routinely less than half the words on the slide: one phase-plan design
     carries 14 top-level shapes and 12 more inside five groups, holding the
     phase labels and durations.  Anything that reads or rewrites a slide's text
     has to come through here, or it will report a slide clean while the
@@ -223,7 +223,7 @@ def footer_text(page):
     ``walk_shapes`` -- ``retext``, ``find_shapes``, every check in ``qa.py``.
 
     That gap shipped four decks.  All four were English, all four were built on
-    a German template, and all four carried its ``Gegenstand | Titel | Ort |
+    a German template, and all four carried its ``subject | title | place |
     Datum`` on every slide while their reports said *leftover template wording:
     clean*.  One of the four went looking for the string, searched the shapes,
     found nothing, and concluded the reviewer that had flagged it was

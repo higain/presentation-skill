@@ -13,7 +13,7 @@ designs it wants -- ``duplicate_slide`` is a real Impress duplicate, lossless --
 drops the template originals, saves, and then permutes that one list in the
 saved file.
 
-Measured against the delta template, picking designs 7, 8, 13, 20 and 1 and
+Measured against a 21-design corporate template, picking 7, 8, 13, 20, 1 and
 diffing each result against its source render: mean RMS 7.8 here versus 22.8 for
 ``clone_slide``, better on every slide, and 6 think-cell references preserved
 where ``clone_slide`` kept none.  Output size and validator findings are the

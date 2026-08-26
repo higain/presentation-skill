@@ -1,7 +1,7 @@
 # Accents and hero visuals: the look, chosen rather than invented
 
 Loaded at stage 4 of `references/storyline.md`, and any time a deck should look like more
-than the standard master. Two closed catalogues: **six accent packs** and **eleven hero
+than the standard master. Two closed catalogues: **six accent packs** and **twelve hero
 visuals**. You pick from them. You do not add to them mid-deck.
 
 **The one hard rule: no new colours, ever.** Every colour here is one this template
@@ -30,51 +30,56 @@ deck; a deck that changes pack halfway is a deck built by two people.
 ### Signal — the house look, sharpened
 
 ```python
-PACK = {"accent": D.color("cyan"), "muted": D.GREY_LT, "radius": 200}
+PACK = {"accent": D.color("accent"), "muted": D.color("muted"), "radius": 200}
 ```
 
 - **Rule:** the accent marks **exactly one element per slide** — the thing the title's
   claim is about. Two accented things on one slide means neither is the point.
 - **Motif:** rounded blocks (`radius=200`) and numbered chips.
-- **Type:** titles black, captions `D.GREY_DK`, numbers at `role="display"`.
-- **Use for:** anything, and by default. Cyan is 3.0:1 on white — headline sizes only,
-  never body text.
+- **Type:** titles in the template's text colour, captions `D.color("neutral")`, numbers
+  at `role="display"`.
+- **Use for:** anything, and by default. **Check the accent's contrast first** —
+  `D.contrast_ratio(D.color("accent"), D.WHITE)`. Most brand accents come in under 4.5:1,
+  which means headline sizes only and never body text.
 
-### Ember — warm, blunt, for a deck about a risk
+### Ember — the same colour, used only as area
 
 ```python
-PACK = {"accent": D.color("orange"), "muted": D.GREY_LT, "radius": 0}
+PACK = {"accent": D.color("accent"), "muted": D.color("muted"), "radius": 0}
 ```
 
-- **Rule:** orange is 2.3:1 on white and is **fill only** — it can never be a word. So
-  the accent always arrives as a block with white text on it, which is why this pack
-  reads harder than Signal without a single new colour.
+- **Rule:** the accent is **fill only** — it can never be a word. So it always arrives as
+  a block with text on it, which is why this pack reads harder than Signal without a
+  single new colour. This is the pack for an accent too low-contrast to set type, and
+  most of them are.
 - **Motif:** square-edged solid blocks. `D.readable_on(PACK["accent"])` picks the text
   colour; do not assume white.
-- **Type:** as the house scale. The emphasis comes from area, not weight.
+- **Type:** as the template's scale. The emphasis comes from area, not weight.
 - **Use for:** cost of inaction, an incident, a deadline.
+- If the palette has a second warm colour — `D.series(2)[1]` — this is the pack to spend
+  it in. Never a colour from outside the palette.
 
 ### Meadow — the same structure, read as progress
 
 ```python
-PACK = {"accent": D.color("lime"), "muted": D.GREY_LT, "radius": 900,
-        "text_accent": D.color("green")}
+PACK = {"accent": D.color("ok"), "muted": D.color("muted"), "radius": 900}
 ```
 
-- **Rule:** `lime` fills, `green` (4.2:1) sets the one figure or word per slide that is
-  allowed to be coloured type. Never the reverse.
+- **Rule:** `ok` fills. If the palette has a darker partner for it that clears 4.5:1,
+  that one — and only that one — sets the single figure or word per slide allowed to be
+  coloured type. Never the reverse.
 - **Motif:** discs — `D.ellipse` for step numbers where Signal would use a chip.
-- **Type:** as the house scale.
+- **Type:** as the template's scale.
 - **Use for:** a method being taught, a rollout that is going well, a workshop.
 
 ### Slate — no colour until it means something
 
 ```python
-PACK = {"accent": D.GREY_DK, "muted": D.GREY_LT, "radius": 0,
-        "once": D.color("red")}
+PACK = {"accent": D.color("neutral"), "muted": D.color("muted"), "radius": 0,
+        "once": D.color("alert")}
 ```
 
-- **Rule:** greys throughout. `red` appears **once in the whole deck**, on the single
+- **Rule:** neutrals throughout. `alert` appears **once in the whole deck**, on the single
   number that matters most — not once per slide. That is the entire effect, and it
   collapses the moment it is used twice.
 - **Motif:** outline instead of fill — `fill=D.WHITE, line=D.GREY_BD`.
@@ -84,27 +89,27 @@ PACK = {"accent": D.GREY_DK, "muted": D.GREY_LT, "radius": 0,
 ### Spectrum — colour carries data, and nothing else
 
 ```python
-PACK = {"accent": None, "muted": D.GREY_LT, "radius": 200,
+PACK = {"accent": None, "muted": D.color("muted"), "radius": 200,
         "figure": D.series}          # D.series(n) for the nth thing on a figure
 ```
 
 - **Rule:** colour only ever encodes a category on a figure. **If nothing on the slide is
   being distinguished by colour, there is no colour on the slide.** Titles and body stay
-  black on white.
+  in the template's text colour.
 - **Motif:** legend chips (`D.chip`) beside the figure, in `D.series` order.
-- **Type:** as the house scale.
+- **Type:** as the template's scale.
 - **Use for:** analysis-heavy decks, several charts, comparisons across categories.
 
 ### Contrast — two colours, fixed meanings, whole deck
 
 ```python
-PACK = {"accent": D.color("cyan"), "gap": D.color("red"),
-        "muted": D.GREY_LT, "radius": 200}
+PACK = {"accent": D.color("accent"), "gap": D.color("alert"),
+        "muted": D.color("muted"), "radius": 200}
 ```
 
-- **Rule:** `cyan` is always *how it is today*; `red` is always *the gap, the failure,
-  the thing that is not covered*. Neither is ever used for anything else, anywhere. A
-  reader learns the code on slide 3 and reads the rest of the deck faster.
+- **Rule:** `accent` is always *how it is today*; `alert` is always *the gap, the
+  failure, the thing that is not covered*. Neither is ever used for anything else,
+  anywhere. A reader learns the code on slide 3 and reads the rest of the deck faster.
 - **Motif:** paired blocks — the two colours next to each other, same size, on every
   slide that has both.
 - **Type:** as the house scale. `red` is 4.9:1 and may be type.
@@ -152,7 +157,7 @@ and reliably recognise one. Render their own strongest title in three packs and 
 them point.
 
 1. Take the highest-`proof` slide from `plan.md` — the one with the real number.
-2. Build it three times, one pack per slide, on design 8 as a canvas.
+2. Build it three times, one pack per slide, on the canvas design.
 3. Render, look at the three images, and show them.
 4. Ask: **"which of these three feels right for this room?"**
 5. Write the answer to `look.md`: the pack name, and nothing else.
@@ -165,29 +170,29 @@ from office.impress import mm
 from office import draw as D
 
 TITLE = "Auf 42 geprüfte Bibliotheken kommen 1.447 installierte."
-PACKS = [("Signal",   D.color("cyan"),   200),
-         ("Contrast", D.color("red"),    200),
-         ("Slate",    D.GREY_DK,           0)]
+PACKS = [("Signal",   D.color("accent"),  200),
+         ("Contrast", D.color("alert"),   200),
+         ("Slate",    D.color("neutral"),   0)]
 
 def fill(doc, page, slot, design):
     name, accent, radius = PACKS[slot]
-    area = D.canvas(page, keep=(0, 1, 2, 3))          # title, topic, source
-    retext(page, {"Potentielle Navigatoren": TITLE, "Navigator (1/2)": name})
+    area = D.canvas(page, keep=KEEP)                  # from the catalog
+    retext(page, {TITLE_KEY: TITLE, LABEL_KEY: name})
     top, bottom = area.cut_top(mm(48), gap=mm(8))
     D.kpis(doc, page, top, [("42", "geprüft"), ("1.447", "installiert")],
            color=accent)
     D.cards(doc, page, bottom,
             [("Geprüft", "Was im Review tatsächlich gelesen wird."),
              ("Installiert", "Was zur Laufzeit im Prozess landet.")],
-            fill=D.GREY_LT, accent=[accent, accent], radius=radius,
+            fill=D.color("muted"), accent=[accent, accent], radius=radius,
             height="content")
 
-build_deck("assets/company-template.pptx", "preview.pptx", [8, 8, 8],
+build_deck("templates/acme/template.pptx", "preview.pptx", [8, 8, 8],
            fill=fill, footer=None)
 ```
 
 ```bash
-scripts/make_deck.py preview.py preview.pptx --template assets/company-template.pptx
+scripts/make_deck.py preview.py preview.pptx --template templates/acme/template.pptx
 ```
 
 **If you cannot see images, say so and skip this stage** — do not fake it.
@@ -214,9 +219,9 @@ that no check reports. See `references/drawing.md`.
 | `statement` | one sentence that has to land | `D.statement` | canvas |
 | `single-number` | one figure and what it means | `D.kpis` with one item | canvas |
 | `stat-strip` | two to four numbers together | `D.kpis` | canvas |
-| `cards` | 2–4 parallel things of equal weight | `D.cards(..., height="content")` | canvas, or `12` for two with images |
-| `steps` | a sequence with direction | `D.steps` | `13` (three phases), `18` (four with images), else canvas |
-| `timeline` | a sequence with dates | `D.steps(..., captions=dates)` | `4` if it carries effort and cost, else canvas |
+| `cards` | 2–4 parallel things of equal weight | `D.cards(..., height="content")` | canvas, or a two-column design with image slots |
+| `steps` | a sequence with direction | `D.steps` | a phase or process design if the catalog has one, else canvas |
+| `timeline` | a sequence with dates | `D.steps(..., captions=dates)` | a schedule design if the catalog has one, else canvas |
 | `table` | the content really is a matrix | `D.table(area, widths=[3, 2, 2], rows=rows)` | canvas |
 | `venn` | overlapping sets, and the overlap is the point | `D.venn(doc, page, area, D.series(3), labels=[…])` | canvas |
 | `area-compare` | two quantities whose ratio is the argument | §3.1 | canvas |
@@ -224,10 +229,10 @@ that no check reports. See `references/drawing.md`.
 | `matrix-2x2` | two axes, and one quadrant is where you are | §3.3 | canvas |
 | `layered-stack` | tiers, defences, or a plan with levels | §3.4 | canvas |
 
-Every canvas row is the same opening line, and the catalogue's design 8 keep-tuple:
+Every canvas row is the same opening line, with the keep tuple from the catalog:
 
 ```python
-area = D.canvas(page, keep=(0, 1, 2, 3))     # Box(2031, 3545, 27972, 12157)
+area = D.canvas(page, keep=KEEP)             # the box the body vacates
 ```
 
 ### 3.1 `area-compare`
@@ -299,7 +304,7 @@ for band, (name, note), here in zip(bands, tiers, marks):
 
 ### When the number is still `[TBD]`
 
-Three of the eleven are drawn **from** a figure, so a `[TBD]` in `plan.md`'s `proof`
+Three of the twelve are drawn **from** a figure, so a `[TBD]` in `plan.md`'s `proof`
 field is not a gap in the text — it is a missing dimension. Decide which case you are in
 before the build, not during it:
 
@@ -314,14 +319,14 @@ The other eight are qualitative and build unchanged; a `[TBD]` lands in their te
 table of question marks argues for the inventory better than a sentence saying the data
 is missing.
 
-### Rules that hold across all eleven
+### Rules that hold across all twelve
 
 - **One hero per slide.** A hero visual plus a bullet list is a slide that could not
   decide.
 - **The figure fills the area `D.canvas` gave you.** Content in the top two-thirds with
   an empty band underneath is the signature of hardcoded offsets and no check reports it.
 - **`D.readable_on(fill)` picks the text colour.** Never assume black — a headline drawn
-  in black onto a cyan block renders clean through every check and is unreadable.
+  in black onto a mid-blue block renders clean through every check and is unreadable.
 - **Caption every number** with `role="caption"`, and put the source on the slide.
 - **No decorative rules, bars or stripes** — not under the title, not along a card edge.
   They are the clearest tell of a generated deck. To set something apart, tint it or
@@ -342,9 +347,9 @@ in front of a customer:
 - **A new type scale.** `role=` and `D.size_for` only; anything under
   `D.MIN_READABLE_PT` is a QA finding.
 - **A second pack in the same deck**, or a pack chosen per slide.
-- **A pack applied to a template the user brought.** These packs are counted off *our*
-  asset. On someone else's template, read their colours with `probe.py` — see
-  `references/templates.md`.
+- **A pack applied to a template with no profile.** Every colour above is a *role*, and
+  the roles come from the pack. On a template the user brought that has no pack, read
+  its colours with `probe.py` and name them explicitly — see `references/templates.md`.
 
 ---
 
@@ -352,5 +357,5 @@ in front of a customer:
 
 The preset-catalogue pattern and the three-preview picker follow `high-quality-slides`
 (MIT); the deck-type → look mapping follows `presentation-director` (MIT). The packs
-themselves are counted off `assets/company-template.pptx` and are ours, as is the hero
-visual catalogue. See `THIRD-PARTY.md`.
+themselves — expressed in the palette roles every profile defines — and the hero-visual
+catalogue are ours. See `THIRD-PARTY.md`.

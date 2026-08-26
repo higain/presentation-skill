@@ -21,9 +21,9 @@ The five that matter most, if you read nothing else:
 from office.impress import mm
 from office import draw as D
 
-D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=D.color("cyan"),
+D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=D.color("accent"),
        radius=200)
-D.ellipse(doc, page, mm(50), mm(55), mm(15), fill=D.color("orange"),
+D.ellipse(doc, page, mm(50), mm(55), mm(15), fill=D.color("muted"),
           transparence=60)
 D.text(doc, page, mm(20), mm(40), mm(60), mm(30), "Phase I", "eight weeks",
        role="body", color=D.WHITE, weight=D.BOLD, align="center",
@@ -91,15 +91,15 @@ error says what to write instead: that is true of every keyword
   palette and type scale are in `office.draw`:
 
   ```python
-  D.color("cyan")   D.color("accent")   D.series(3)      # colours
+  D.color("accent")   D.color("alert")   D.series(3)     # colours
   D.text(..., role="footnote")          D.size_for("body")   # sizes
   ```
 
-  Four separate runs against the house template wrote their own hex —
+  Four separate runs against a corporate template wrote their own hex —
   `0xE8730C` for orange, `0x6B3FA0` for purple — and neither colour appears
   anywhere in the deck they were "matching". Four corporate decks, off-brand,
   and nothing could see it. `D.color` raises with the list of real names;
-  `D.palette()` is the whole dict and `references/company-template.md` prints
+  `D.palette()` is the whole dict and the pack's `catalog.md` prints
   it with each colour's contrast on white.
 - **Most brand colours are fill colours, not text colours.** The house cyan is
   3.0:1 on white and its orange is 2.3:1 — fine behind white text, not fine
@@ -187,8 +187,8 @@ that makes it look like the house deck — and you get an empty area to work in.
 
 ```python
 def fill(doc, page, slot, design):
-    area = D.canvas(page, keep=(0, 1, 2, 3))   # design 8: title, topic, source
-    retext(page, {"Potentielle Navigatoren": "Why it cannot just be patched"})
+    area = D.canvas(page, keep=KEEP)           # the catalog's keep tuple
+    retext(page, {TITLE_KEY: "Why it cannot just be patched"})
     left, right = area.cols(2, gap=mm(10))     # draw in what the body left
 ```
 
@@ -212,10 +212,12 @@ the body placeholder's own rectangle, which is the designer's answer to where
 content goes. Use it rather than hardcoding an area: it is exact, and it is
 right on a design you have not probed.
 
-On the house template **design 8 is the canvas**: `[0]` a think-cell stub, `[1]`
-title, `[2]` topic label, `[3]` source line, `[4]` the sample body text and
-`[5]`+ the navigator chevrons. Keep `(0, 1, 2, 3)` and `canvas` hands you
-`Box(x=2031, y=3545, w=27972, h=12157)`. See `references/company-template.md`.
+**Which design is the canvas, and which indices to keep, is in the pack** —
+its catalog's *Designs by role* table names the design, and the design's own
+entry gives the keep tuple and the free box it hands back. A typical one keeps
+four shapes: the title, a topic label, a source line and whatever decoration
+the master puts in a corner, and drops the body placeholder. Do not carry a
+keep tuple from one template to another; the indices are not the same twice.
 
 ## Composition
 

@@ -12,7 +12,7 @@ model; the model comes next, reading what this writes.
 
 **Everything a model cannot be trusted with is measured here.**  The first
 version of this pipeline asked the model for the catalog wholesale, and the
-delta catalog then grew, by hand, the fields that actually decide whether a
+first catalog then grew, by hand, the fields that actually decide whether a
 build works: the ``retext`` keys, which slots are empty, how much text lives
 inside groups, how many characters a title box holds, and which shapes a canvas
 keeps.  None of that is judgement -- it is transcription and arithmetic -- so it
@@ -59,7 +59,7 @@ CHROME_TYPES = {
 }
 
 #: A shape this small relative to the slide is a stub or a corner mark, never
-#: content.  (The delta template's think-cell stub is 3 x 3, i.e. 0.000002 of
+#: content.  (One template's think-cell stub is 3 x 3, i.e. 0.000002 of
 #: the slide.)  Kept deliberately tight: at 1% it also caught the navigator
 #: chevrons, which are sample content a canvas has to drop.
 TINY = 0.001

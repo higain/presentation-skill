@@ -25,7 +25,7 @@ The checks, in the order they catch real defects:
    wrong box and leaves the template's own words behind; this finds that.  It
    covers **the footer** too, which is a page property rather than a shape and
    which nothing that walks shapes can see: four decks shipped with the house
-   template's German ``Gegenstand | Titel | Ort | Datum`` under English slides,
+   template's German ``subject | title | place | date`` under English slides,
    and all four reported clean.
 5. **Markdown on a slide** -- ``~~struck~~`` and ``**bold**`` render as literal
    tildes and asterisks.  They arrive by pasting drafted wording into
@@ -90,11 +90,12 @@ PLACEHOLDER = re.compile(
 # This was 25 -- long enough that only a body paragraph could trip it -- on the
 # theory that a designed deck reuses its template's short headers on purpose
 # ("Agenda", "What we found") and flagging those would bury the real defect.
-# Two runs measured against the delta template say otherwise: the label
-# `"Navigator (1/2)"` -- 15 characters, a documented retext key of design 8 --
-# survived on 13 of 15 slides in one deck and 9 of 10 in the other, in German,
-# on a finished English deck, and both reports said clean.  Nothing else in
-# either deck came within nine characters of the old threshold.
+# Two runs measured against a corporate template say otherwise: a **15-character
+# design label** -- a documented retext key of the canvas design, of the "Topic
+# (1 of 2)" kind -- survived on 13 of 15 slides in one deck and 9 of 10 in the
+# other, in the template's language, on a finished deck in another, and both
+# reports said clean.  Nothing else in either deck came within nine characters
+# of the old threshold.
 #
 # At 6 the only other template strings either deck still held were the single
 # digits "1" to "4", which is why a leftover must also contain a letter: a

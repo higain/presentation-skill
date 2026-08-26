@@ -49,9 +49,11 @@ before it — this is why font sizes "don't stick". Passing `size=`/`color=`/
 `add_slide(doc)` gives you a blank slide. It takes an optional `layout=` —
 Impress *autolayout* numbers, `0` title+subtitle, `1` title+content, `19` title
 only, `20` blank (the default) — which have **nothing to do with the design
-numbers in a layout catalog.** Catalog "design 20" is a specific template slide;
-`layout=20` is "no placeholders". Confusing the two puts a densely filled
-template slide where you wanted an empty one.
+numbers in a layout catalog.** A catalog's design `20` is the template's
+twentieth slide, whatever it holds; `layout=20` is "no placeholders". Confusing
+the two puts a densely filled template slide where you wanted an empty one, and
+the numbers collide often enough to make it a real mistake rather than a
+theoretical one.
 
 **`new_document()` already contains one slide.** Use `slides(doc)[0]` for the
 title slide, as above — calling `add_slide()` for it leaves a stray blank slide

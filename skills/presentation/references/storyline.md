@@ -63,9 +63,10 @@ transitive dependency count]` is useful and gets filled in before the meeting. A
 carrying a plausible invented figure is the one that gets quoted.
 
 **One more thing to settle here, because nothing later asks for it:** the footer line.
-The house template renders `Gegenstand | Titel | Ort | Datum` along the bottom of every
-content slide, it is a page property no `retext` reaches, and four runs shipped it under
-English slides. Take `subject · occasion · date` from the answers to 1 and 3 and record
+A corporate master usually renders a `subject | title | place | date` line along the
+bottom of every content slide, in the template's own language. It is a page property no
+`retext` reaches, and four runs shipped it untouched under a deck written in another
+language. Take `subject · occasion · date` from the answers to 1 and 3 and record
 it at the foot of `brief.md`, so stage 5 has it: `footer="Dependency risk · Board
 briefing · 2026"`.
 
@@ -113,11 +114,12 @@ cost?", "who does the work?") has no home under any branch, add one or fold it i
 branch is one body slide in a short deck, one section in a long one.
 
 **Name branches short.** A branch that becomes a section divider is a divider title, and
-on this template a divider title holds **~18 characters** (designs 1 and 5) or **~25**
-(design 7) on one line — over that it wraps into the master's decorative triangle and
-the words come out with a stroke through them. Nothing collides and `qa.py` reports
-clean, so the budget has to be respected here, in the spine, where it is free.
-See the divider budgets in `references/company-template.md`.
+a divider sets its title large, in a gap the master's decoration leaves — so the budget
+is often **under 25 characters on one line**. Over it the title wraps into the
+decoration and the words come out with a stroke through them, nothing collides, and
+`qa.py` reports clean. The budget has to be respected here, in the spine, where it is
+free. **The pack's `catalog.md` states the exact figure per design** under *Title
+budget*; take it from there rather than from this paragraph.
 
 **Slide budget: roughly one slide per *presented* minute**, minus the title and closing
 slides — and the slot from question 3 is not all presented minutes.
@@ -167,10 +169,11 @@ production detail.
 
 Any deck of four or more content slides opens with:
 
-- **A title slide.** The template has no cover design — designs 1, 5 and 7 are section
-  dividers and a real title with a subtitle and a date does not fit their one-line
-  budget. It is built on design 8 as a canvas; the governing thought works well as the
-  subtitle. Do not leave the deck without one.
+- **A title slide.** Check the catalog's *Designs by role* table for a **cover**
+  design. Many corporate templates have none — their dividers are one-line slides and a
+  real title with a subtitle and a date does not fit that budget — and then the opener
+  is built on the **canvas** design, with the governing thought as the subtitle. Do not
+  leave the deck without one.
 - **A summary slide, second.** Governing thought as the title, the branches as one line
   each, in the order the deck proves them.
 
@@ -236,8 +239,8 @@ it fails silently. A run took an approved plan through stage 4 and then built th
 # plan.md block 1 says:
 #   title: Our current dependency visibility is a major blindspot.
 retext(page, {
-    "Potentielle Navigatoren": "Current Blindspots",   # ← the BRANCH name
-    "Navigator (1/2)": "Visibility",                   # ← a topic label
+    TITLE_KEY: "Current Blindspots",     # ← the BRANCH name, not the title
+    LABEL_KEY: "Visibility",             # ← a topic label
 })
 ```
 
@@ -272,7 +275,8 @@ visible next to the sentences. A title typed a second time is a title being
 rewritten, whatever the intention.
 
 **Branches are dividers.** A branch is a *section*, so its name goes on a section
-divider slide of its own — designs 1, 5 and 7, within the divider title budget. The
+divider slide of its own — the divider designs the catalog's *Designs by role* table
+names, within their title budget. The
 slides under it keep their own action titles. A branch name in a content slide's
 title slot is exactly the defect above, and one divider in sixteen slides is the
 symptom.
@@ -283,10 +287,11 @@ build, unlike everything else about the wording — plus, as prose, a title that
 arrived reworded and any headline used on more than one slide. Write the deck into
 the same directory as `plan.md` or the check cannot run.
 
-Pick a design per slide from the decision table in `references/company-template.md`,
-first match wins, and use design 8 stripped to a canvas for anything it has no row for.
+Pick a design per slide from the decision table in the pack's `catalog.md`,
+first match wins, and use the canvas design stripped back for anything it has no row
+for.
 One `fill` per page, one `build_deck` call, then
-`scripts/make_deck.py build.py out.pptx --template assets/company-template.pptx` — and
+`scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx` — and
 open every PNG it prints.
 
 **A clean QA report does not mean the deck argues.** It means nothing was mechanically
@@ -304,7 +309,7 @@ the deck.
   be **finished as an approved draft** and **not yet finished to present**. Never delete a
   `[TBD]` to get a clean run.
 - **Every section divider reports `no title found`** and shows as `(no title found)` in
-  the ghost-deck listing. Designs 1, 5 and 7 carry their display title in a placeholder
+  the ghost-deck listing. A divider design carries its display title in a placeholder
   `qa.py` does not read as a title. The title is there — check the render — and the
   ghost-deck test skips dividers anyway.
 

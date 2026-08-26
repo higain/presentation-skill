@@ -19,11 +19,11 @@ Five artifacts, dropped into the skill:
 
 | Artifact | Path | What it is |
 |---|---|---|
-| **Asset** | `assets/company-template.pptx` | The template itself — one slide per design. `build_deck` duplicates slides out of it. |
-| **Catalog** | `references/company-template.md` | Which design for which content, what each design holds, and the exact strings to `retext`. The skill reads this to choose designs. **Generated — never edit it by hand.** |
-| **Overrides** | `references/company-template.overrides.md` | The prose no script can measure, spliced into the catalog at named anchors. **This is where your review notes go.** |
+| **Asset** | `templates/acme/template.pptx` | The template itself — one slide per design. `build_deck` duplicates slides out of it. |
+| **Catalog** | `templates/acme/catalog.md` | Which design for which content, what each design holds, and the exact strings to `retext`. The skill reads this to choose designs. **Generated — never edit it by hand.** |
+| **Overrides** | `templates/acme/overrides.md` | The prose no script can measure, spliced into the catalog at named anchors. **This is where your review notes go.** |
 | **Judged half** | `catalog/entries/*.json`, `catalog/decision_table.json` | What the model wrote, per design. Commit these: they cost a model pass and a human review, and nothing can recreate them from the template. |
-| **Profile** | `assets/company-template.profile.json` | The template's own authoring annotations — an "example" flag, a customer-logo marker — so `strip_annotations` can delete them without the engine knowing any company's wording. |
+| **Profile** | `templates/acme/profile.json` | The template's own authoring annotations — an "example" flag, a customer-logo marker — so `strip_annotations` can delete them without the engine knowing any company's wording. |
 
 No wiring step: `SKILL.md` already points at those paths. Drop the files in and
 the default is live.
@@ -34,7 +34,7 @@ the default is live.
 |---|---|---|---|
 | **A. Extract** | `catalog_extract.py` | no | `catalog/` — one dossier per design, with everything measurable already measured |
 | **B. Judge** | `catalog_gemma.py` (or opencode) | **yes, locally** | per-design purpose, capacity, imagery + a decision table |
-| **C. Assemble** | `catalog_build.py` | no | `references/company-template.md`, ready to review |
+| **C. Assemble** | `catalog_build.py` | no | `templates/acme/catalog.md`, ready to review |
 | **D. Calibrate** | `make_deck.py` on real briefs | no | a catalog that is actually good |
 
 **The catalog is a build output.** Stages A and C run again every time the
@@ -180,8 +180,8 @@ More forgiving of a nonstandard serving setup, less repeatable than the script.
 ## Stage C — Assemble
 
 ```bash
-scripts/catalog_build.py catalog/ -o references/company-template.md \
-    --overrides references/company-template.overrides.md
+scripts/catalog_build.py catalog/ -o templates/acme/catalog.md \
+    --overrides templates/acme/overrides.md
 ```
 
 Merges the measured fields from stage A with the judged fields from stage B and
@@ -189,7 +189,7 @@ writes the catalog in its shipped format: header, decision table (with the
 canvas row **last** — it used to be first, where "a diagram, a comparison, a
 matrix" is the first match for almost anything and four runs in a row built
 every slide on it), variety rule, coverage gaps, display-title budgets, the
-palette and type scale read from the asset's profile, and one entry per design. `references/company-template.example.md` shows that format
+palette and type scale read from the asset's profile, and one entry per design. `references/catalog.example.md` shows that format
 annotated with which half each field comes from.
 
 It flags rather than hides what went wrong:
@@ -209,7 +209,7 @@ its keep.
 
 The catalog is regenerated from `catalog/` every time; edits to it are lost on
 the next run, silently. Everything you want to keep goes in
-`references/company-template.overrides.md`, as a `## anchor` section:
+`templates/acme/overrides.md`, as a `## anchor` section:
 
 | Anchor | Lands |
 |---|---|
@@ -222,11 +222,12 @@ the next run, silently. Everything you want to keep goes in
 
 Blocks **add to** the generated text rather than replacing it, so write them as
 additions. An anchor that no longer lands — `design-14` on a template that lost
-design 14 — prints a warning and appears as a ⚠ line in the catalog, so prose
+a design the template does not have — prints a warning and appears as a ⚠
+line in the catalog, so prose
 cannot go quietly missing the way it did before this existed.
 
 That file is where the hard-won things live: that the footer sits on the master
-where no per-slide check can see it, that design 20 is a dense slide rather than
+where no per-slide check can see it, that a given design is dense rather than
 a blank one, that this template has no cover design and a title slide has to be
 built on a canvas.
 
@@ -234,8 +235,8 @@ built on a canvas.
 
 ```bash
 scripts/catalog_extract.py company.pptx -o catalog/     # re-measure
-scripts/catalog_build.py catalog/ -o references/company-template.md \
-    --overrides references/company-template.overrides.md --check
+scripts/catalog_build.py catalog/ -o templates/acme/catalog.md \
+    --overrides templates/acme/overrides.md --check
 ```
 
 `--check` writes nothing: it rebuilds, diffs against the committed catalog, and
@@ -253,9 +254,9 @@ rebuilt at all, and its measured fields can never be refreshed.
 
 ```bash
 scripts/catalog_extract.py company.pptx -o catalog/
-scripts/catalog_import.py references/company-template.md catalog/
-scripts/catalog_build.py catalog/ -o references/company-template.md \
-    --overrides references/company-template.overrides.md --check
+scripts/catalog_import.py templates/acme/catalog.md catalog/
+scripts/catalog_build.py catalog/ -o templates/acme/catalog.md \
+    --overrides templates/acme/overrides.md --check
 ```
 
 It recovers only the judged fields — name, purpose, capacity, use/avoid,
@@ -265,8 +266,8 @@ the hand-maintained file is exactly where those went stale.
 Finally, place the other two artifacts:
 
 ```bash
-cp company.pptx assets/company-template.pptx
-$EDITOR assets/company-template.profile.json     # the template's own annotations
+cp company.pptx templates/acme/template.pptx
+$EDITOR templates/acme/profile.json     # the template's own annotations
 ```
 
 The profile is a short JSON file listing the strings the template uses to talk
@@ -283,7 +284,7 @@ unrelated designs is almost always an annotation rather than content.
 Build three or four real briefs with the now-defaulted skill. For each:
 
 ```bash
-scripts/make_deck.py build.py out.pptx --template assets/company-template.pptx
+scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx
 ```
 
 then open every render it prints. `make_deck.py` covers what `qa.py` and
@@ -312,9 +313,9 @@ Two passes and the default is genuinely good.
 
 ## Privacy & git rules
 
-- The template, the renders in `catalog/`, `references/company-template.md`,
-  `references/company-template.overrides.md` and
-  `assets/company-template.profile.json` are brand-internal. Commit them to the
+- The template, the renders in `catalog/`, `templates/acme/catalog.md`,
+  `templates/acme/overrides.md` and
+  `templates/acme/profile.json` are brand-internal. Commit them to the
   **internal fork only**.
 - **Commit `catalog/entries/*.json` and `catalog/decision_table.json`.** They
   are the model pass's output: a model call and a human review each, and nothing
@@ -355,7 +356,7 @@ Two passes and the default is genuinely good.
 | `make_deck.py` prints "No visual review" | `$PRESENTATION_REVIEW_MODEL` is unset. That is the default; set it to enable the reviewer. |
 | `no per-layout entries` on `--aggregate` | Run the per-design pass first; aggregate reads `catalog/entries/*.json`. |
 | Capacity figures look too generous | Expected. Fix them in the overrides file, or in `catalog/entries/slide-NN.json` if the figure itself is wrong, and rebuild. |
-| My edits to `references/company-template.md` disappeared | It is generated; the next `catalog_build.py` overwrote them. Put them in `references/company-template.overrides.md` under an anchor, and rebuild. |
+| My edits to `templates/acme/catalog.md` disappeared | It is generated; the next `catalog_build.py` overwrote them. Put them in `templates/acme/overrides.md` under an anchor, and rebuild. |
 | `--check` reports drift after the template changed | Expected, and the point of it. Re-extract, rebuild, re-read the diff — the `retext` keys are what changed. |
 | An override block warns that it "matched no anchor" | The anchor name is misspelled, or it is a `design-N` for a design this template no longer has. Valid names are listed in stage C. |
 | The first QA run after touching the template is a minute slower | The template baseline is recomputed and re-cached; it is a pure function of the template and the checker sources, so any change to either invalidates it. Later runs are ~40 s faster. |
@@ -375,10 +376,10 @@ Two passes and the default is genuinely good.
 | `scripts/review_renders.py` | The vision reviewer — renders → advisory findings | runtime, when `$PRESENTATION_REVIEW_MODEL` is set |
 | `scripts/wireframe.py` | A render as a text ink-map — emptiness, banding, what is not centred, with no model at all | runtime, and in every report for the slides it flags |
 | `references/gemma-catalog-prompt.md` | The prompt spec (human-readable source of truth) | reference |
-| `references/company-template.example.md` | The finished format, annotated | reference |
-| `references/company-template.md` | The catalog *(generated — do not edit)* | runtime |
-| `references/company-template.overrides.md` | The prose spliced into it *(edit this instead)* | build-time |
+| `references/catalog.example.md` | The finished format, annotated | reference |
+| `templates/acme/catalog.md` | The catalog *(generated — do not edit)* | runtime |
+| `templates/acme/overrides.md` | The prose spliced into it *(edit this instead)* | build-time |
 | `catalog/entries/`, `catalog/decision_table.json` | The judged half *(commit these)* | build-time |
-| `assets/company-template.pptx` | The template asset *(you copy it in)* | runtime |
-| `assets/company-template.profile.json` | The template's authoring annotations | runtime |
+| `templates/acme/template.pptx` | The template asset *(you copy it in)* | runtime |
+| `templates/acme/profile.json` | The template's authoring annotations | runtime |
 | `SKILL.md` | The runtime documentation — how decks get built | runtime |

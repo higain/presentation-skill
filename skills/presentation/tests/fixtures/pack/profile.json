@@ -28,6 +28,8 @@
       "accent": "signal",
       "alert": "warn",
       "ok": "go",
+      "muted": "mist",
+      "neutral": "ink",
       "series": ["signal", "sun", "go", "warn", "mist"]
     }
   },

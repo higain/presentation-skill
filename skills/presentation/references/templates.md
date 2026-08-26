@@ -1,6 +1,6 @@
 # Working with a template deck
 
-For the house template see `references/company-template.md` and the recipe in
+For the house template see the pack's `catalog.md` and the recipe in
 SKILL.md. **This file is for any *other* template a user brings**, and for the
 mechanics underneath both: how slides get copied, how text gets replaced, and
 what breaks when you index by hand.
@@ -27,7 +27,7 @@ every section belongs on title-and-bullets.
   "example" flag, a customer-logo marker, a block of build instructions.
   `office.template.strip_annotations(page)` deletes them, reaching inside
   groups. The strings for the house template ship in
-  `assets/company-template.profile.json`; for another template pass
+  `templates/acme/profile.json`; for another template pass
   `profile={"exact": [...], "prefixes": [...]}`.
 
 ## Reading the probe before you index anything
@@ -61,11 +61,12 @@ which shifts `[8]` and `[9]`. Assuming the even grid is what puts column 3's
 heading into column 2 and leaves the template's own text on the slide.
 
 **Text inside groups.** A designed slide keeps a lot of its wording inside
-grouped shapes, and `shapes(page)` cannot see any of it. On the house template
-**11 of 21 designs carry text inside groups**; on the phase-plan design 13, 17
-shapes are top-level and 13 more sit inside five groups, 7 of them holding the
-phase labels and durations. Design 10 is worse: 16 grouped text shapes against
-11 top-level, so most of the slide is invisible from the top level.
+grouped shapes, and `shapes(page)` cannot see any of it. On one 21-design
+corporate template **11 designs carry text inside groups**; on its phase-plan
+design, 17 shapes are top-level and 13 more sit inside five groups, 7 of them
+holding the phase labels and durations. Its worst design has 16 grouped text
+shapes against 11 top-level, so most of the slide is invisible from the top
+level.
 `probe.py` lists them indented, addressed `[6.2]` for the third shape in the
 group at `[6]`, and `retext`, `find_shapes`, `shape_by_text` and `qa.py` all
 reach them. Only `shapes(page)[i]` does not — one more reason to retext by
@@ -195,7 +196,7 @@ def fill(doc, page, slot, design):
     if slot == 3:
         D.rect(doc, page, mm(20), mm(60), mm(80), mm(40), fill=0x009EE0)
 
-build_deck("assets/company-template.pptx", "out.pptx",
+build_deck("templates/acme/template.pptx", "out.pptx",
            [7, 8, 13, 20, 1],          # catalog design numbers, in final order
            fill=fill)                   # called per page, before the save
 ```
@@ -214,8 +215,8 @@ layered on top of template text nobody replaced. Everything happens in `fill`.
 silence that. Under `make_deck.py` it is skipped automatically, because that
 command runs the same check itself.
 
-Why it beats `clone_slide` on a template: measured against the delta asset over
-designs 7, 8, 13, 20 and 1, diffing each result against its source render, mean
+Why it beats `clone_slide` on a template: measured against a corporate asset
+over five of its designs, diffing each result against its source render, mean
 RMS **7.8 versus 22.8**, better on every slide. Bullet markers, per-run colour
 inside a paragraph and think-cell's OLE data all survive here and do not survive
 a rebuild — 6 think-cell references kept versus none. Same output size, same
@@ -274,7 +275,7 @@ is drawn for a set number of lines at a set size; a longer title does not clip,
 it flows on over whatever the *master* has behind it — and master decoration is
 not a shape on the page, so nothing in `qa.py` can see the result. On the house
 dividers that decoration is a large triangle, and the second line comes out with
-a line struck through it. Budgets per design: `references/company-template.md`.
+a line struck through it. Budgets per design: the pack's `catalog.md`.
 
 If the size it settles on looks wrong, the title is too long for that design
 rather than too big — shorten it, or build the slide on a canvas.
