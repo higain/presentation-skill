@@ -629,24 +629,40 @@ class Wireframe(unittest.TestCase):
         self.assertEqual(drawn[0][0], "@")
 
 
-class HouseStyle(unittest.TestCase):
-    """The palette and the type scale, read off the template's own profile.
+#: A pack belonging to no company. See its profile.json for why.
+FIXTURE_PACK = Path(__file__).resolve().parent / "fixtures" / "pack"
+#: The path a pack is resolved *from*. It need not exist: `pack_for` looks for
+#: a profile beside the template, and a 2MB binary would prove nothing here.
+FIXTURE_TEMPLATE = FIXTURE_PACK / "template.pptx"
 
-    Four runs against the house template wrote their own hex -- 0xE8730C for
-    orange, 0x6B3FA0 for purple -- and neither colour is anywhere in the deck.
+
+class PackStyle(unittest.TestCase):
+    """The palette and the type scale, read off whatever pack is in force.
+
+    Four runs against a corporate template wrote their own hex -- 0xE8730C for
+    orange, 0x6B3FA0 for purple -- and neither colour was anywhere in the deck
+    they were matching. That is what the palette exists to prevent.
+
+    Every assertion here is about *behaviour*, against an invented fixture:
+    this class used to assert one real company's cyan, so it failed on any
+    installation but the one it was written on -- including the published
+    skill, which ships no packs at all.
     """
 
-    def test_the_palette_is_the_template_s_own(self):
+    def setUp(self):
+        from office.pack import active
+        self.ctx = active(FIXTURE_TEMPLATE)
+        self.pack = self.ctx.__enter__()
+        self.addCleanup(self.ctx.__exit__, None, None, None)
+
+    def test_the_palette_is_the_pack_s_own(self):
         colours = D.palette()
-        self.assertIn("cyan", colours)
-        self.assertEqual(colours["cyan"], 0x009EE0)
-        # The two colours four runs invented are not in it, and never were.
+        self.assertEqual(colours["signal"], 0x3355FF)
         self.assertNotIn(0xE8730C, colours.values())
-        self.assertNotIn(0x6B3FA0, colours.values())
 
     def test_roles_resolve_to_colours(self):
-        self.assertEqual(D.color("accent"), D.color("cyan"))
-        self.assertEqual(D.color("alert"), D.palette()["red"])
+        self.assertEqual(D.color("accent"), D.color("signal"))
+        self.assertEqual(D.color("alert"), D.palette()["warn"])
 
     def test_series_cycles_rather_than_running_out(self):
         seven = D.series(7)
@@ -655,24 +671,66 @@ class HouseStyle(unittest.TestCase):
 
     def test_an_unknown_colour_names_the_real_ones(self):
         with self.assertRaises(ValueError) as caught:
-            D.color("purple")
-        self.assertIn("cyan", str(caught.exception))
+            D.color("puce")
+        self.assertIn("signal", str(caught.exception))
 
     def test_the_scale_descends_and_bottoms_out_at_the_floor(self):
         scale = D.type_scale()
         self.assertGreater(scale["title"], scale["footnote"])
-        self.assertEqual(min(scale.values()), D.MIN_READABLE_PT)
+        self.assertEqual(min(scale.values()), D.min_readable())
+
+    def test_the_readable_floor_follows_the_template_not_a_constant(self):
+        """A master whose smallest role is 10pt has a 10pt floor, not 9."""
+        self.assertEqual(D.min_readable(), 10.0)
+        self.assertNotEqual(D.min_readable(), D.MIN_READABLE_PT)
 
     def test_an_unknown_role_names_the_real_ones(self):
         with self.assertRaises(ValueError) as caught:
             D.size_for("tiny")
         self.assertIn("footnote", str(caught.exception))
 
-    def test_most_brand_colours_are_fills_not_text(self):
-        # The point of documenting the ratio: these are chosen against paper,
-        # not against the 3:1 a word has to clear.
-        self.assertLess(D.contrast_ratio(D.color("orange"), 0xFFFFFF), 3.0)
-        self.assertGreater(D.contrast_ratio(D.color("anthracite"), 0xFFFFFF), 4.5)
+    def test_contrast_ratio_reads_the_pack_s_colours(self):
+        # Why a pack records the ratio: most brand colours are chosen against
+        # paper, not against the 3:1 a *word* has to clear. `sun` is a fill and
+        # can never be type; `ink` is type.
+        self.assertLess(D.contrast_ratio(D.color("sun"), 0xFFFFFF), 3.0)
+        self.assertGreater(D.contrast_ratio(D.color("ink"), 0xFFFFFF), 4.5)
+
+
+class NoPackInstalled(unittest.TestCase):
+    """A published skill ships no template. Everything here is that state.
+
+    Not an edge case: it is what every company sees before they run the setup
+    skill, and it is the state the suite never exercised -- which is how six
+    tests came to fail on a fresh clone.
+    """
+
+    def setUp(self):
+        from office.pack import active
+        # A path with no profile anywhere beside it: a template the user
+        # brought and nothing has measured.
+        self.ctx = active(Path(__file__).resolve().parent / "nothing.pptx")
+        self.pack = self.ctx.__enter__()
+        self.addCleanup(self.ctx.__exit__, None, None, None)
+
+    def test_there_is_no_pack(self):
+        self.assertIsNone(self.pack)
+
+    def test_the_palette_is_empty_rather_than_somebody_else_s(self):
+        self.assertEqual(D.palette(), {})
+
+    def test_asking_for_a_colour_raises_and_says_what_to_do(self):
+        with self.assertRaises(ValueError) as caught:
+            D.color("accent")
+        message = str(caught.exception)
+        self.assertIn("no pack", message)
+        self.assertIn("presentation-setup", message)
+
+    def test_the_type_scale_falls_back_so_a_build_still_runs(self):
+        """Drawing without a palette is handled; drawing in the wrong one is not."""
+        self.assertEqual(D.type_scale(), {})
+        self.assertGreater(D.size_for("title"), D.size_for("footnote"))
+        self.assertEqual(D.min_readable(), D.MIN_READABLE_PT)
 
 
 class VennLabels(unittest.TestCase):

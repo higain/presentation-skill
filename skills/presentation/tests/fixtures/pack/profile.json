@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "A pack that belongs to no company, for the fast tests.",
+    "",
+    "Every value here is deliberately unlike any real template's: the palette",
+    "is invented, the type scale starts at 24pt rather than 16, and the",
+    "smallest role is 10pt rather than 9.  The tests that use it assert",
+    "behaviour -- that roles resolve, that series cycles, that min_readable",
+    "follows the scale -- and would pass against any pack.",
+    "",
+    "The suite used to assert one company's cyan, so six tests failed on a",
+    "fresh clone of the skill, which ships no packs at all.",
+    "",
+    "There is no template.pptx beside this file on purpose: pack_for() resolves",
+    "a pack from a path, and the path does not have to exist for the profile",
+    "beside it to be found.  A binary fixture would cost 2MB and prove nothing."
+  ],
+  "name": "fixture",
+  "palette": {
+    "_order": ["ink", "signal", "sun", "warn", "go", "mist"],
+    "ink": "#101820",
+    "signal": "#3355FF",
+    "sun": "#F2A900",
+    "warn": "#CC2200",
+    "go": "#118844",
+    "mist": "#DDE3EA",
+    "_roles": {
+      "accent": "signal",
+      "alert": "warn",
+      "ok": "go",
+      "series": ["signal", "sun", "go", "warn", "mist"]
+    }
+  },
+  "type_scale": {
+    "display": 48.0,
+    "title": 24.0,
+    "subtitle": 18.0,
+    "body": 15.0,
+    "label": 13.0,
+    "caption": 11.0,
+    "footnote": 10.0
+  },
+  "annotations": {
+    "exact": ["SAMPLE", "Logo here"],
+    "prefixes": ["Instructions: 1."]
+  }
+}
