@@ -781,6 +781,36 @@ def _title_findings(number, address, text):
     return out
 
 
+def repeated_titles(titles):
+    """Findings for one headline used on more than one slide.
+
+    This is the shape a deck takes when the approved titles were thrown away
+    at build time and the branch name went into the title slot instead: the
+    ghost deck reads as four labels, each repeated three times.  Unlike
+    ``lost_plan_titles`` it needs no ``plan.md`` to see that, which matters
+    because most decks have none.
+
+    Dividers are ``None`` here and drop out, which is right -- two dividers
+    named the same thing is a different mistake and a rarer one.
+    """
+    repeats = {}
+    for number, text in titles:
+        if text:
+            repeats.setdefault(_norm(text).lower(), []).append((number, text))
+    out = []
+    for group in sorted(repeats.values(), key=len, reverse=True):
+        if len(group) < 2:
+            continue
+        shown = ", ".join(str(number) for number, _ in group)
+        text = group[0][1]
+        out.append(
+            f"slides {shown} share the title {text[:40]!r}. One title per "
+            f"slide, each a claim the last leads to -- a headline repeated "
+            f"is a section name sitting where the argument should be"
+        )
+    return out
+
+
 def prose_findings(doc, wanted=None, baseline=frozenset()):
     """``(findings, titles)`` -- how the deck reads, and its titles in order.
 
@@ -844,6 +874,9 @@ def prose_findings(doc, wanted=None, baseline=frozenset()):
             f"scannable; cut each to its claim"
         )
 
+    if not wanted:
+        findings.extend(repeated_titles(titles))
+
     if titles and not wanted:
         number, last = titles[-1]
         if last and CLOSING_WASTE.match(last):
@@ -853,6 +886,137 @@ def prose_findings(doc, wanted=None, baseline=frozenset()):
                 f"on it, with an owner and a date"
             )
     return findings, titles
+
+
+#: A ``plan.md`` block's title, as stage 3 of ``references/storyline.md``
+#: writes it: a ``## 4`` header, and under it ``title: <the action title>``.
+PLAN_TITLE = re.compile(r"^\s*title\s*:\s*(.+?)\s*$", re.I)
+
+#: How much of an approved title has to reach a slide before the difference is
+#: an edit rather than a loss.  A build that tightened a long headline carried
+#: the title over; a build that put the branch name there did not, and the two
+#: need different words from this file.
+TITLE_KEPT = 0.6
+
+
+def plan_titles(deck):
+    """``[(block, title)]`` -- the titles ``plan.md`` approved, in order.
+
+    Stage 3 of ``references/storyline.md`` writes one ``## <n>`` block per
+    slide with a ``title:`` line, **the user approves that file**, and stage 5
+    carries those strings into the deck.  This reads them back so the transfer
+    can be checked.  ``[]`` when there is no plan, which is most decks.
+
+    **Beside the deck, and nowhere else.**  Not the working directory: run
+    ``qa.py`` on someone else's deck from a storyline directory and every
+    approved title is missing from it, which is sixteen confident findings
+    about the wrong file.  These feed ``issues`` and fail a build, so the
+    failure mode when the plan is somewhere unexpected has to be silence.
+    Stage 5 writes the deck beside ``plan.md`` and this is one more reason to.
+
+    Deliberately **not** matched to slide numbers: blocks are numbered from 0
+    in some runs and 1 in others, the title and summary slides are prepended
+    after the plan is approved, and none of that bears on the only question
+    here -- did the sentence reach the deck.
+    """
+    plan = Path(deck).resolve().parent / "plan.md"
+    if not plan.is_file():
+        return []
+    try:
+        text = plan.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    out, block = [], None
+    for line in text.splitlines():
+        if line.startswith("#"):
+            block = line.lstrip("#").strip() or block
+            continue
+        hit = PLAN_TITLE.match(line)
+        if hit:
+            title = _norm(hit.group(1))
+            if title:
+                out.append((block if block else str(len(out)), title))
+    return out
+
+
+def _title_words(text):
+    """A title reduced to the words worth comparing.
+
+    Case and punctuation go.  A build that carried the sentence over and
+    dropped the full stop transferred the title, and a check that calls that a
+    lost title buries the case where the sentence is genuinely gone.
+    """
+    return {word for word
+            in re.sub(r"[^\w\s]", " ", _norm(text).lower()).split() if word}
+
+
+def lost_plan_titles(deck, texts):
+    """``(lost, reworded)`` -- the approved titles, against the built deck.
+
+    ``lost`` belongs in ``issues``: a sentence the user approved appears
+    **nowhere** on any slide.  That is not a judgement and not a heuristic --
+    the string is in the file or it is not -- which is why these fail a build
+    when everything in ``prose_findings`` does not.  It is the defect the
+    storyline layer exists to prevent and the one thing it could not see: a run
+    carried an approved plan through stage 4, then wrote the branch name into
+    the title slot on eleven of sixteen slides and passed every other check
+    here.  The deck argued nothing and the report said so nowhere.
+
+    ``reworded`` is prose: most of the title reached a slide but not all of it.
+    Usually a build tightening a headline, occasionally the claim quietly
+    changing after it was approved, never something to fail on.
+
+    **Which slot the title landed in is not checked.** ``_slide_title`` cannot
+    read the display title of designs 1, 5 and 7 at all, and on the title slide
+    the governing thought belongs in the subtitle -- a placement check would
+    report those every time it ran. Presence is what can be measured without
+    lying, and presence is what was actually lost.
+    """
+    plan = plan_titles(deck)
+    if not plan:
+        return [], []
+
+    per_slide = [(number, _title_words(text)) for number, text in texts]
+    lost, reworded = [], []
+    for block, title in plan:
+        want = _title_words(title)
+        if not want:
+            continue
+        best, where = 0.0, None
+        for number, words in per_slide:
+            if not words:
+                continue
+            share = len(want & words) / len(want)
+            if share > best:
+                best, where = share, number
+        if best >= 1.0:
+            continue
+        if best >= TITLE_KEPT:
+            reworded.append(
+                f"plan.md block {block}: slide {where} carries a reworded "
+                f"version of the approved title {title!r} -- fine if you "
+                f"tightened it, not fine if the claim moved. The user "
+                f"approved the sentence, not the topic"
+            )
+        else:
+            lost.append(f"plan.md block {block}: {title!r}")
+
+    # Twelve of these is one mistake made twelve times -- stage 5 writing
+    # something other than the plan into the title slot -- so the reason is
+    # given once and the rest are the payload: the exact sentences to copy.
+    # They are not truncated for the same reason. A title is under fifteen
+    # words by rule, and half of one cannot be pasted anywhere.
+    if lost:
+        head = "" if len(lost) == 1 else f"{len(lost)} approved titles are "
+        lost[0] = (
+            f"{lost[0]} -- {head or 'this approved title is '}on no slide of "
+            f"this deck. Stage 5 carries the title from plan.md into the "
+            f"title slot verbatim; a branch name or a topic label there "
+            f"throws away the argument the user signed off "
+            f"(references/storyline.md stage 5)"
+        )
+    return lost, reworded
 
 
 def _painted_boxes(doc, page):
@@ -1105,6 +1269,7 @@ def check(path, template=None, wanted=None):
     issues = []
     leftovers = {}
     footers = {}
+    deck_texts = []
     # Whatever the template already does -- its wording, the decorations it
     # bleeds past the trim on purpose, its brand colour pairings, the shapes it
     # stacks -- is duplicated into the deck unchanged, and is not a defect this
@@ -1162,6 +1327,7 @@ def check(path, template=None, wanted=None):
                 issues.append(f"slide {number} shape [{address}]: {reason}{more}")
 
             for address, text in _page_texts(page):
+                deck_texts.append((number, text))
                 hit = PLACEHOLDER.search(text)
                 if hit:
                     issues.append(
@@ -1188,6 +1354,13 @@ def check(path, template=None, wanted=None):
                                                _catalog_size(template)),)
                  if note]
         prose = prose_findings(doc, wanted, tpl_strings)
+        # Whole decks only.  A title the user approved is absent from a
+        # three-slide check exactly the way it is absent from a deck that threw
+        # it away, and the check cannot tell those apart on a partial view.
+        if not wanted:
+            lost, reworded = lost_plan_titles(path, deck_texts)
+            issues.extend(lost)
+            prose = (prose[0] + reworded, prose[1])
     finally:
         doc.close(False)
 

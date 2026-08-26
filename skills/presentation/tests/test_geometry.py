@@ -809,5 +809,113 @@ class BannedWords(unittest.TestCase):
             self.closing.match("Drei Maßnahmen starten im Oktober."))
 
 
+class PlanTitleTransfer(unittest.TestCase):
+    """Whether the titles the user approved reached the deck that was built.
+
+    Every string here is from the run that produced the defect: `plan.md`
+    block 1 was approved as a sentence, and the build wrote the branch name
+    "Current Blindspots" into the title slot on that slide and ten others.
+    """
+
+    #: Stage 3 writes exactly this shape -- three fields, one block per slide.
+    PLAN = """## 0
+title: A tiered control model balances security and agility.
+proof: [TBD: ratio of direct vs transitive dependencies]
+visual: statement
+
+## 1
+title: Our current dependency visibility is a major blindspot.
+proof: [TBD: % of dependencies without known owners]
+visual: area-compare
+"""
+
+    def setUp(self):
+        import tempfile
+        from qa import lost_plan_titles, plan_titles
+        self.lost_plan_titles, self.plan_titles = lost_plan_titles, plan_titles
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        (self.dir / "plan.md").write_text(self.PLAN)
+        self.deck = self.dir / "out.pptx"          # never opened, only located
+
+    def _run(self, *slide_texts):
+        return self.lost_plan_titles(
+            self.deck, [(n, t) for n, t in enumerate(slide_texts, start=1)])
+
+    def test_the_plan_is_read_in_order(self):
+        self.assertEqual(
+            self.plan_titles(self.deck),
+            [("0", "A tiered control model balances security and agility."),
+             ("1", "Our current dependency visibility is a major blindspot.")])
+
+    def test_a_title_carried_over_verbatim_is_not_reported(self):
+        lost, reworded = self._run(
+            "A tiered control model balances security and agility.",
+            "Our current dependency visibility is a major blindspot.")
+        self.assertEqual((lost, reworded), ([], []))
+
+    def test_the_branch_name_in_the_title_slot_loses_the_title(self):
+        """The actual defect: the approved sentence is on no slide."""
+        lost, _ = self._run(
+            "A tiered control model balances security and agility.",
+            "Current Blindspots", "Visibility")
+        self.assertEqual(len(lost), 1)
+        self.assertIn("block 1", lost[0])
+        self.assertIn("on no slide", lost[0])
+
+    def test_a_dropped_full_stop_is_not_a_lost_title(self):
+        """Punctuation is a rule about writing, not about transfer."""
+        lost, reworded = self._run(
+            "A tiered control model balances security and agility",
+            "Our current dependency visibility is a major blindspot")
+        self.assertEqual((lost, reworded), ([], []))
+
+    def test_a_tightened_headline_is_prose_and_never_lost(self):
+        lost, reworded = self._run(
+            "A tiered control model balances security and agility.",
+            "Our dependency visibility is a blindspot.")
+        self.assertEqual(lost, [])
+        self.assertEqual(len(reworded), 1)
+        self.assertIn("reworded", reworded[0])
+
+    def test_a_title_that_landed_in_the_body_still_counts_as_arrived(self):
+        """Placement is not measured -- see ``lost_plan_titles``."""
+        lost, reworded = self._run(
+            "Third-Party Dependency Risk Management A tiered control model "
+            "balances security and agility. Working Session 2026",
+            "Our current dependency visibility is a major blindspot.")
+        self.assertEqual((lost, reworded), ([], []))
+
+    def test_no_plan_beside_the_deck_means_no_findings(self):
+        (self.dir / "plan.md").unlink()
+        self.assertEqual(self._run("Anything at all"), ([], []))
+
+
+class RepeatedTitles(unittest.TestCase):
+    """The ghost deck reading as four labels instead of sixteen claims."""
+
+    def setUp(self):
+        from qa import repeated_titles
+        self.repeated = repeated_titles
+
+    def test_a_branch_name_used_as_four_titles_is_named_once(self):
+        found = self.repeated([(5, "Tiered Control Logic"),
+                               (6, "Tiered Control Logic"),
+                               (7, "Tiered Control Logic"),
+                               (8, "Something else entirely.")])
+        self.assertEqual(len(found), 1)
+        self.assertIn("slides 5, 6, 7", found[0])
+
+    def test_distinct_titles_are_clean(self):
+        self.assertEqual(
+            self.repeated([(2, "Revenue beat forecast by 15%."),
+                           (3, "APAC carried the quarter.")]), [])
+
+    def test_dividers_without_a_readable_title_are_not_repeats(self):
+        """Designs 1, 5 and 7 report ``None``; that is not four same titles."""
+        self.assertEqual(self.repeated([(1, None), (4, None), (9, None)]), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

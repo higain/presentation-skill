@@ -217,11 +217,71 @@ The recipe in SKILL.md, unchanged. `plan.md` drives it:
 
 | Field in `plan.md` | Where it lands |
 |---|---|
-| `title` | the design's title key, via `retext` — the AT_ST action-title slot |
+| `title` | **verbatim** into the design's title key, via `retext` — see below, this is where builds fail |
 | `proof` | the body, or the caption under the figure |
 | `visual` | picks the design: the pattern's row in `accents.md` names one, or the canvas |
-| the branches | section dividers, within the divider title budget |
+| the branches | section dividers **only** — never the title of a content slide |
 | `brief.md`'s footer line | `build_deck(..., footer="…")` |
+
+### The titles are what the user approved. Carry them; do not retype them.
+
+**Every title in the built deck is a string copied out of `plan.md` unchanged.**
+Not shortened to fit, not turned back into a topic, and never replaced by the name
+of the branch the slide sits under.
+
+This is the one step of the whole file that has actually been observed to fail, and
+it fails silently. A run took an approved plan through stage 4 and then built this:
+
+```python
+# plan.md block 1 says:
+#   title: Our current dependency visibility is a major blindspot.
+retext(page, {
+    "Potentielle Navigatoren": "Current Blindspots",   # ← the BRANCH name
+    "Navigator (1/2)": "Visibility",                   # ← a topic label
+})
+```
+
+The approved sentence is nowhere in the deck. Eleven of sixteen slides carried a
+branch name as their title, four of them the same one, and the ghost deck read as
+four labels repeated instead of sixteen claims. Every other check passed — the
+build was clean, `validate.py` passed, the renders looked fine. **A deck that has
+lost its titles is indistinguishable from a good one by every measure except the
+titles themselves.**
+
+**The pattern that prevents it:** lift the titles into one dict at the top of the
+build script, straight out of `plan.md`, and never write a title literal anywhere
+below it.
+
+```python
+# plan.md, copied in once. Nothing below this retypes a title.
+TITLES = {
+    1: "Our current dependency visibility is a major blindspot.",
+    2: "Transitive dependencies introduce unmanaged risk.",
+    3: "We cannot apply the same security gate to every package.",
+}
+
+def fill(doc, page, slot, design):
+    strip_annotations(page)
+    if slot in TITLES:
+        retext(page, {TITLE_KEY[design]: TITLES[slot]})   # the design's title key
+    ...
+```
+
+One place to check against `plan.md`, one place to fix, and the block numbers stay
+visible next to the sentences. A title typed a second time is a title being
+rewritten, whatever the intention.
+
+**Branches are dividers.** A branch is a *section*, so its name goes on a section
+divider slide of its own — designs 1, 5 and 7, within the divider title budget. The
+slides under it keep their own action titles. A branch name in a content slide's
+title slot is exactly the defect above, and one divider in sixteen slides is the
+symptom.
+
+**`qa.py` now measures the transfer.** It reads `plan.md` from beside the deck and
+reports every approved title that reaches no slide as a **finding** — these fail a
+build, unlike everything else about the wording — plus, as prose, a title that
+arrived reworded and any headline used on more than one slide. Write the deck into
+the same directory as `plan.md` or the check cannot run.
 
 Pick a design per slide from the decision table in `references/company-template.md`,
 first match wins, and use design 8 stripped to a canvas for anything it has no row for.

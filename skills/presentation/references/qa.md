@@ -33,6 +33,7 @@ They report what a reader would see as broken and nothing else:
   were tested against the four-character floor separately, the check written for
   exactly that defect never looked at the pair;
 - **a shape drawn past the edge of the slide**;
+- **a title the user approved that reached no slide** — only when a `plan.md` sits beside the deck. See below;
 - wording still shared with the template, and leftover placeholders — down to
   six characters, and collapsed to one line naming every slide it is on. The
   threshold used to be twenty-five, on the theory that only a body paragraph
@@ -179,6 +180,34 @@ ink 6% · centroid x=0.45 y=0.47 · largest blank band 67% of the height
 ```
 
 That is a title slide nobody finished, and you can tell without seeing it.
+
+## Titles the user approved
+
+Only when `plan.md` — stage 3 of `references/storyline.md` — sits **in the same
+directory as the deck**. It is read back and every approved title is looked for in
+the built file:
+
+| | |
+|---|---|
+| the sentence is on a slide | nothing to say |
+| most of it is | prose: *reworded* — a tightened headline is fine, a moved claim is not |
+| it is nowhere | a **finding**, and this one fails the build |
+
+The last row is the only wording check here that is not advisory, and it is not a
+judgement: the string is in the file or it is not. It exists because a run carried
+an approved plan through stage 4 and then wrote the branch name into the title slot
+on eleven slides of sixteen. Nothing else noticed. The build was clean, the renders
+were fine, and the deck argued nothing.
+
+**Placement is deliberately not checked** — only presence. The display title of
+designs 1, 5 and 7 is not readable as a title at all, and on the title slide the
+governing thought belongs in the subtitle, so a check on *which slot* the sentence
+landed in would report three correct slides as broken on every deck this template
+builds.
+
+Alongside it, needing no `plan.md`: **one headline used on more than one slide**,
+reported as prose. That is the visible shape of the same defect — a section name
+sitting where sixteen different claims should be.
 
 ## The vision reviewer
 
