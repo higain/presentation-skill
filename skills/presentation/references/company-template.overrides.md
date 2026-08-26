@@ -16,6 +16,14 @@ write them as additions and do not restate what the generator already says.
 
 ## header
 
+**Stop if you are still deciding what the deck says.** This file answers *which
+design carries this content*. It cannot answer *what the content is*, and
+picking designs while you sketch the sections is how that question gets skipped.
+If you were handed a subject rather than the slide text — anything where you
+would have to invent what the slides say — go to `references/storyline.md` and
+come back with an approved `plan.md`. Its `visual:` field is what the decision
+table below reads.
+
 **Asset detail the generator does not measure.** The deck is 16:9. Its masters
 carry roles: `AT_ST` is the content master, `Section_dark` the dividers, and
 `Default 36` belongs to design 4 alone. The slide size matters more than it
