@@ -353,4 +353,4 @@ in front of a customer:
 The preset-catalogue pattern and the three-preview picker follow `high-quality-slides`
 (MIT); the deck-type → look mapping follows `presentation-director` (MIT). The packs
 themselves are counted off `assets/company-template.pptx` and are ours, as is the hero
-visual catalogue. See `NOTICE.md`.
+visual catalogue. See `THIRD-PARTY.md`.

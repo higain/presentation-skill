@@ -130,4 +130,4 @@ was mechanically wrong — not that the deck argues.
 
 The action-title rules, the banned list, the banned patterns and the four rewrite tests
 are adapted from `executive-slide-skill/reference/language.md` (Apache-2.0); the ghost
-deck test from `academic-pptx-skill` (MIT). The German list is ours. See `NOTICE.md`.
+deck test from `academic-pptx-skill` (MIT). The German list is ours. See `THIRD-PARTY.md`.

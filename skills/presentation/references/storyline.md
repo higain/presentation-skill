@@ -330,4 +330,4 @@ The scaffold set, the pyramid/MECE framing and the headline-flow test are adapte
 `executive-slide-skill` (Apache-2.0) and `academic-pptx-skill` (MIT); the staged,
 user-gated workflow follows `Olito-Labs/slides` (MIT); the three-preview picker in stage
 4 follows `high-quality-slides` (MIT). The Rollout scaffold, the intake set and the
-small-model staging are ours. See `NOTICE.md`.
+small-model staging are ours. See `THIRD-PARTY.md`.
