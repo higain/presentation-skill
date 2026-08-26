@@ -22,3 +22,9 @@ skills/*/company-template-*.jpg
 # Scratch space, when /tmp is not writable. Normally removed on exit; this
 # catches the runs that are killed before they get there.
 .presentation-tmp/
+
+# Packaged copies of a skill, for runs that install from a file rather than
+# from this checkout. A snapshot of a commit that is already tracked here, so
+# it duplicates the tree and goes stale the moment the skill changes.
+# Regenerate rather than commit.
+dist/
