@@ -733,5 +733,81 @@ class VennLabels(unittest.TestCase):
         self.assertGreater(size, 0)
 
 
+class ActionTitles(unittest.TestCase):
+    """Whether a headline makes a point or names a topic.
+
+    Measured on two real decks built from the same research: the one judged
+    good read as an argument end to end, the one judged weak read as a table
+    of contents -- and nothing in the report told them apart.
+    """
+
+    def setUp(self):
+        from qa import _title_findings
+        self.find = _title_findings
+
+    def _reasons(self, text):
+        return " ".join(self.find(3, "title", text))
+
+    def test_a_so_what_sentence_is_clean(self):
+        self.assertEqual(
+            self.find(3, "title",
+                      "Q3 revenue beat forecast by 15%, driven by APAC."), [])
+
+    def test_german_counts_as_a_sentence_too(self):
+        self.assertEqual(
+            self.find(3, "title",
+                      "Auf 42 geprüfte Bibliotheken kommen 1.447 "
+                      "installierte."), [])
+
+    def test_a_label_is_a_topic_not_a_point(self):
+        self.assertIn("names a topic", self._reasons("Marktgröße"))
+        self.assertIn("names a topic", self._reasons("Next Steps"))
+
+    def test_a_question_is_not_a_title(self):
+        self.assertIn("asks a question",
+                      self._reasons("Warum ist das ein Problem?"))
+
+    def test_the_missing_period_is_what_gives_a_label_away(self):
+        self.assertIn("does not end in a period",
+                      self._reasons("Growth trends over the last quarters"))
+
+    def test_length_is_not_reported_per_slide(self):
+        """A house style runs long everywhere; ``prose_findings`` says so once."""
+        self.assertEqual(self.find(3, "title", " ".join(["word"] * 20) + "."),
+                         [])
+
+
+class BannedWords(unittest.TestCase):
+    """The tells, matched literally so the list is the specification."""
+
+    def setUp(self):
+        from qa import BANNED, CLOSING_WASTE
+        self.banned, self.closing = BANNED, CLOSING_WASTE
+
+    def test_the_tells_are_caught_in_both_languages(self):
+        for text in ("We leverage the pipeline", "best-in-class tooling",
+                     "Eine ganzheitliche Lösung", "Synergien heben",
+                     "die Mitarbeiter abholen", "seamlessly integrated"):
+            self.assertIsNotNone(self.banned.search(text), text)
+
+    def test_a_word_boundary_leaves_the_compound_alone(self):
+        """``Mehrwertsteuer`` is VAT, not a buzzword."""
+        self.assertIsNone(self.banned.search("Die Mehrwertsteuer beträgt 19%"))
+        self.assertIsNone(self.banned.search("Empowerment Ltd is a customer"))
+
+    def test_plain_writing_passes(self):
+        self.assertIsNone(self.banned.search("Wir nutzen die Pipeline"))
+        self.assertIsNone(
+            self.banned.search("42 direkte, 1.447 installierte Pakete"))
+
+    def test_a_wasted_last_slide_is_named(self):
+        for text in ("Vielen Dank!", "Questions?", "Q & A", "Danke", "Fragen?"):
+            self.assertIsNotNone(self.closing.match(text), text)
+
+    def test_an_ask_is_not_a_wasted_last_slide(self):
+        self.assertIsNone(
+            self.closing.match("Drei Maßnahmen starten im Oktober."))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

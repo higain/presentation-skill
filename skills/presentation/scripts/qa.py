@@ -65,8 +65,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from office.impress import (  # noqa: E402
-    PRESENTATION_EXTS, SofficeError, load_document, parse_slide_spec, shapes,
-    slides,
+    PRESENTATION_EXTS, SofficeError, load_document, parse_slide_spec,
+    placeholder, shapes, slides,
 )
 from office.deckbuild import find_template, recorded_designs  # noqa: E402
 from office.draw import MIN_READABLE_PT, contrast_ratio  # noqa: E402
@@ -188,6 +188,68 @@ EMOJI = re.compile(
     "⛔⚠❗❓❔"     # no-entry, warning, bang, question
     "‼⁉⬆⬇❤]"    # !!, !?, arrows, heart
 )
+
+
+#: The tells -- the words that make slide copy read as generated.  Matched
+#: literally, case-insensitively, on word boundaries, so this list is the
+#: specification and `references/language.md` is its prose copy.
+#:
+#: Word boundaries do most of the disambiguating work: `\bMehrwert\b` leaves
+#: "Mehrwertsteuer" alone, `\bleverag(e|es|ed|ing)\b` catches the verb in every
+#: form without touching "leverages" inside a quoted product name.  What they
+#: cannot do is tell an honest use from a lazy one -- "robust standard errors"
+#: and a literal "deep dive" session are both correct -- which is why these are
+#: prose to look at and never fail a build.  See `prose_findings`.
+BANNED = re.compile(
+    r"\b("
+    # English
+    r"delve|leverag(?:e|es|ed|ing)|robust|seamless(?:ly)?|holistic(?:ally)?"
+    r"|synerg(?:y|ies)|cutting[- ]edge|state[- ]of[- ]the[- ]art|empower(?:s|ing)?"
+    r"|unlock(?:s|ing)?|unleash(?:es|ing)?|supercharg(?:e|es|ed|ing)"
+    r"|transformative|game[- ]changing|best[- ]in[- ]class|world[- ]class"
+    r"|next[- ]generation|paradigm shift|low[- ]hanging fruit|win[- ]win"
+    r"|actionable insights?|key learnings|drive value|a wide range of"
+    r"|various stakeholders|in today's fast[- ]paced|it's important to note"
+    r"|at the end of the day"
+    # German
+    r"|ganzheitlich(?:e|er|es|en)?|nahtlos(?:e|er|es|en)?"
+    r"|zukunftsweisend(?:e|er|es|en)?|wegweisend(?:e|er|es|en)?"
+    r"|maßgeschneidert(?:e|er|es|en)?|Mehrwert|Synergien|Leuchtturmprojekt"
+    r"|Quantensprung|Optimierungspotenzial(?:e|s)?|Handlungsfelder"
+    r"|Erfolgsfaktoren|proaktiv(?:e|er|es|en)?|abzuholen|abholen"
+    r"|auf Augenhöhe|in der heutigen schnelllebigen"
+    r"|Herausforderungen meistern"
+    r")\b",
+    re.I,
+)
+
+#: How a deck should not end.  The last slide stays on screen through the whole
+#: discussion, so it is the most-looked-at slide in the deck and the one most
+#: often wasted.  Both languages, and "Q&A" without word boundaries because the
+#: ampersand is not a word character.
+CLOSING_WASTE = re.compile(
+    r"^\s*(thank(s| you)?|questions\??|any questions\??|q\s*&\s*a"
+    r"|danke|vielen dank|herzlichen dank|fragen\??|ende)\s*[.!?]*\s*$",
+    re.I,
+)
+
+# What separates a title that makes a point from one that names a topic.
+#
+# A machine cannot see whether a sentence carries a claim -- that needs the
+# evidence on the slide and the argument around it.  What it can see is the
+# shape of the string, and three signals hold in German and English alike:
+#
+#   * a label is short.  "Marktgröße", "Next Steps", "Ausblick" are one to three
+#     words; a sentence with a subject and a verb is rarely under four.
+#   * a sentence ends with a period.  A label never does.  This is prescriptive
+#     rather than descriptive -- language.md makes the period the convention
+#     precisely so that the check is possible.
+#   * a title that ends in a question mark is a question, and a title answers.
+#
+# Titles above the cap are the opposite defect: two lines at title size is the
+# budget, and 14 words overruns it in English and sooner in German.
+TITLE_MIN_WORDS = 4
+TITLE_MAX_WORDS = 14
 
 
 class _Baseline:
@@ -646,6 +708,153 @@ def markdown_issues(page, number):
     return out
 
 
+def _slide_title(page):
+    """``(address, text)`` for the page's title, or ``None``.
+
+    The ``Title`` placeholder first, because a slide built the way
+    ``authoring.md`` asks has one.  A deck built from the company template
+    often does not: its designs carry their headline in an ordinary shape that
+    ``retext`` fills by key, and no placeholder is involved.
+
+    So the fallback is the largest type in the top third of the slide -- which
+    is what a headline is, on every design in the catalog.  It is a heuristic
+    and it can pick the wrong shape on a slide whose biggest text is a giant
+    number; the checks that use it are advisory for that reason among others.
+    """
+    shape = placeholder(page, "Title")
+    if shape is not None:
+        try:
+            text = _norm(shape.getString())
+        except Exception:
+            text = ""
+        if text:
+            return "title", text
+
+    try:
+        height = page.Height
+    except Exception:
+        return None
+    best = None
+    for address, shape in walk_shapes(page):
+        try:
+            text = _norm(shape.getString())
+        except Exception:
+            continue
+        box = _geometry(shape)
+        if not text or not box or box[1] > height / 3:
+            continue
+        sizes = _text_sizes(shape)
+        if not sizes:
+            continue
+        size = max(sizes)
+        if best is None or size > best[0]:
+            best = (size, address, text)
+    return (best[1], best[2]) if best else None
+
+
+def _title_findings(number, address, text):
+    """Action-title defects in one title.  See ``TITLE_MIN_WORDS``.
+
+    Length is not checked here.  A deck written to a house style is long in
+    every title or none, and one line per slide saying so buries the four
+    findings that are specific -- the same reason ``check`` groups a table's
+    eleven off-slide cells into one line.  ``prose_findings`` reports it once.
+    """
+    out = []
+    if text.endswith("?"):
+        out.append(
+            f"slide {number} [{address}]: the title asks a question -- "
+            f"{text[:60]!r}. A title states the answer; the speaker asks"
+        )
+    elif len(text.split()) < TITLE_MIN_WORDS:
+        out.append(
+            f"slide {number} [{address}]: title {text[:60]!r} names a topic "
+            f"rather than making a point. Correct on a section divider; "
+            f"anywhere else, write the so-what as a sentence"
+        )
+    elif not text.endswith("."):
+        out.append(
+            f"slide {number} [{address}]: title {text[:60]!r} does not end in "
+            f"a period, so it is probably a label rather than a claim "
+            f"(references/language.md §1)"
+        )
+    return out
+
+
+def prose_findings(doc, wanted=None, baseline=frozenset()):
+    """``(findings, titles)`` -- how the deck reads, and its titles in order.
+
+    Not findings in the ``issues`` sense and deliberately not part of them: a
+    banned word can have an honest use, a four-word title is right on a section
+    divider, and a deck of one slide has no argument to flow.  Every line here
+    is a judgement a person makes in a second and a machine cannot make at all,
+    so this reports and does not fail a build -- the same bargain as
+    ``sparse_slides``.
+
+    ``titles`` is the ghost deck: the point is not that a machine grades it but
+    that reading the titles alone, in order, tells you within ten seconds
+    whether the deck has an argument.  Nothing else in this file replaces that.
+
+    ``baseline`` is the template's own wording, so a tell that the brand chose
+    for itself is not reported against every deck built on it.
+    """
+    findings, titles = [], []
+    for number, page in enumerate(slides(doc), start=1):
+        if wanted and number not in wanted:
+            continue
+
+        found = _slide_title(page)
+        titles.append((number, found[1] if found else None))
+        # Slide 1 is the title slide: a deck title is a name, not a claim.
+        if found and number > 1:
+            findings.extend(_title_findings(number, *found))
+        elif not found:
+            findings.append(
+                f"slide {number}: no title found. Every content slide carries "
+                f"its conclusion in the headline"
+            )
+
+        seen = set()
+        for address, text in _page_texts(page):
+            if text in baseline:
+                continue
+            for hit in BANNED.finditer(text):
+                word = hit.group(0).lower()
+                if word in seen:
+                    continue
+                seen.add(word)
+                findings.append(
+                    f"slide {number} [{address}]: {hit.group(0)!r} is on the "
+                    f"banned list (references/language.md §3) -- in "
+                    f"{text[:60]!r}. Say the specific thing, or keep it and "
+                    f"move on"
+                )
+
+    # One line for the whole deck, naming the worst: a house style that runs
+    # long runs long everywhere, and sixteen identical lines are read as
+    # sixteen mistakes and then ignored.
+    long_ones = [(len(text.split()), number) for number, text in titles
+                 if text and len(text.split()) > TITLE_MAX_WORDS]
+    if long_ones:
+        words, worst = max(long_ones)
+        findings.append(
+            f"{len(long_ones)} of {len(titles)} titles run over "
+            f"{TITLE_MAX_WORDS} words -- the longest is slide {worst} at "
+            f"{words}. Over two lines at title size the headline stops being "
+            f"scannable; cut each to its claim"
+        )
+
+    if titles and not wanted:
+        number, last = titles[-1]
+        if last and CLOSING_WASTE.match(last):
+            findings.append(
+                f"slide {number}: the deck ends on {last[:40]!r}. The last "
+                f"slide stays up through the whole discussion -- put the ask "
+                f"on it, with an owner and a date"
+            )
+    return findings, titles
+
+
 def _painted_boxes(doc, page):
     """``(x, y, w, h)`` of what each shape on the page actually paints.
 
@@ -884,11 +1093,14 @@ def stray_template_images(deck, template, wanted=None):
 
 
 def check(path, template=None, wanted=None):
-    """``(issues, slides_checked, sparse, notes)`` -- all four ready to print.
+    """``(issues, slides_checked, sparse, notes, prose)`` -- ready to print.
 
-    ``sparse`` and ``notes`` are advisory and deliberately not part of
-    ``issues``: see ``sparse_slides`` and ``design_note``.  A caller that fails
-    a build on findings must not fail it on these.
+    ``sparse``, ``notes`` and ``prose`` are advisory and deliberately not part
+    of ``issues``: see ``sparse_slides``, ``design_note`` and
+    ``prose_findings``.  A caller that fails a build on findings must not fail
+    it on these.
+
+    ``prose`` is ``(findings, titles)``; ``titles`` is the ghost deck.
     """
     issues = []
     leftovers = {}
@@ -975,6 +1187,7 @@ def check(path, template=None, wanted=None):
         notes = [note for note in (design_note(recorded_designs(doc),
                                                _catalog_size(template)),)
                  if note]
+        prose = prose_findings(doc, wanted, tpl_strings)
     finally:
         doc.close(False)
 
@@ -1012,7 +1225,7 @@ def check(path, template=None, wanted=None):
             and Path(template).suffix.lower() in PPTX_EXTS:
         issues.extend(stray_template_images(path, template, wanted))
 
-    return issues, checked, sparse, notes
+    return issues, checked, sparse, notes, prose
 
 
 def validate_pptx(path, template=None):
@@ -1070,7 +1283,8 @@ def main():
     wanted = _parse_slides(args.slides) if args.slides else None
 
     try:
-        issues, checked, sparse, notes = check(path, args.template, wanted)
+        issues, checked, sparse, notes, prose = check(
+            path, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
@@ -1095,6 +1309,27 @@ def main():
         print(
             "\nNot findings -- a statement slide is sparse on purpose. These "
             "are the slides where that is worth confirming."
+        )
+
+    prose_issues, titles = prose
+    if titles:
+        print("\n## The ghost deck\n")
+        for number, title in titles:
+            print(f"{number:>3}. {title if title else '(no title found)'}")
+        print(
+            "\nRead these, in order, and nothing else. They should tell the "
+            "whole argument on their own -- each one a claim that follows from "
+            "the last. If they do not, fix the storyline before the slides "
+            "(references/storyline.md)."
+        )
+
+    if prose_issues:
+        print(f"\n## {len(prose_issues)} line(s) to look at\n")
+        for finding in prose_issues:
+            print(f"- {finding}")
+        print(
+            "\nNot findings -- a banned word can have an honest use and a "
+            "short title is right on a divider. See references/language.md."
         )
 
     failed = bool(issues)

@@ -135,6 +135,25 @@ minor and shipped; the other never opened an image.
 If a listed slide is sparse on purpose, it is fine. Say so and move on — in the
 verdict column, where saying so is recorded.
 
+## The ghost deck, and the lines to look at
+
+Every report prints **the titles of every slide, in order, and nothing else.**
+Read them as a block. They should tell the whole argument on their own, each one
+a claim following from the last. If they read as a table of contents — "The
+Trifecta", "Why it matters", "Next steps" — the deck lists rather than argues,
+and the fix is in the storyline, not in the slides.
+
+This is the one check nothing else here replaces. Two decks built from the same
+research passed every measurement above; one read as an argument end to end and
+the other as an agenda, and only the title block told them apart.
+
+Under it, **the lines to look at**: titles that name a topic instead of making a
+point, titles that ask a question, a deck ending on "Vielen Dank", and the words
+from the banned list in `references/language.md`. These are prose, not defects,
+and they never fail a build — *robust* has an honest use in statistics and a
+four-word title is right on a section divider. Overriding one is a decision you
+are allowed to make; not seeing it is not.
+
 **Every listed slide also gets a wireframe in the report**, and any render can
 have one on demand:
 

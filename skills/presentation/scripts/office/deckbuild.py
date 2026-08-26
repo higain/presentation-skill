@@ -305,7 +305,7 @@ def _report_qa(out: Path, template: Path):
         except ImportError:
             return
     try:
-        issues, checked, sparse, notes = check(out, template=template)
+        issues, checked, sparse, notes, prose = check(out, template=template)
     except Exception as e:                    # QA must never lose you the deck
         print(f"[build_deck] QA could not run: {e}")
         return
@@ -322,6 +322,14 @@ def _report_qa(out: Path, template: Path):
     if sparse:
         print(f"[build_deck] {len(sparse)} slide(s) worth looking at -- "
               f"{', '.join(str(n) for n, _ in sparse)}: may be half empty.")
+    # The ghost deck goes to `scripts/qa.py`, not here: a build prints as it
+    # goes and a list of every title would bury the findings above it.  What a
+    # build owes you is the count and where to see them.
+    prose_issues, _titles = prose
+    if prose_issues:
+        print(f"[build_deck] {len(prose_issues)} line(s) to look at -- titles "
+              f"and wording. `python3 scripts/qa.py {out.name}` prints them "
+              f"with the ghost deck.")
     print("[build_deck] QA cannot see the slides. Render them "
           "(python3 scripts/render.py) and look.\n")
 

@@ -155,7 +155,7 @@ def _wireframes(outdir: Path, numbers) -> list:
 
 def _write_report(deck: Path, issues: list, checked: int, outdir=None,
                   sheet=None, sparse=(), review=None, looked=False,
-                  notes=()) -> Path:
+                  notes=(), prose=None) -> Path:
     """Leave the findings on disk, next to the deck, as ``<deck>-report.md``.
 
     A build that ends between "here is what is wrong" and "fixed it" otherwise
@@ -206,6 +206,25 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
                   "purpose and a forgotten one measures the same. Open these "
                   "first and decide.", ""]
         lines += [f"- [ ] slide {number}: {reason}" for number, reason in sparse]
+    # Before the renders and before the verdicts, because it is read fastest
+    # and it is the one part of this report that can still be acted on cheaply:
+    # a storyline fixed here costs one edit to plan.md, and after the slides
+    # are built it costs the deck.
+    prose_issues, titles = prose if prose else ((), ())
+    if titles:
+        lines += ["", "## The ghost deck", "",
+                  "Read these, in order, and nothing else. They should tell "
+                  "the whole argument on their own — each a claim that follows "
+                  "from the last. If they do not, the storyline is what needs "
+                  "fixing, not the slides (`references/storyline.md`).", ""]
+        lines += [f"{number}. {title if title else '*(no title found)*'}"
+                  for number, title in titles]
+    if prose_issues:
+        lines += ["", f"## {len(prose_issues)} line(s) to look at", "",
+                  "How the deck reads, not what is broken in it: a banned word "
+                  "can have an honest use and a short title is right on a "
+                  "divider. See `references/language.md`.", ""]
+        lines += [f"- [ ] {finding}" for finding in prose_issues]
     if review:
         lines += ["", review, "",
                   "**A finding here is dismissed only by a measurement you "
@@ -383,7 +402,8 @@ def main():
         from qa import _parse_slides
         wanted = _parse_slides(args.slides)
     try:
-        issues, checked, sparse, notes = check(deck, args.template, wanted)
+        issues, checked, sparse, notes, prose = check(
+            deck, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
@@ -408,8 +428,20 @@ def main():
         for number, reason in sparse:
             print(f"- slide {number}: {reason}")
 
+    prose_issues, titles = prose
+    if titles:
+        print("\n## The ghost deck\n")
+        for number, title in titles:
+            print(f"{number:>3}. {title if title else '(no title found)'}")
+        print("\nRead these in order. They should tell the whole argument on "
+              "their own.")
+    if prose_issues:
+        print(f"\n## {len(prose_issues)} line(s) to look at\n")
+        for finding in prose_issues:
+            print(f"- {finding}")
+
     _write_report(deck, issues, checked, None if args.no_render else outdir,
-                  sparse=sparse, notes=notes)
+                  sparse=sparse, notes=notes, prose=prose)
 
     if deck.suffix.lower() in PPTX_EXTS and not args.skip_validate:
         code, output = validate_pptx(deck, args.template)
@@ -443,7 +475,7 @@ def main():
         # on a single sheet.
         _write_report(deck, issues, checked, outdir,
                       sheet.resolve() if sheet else None, sparse, review,
-                      looked, notes)
+                      looked, notes, prose)
         if images:
             print(
                 "\n**Open these and look at them.** "

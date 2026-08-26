@@ -34,10 +34,35 @@ stays OOXML. Nothing here rewrites a file format by hand.
    blank document and not from an invented look. Their template always wins if
    they supply one.
 
+## Step 0 — which job is this?
+
+**Answer this before running a single command.** The recipe below builds slides.
+It does not decide what the slides should say, and there is no check anywhere in
+this skill that notices when nobody did.
+
+| What you were handed | Start at |
+|---|---|
+| An outline, a document, a deck to edit, or the slide text itself | **The recipe**, below |
+| A **subject** — "a deck about X", a sentence or a paragraph of intent | **`references/storyline.md`**, first, and do not open the recipe until stage 3 of it is approved |
+
+A one-line request for a deck on a topic is the second row, not the first. So is
+a paragraph. So is a brief that names an audience and a goal but no content:
+the giveaway is that **you would have to invent what the slides say**, and that
+is the work `references/storyline.md` governs — six intake questions, one
+scaffold, a ghost deck the user approves, an accent pack the user picks, and
+only then the recipe.
+
+**Do not substitute your own outline for that file.** Writing a plan of your own
+called `storyline.md`, or picking designs while sketching the sections, skips
+the two user gates and produces a deck that lists what is known about a topic
+instead of arguing something. That failure is invisible to `qa.py`, to
+`validate.py` and to the renders — a deck can pass every check in this skill and
+still have never made a point.
+
 ## The recipe
 
 **This is the commonest job — a `.pptx` on the house template — and this is the
-whole of it.** Six steps in order.
+whole of it.** Six steps in order, and **only once step 0 sent you here**.
 
 ```bash
 # 1. See what the template offers.
@@ -187,7 +212,20 @@ import sys; sys.path.insert(0, "/absolute/path/to/presentation/scripts")
 | `references/qa.md` | What each check means, visual QA, `validate.py`, what a round trip preserves |
 | `references/authoring.md` | No template at all: new documents, placeholders, typography, environment |
 | `references/design.md` | Inventing a look — palette and motif, for a deck with no template |
+| `references/language.md` | **Writing the words** — action titles, the banned list, the four rewrite tests |
+| `references/storyline.md` | **A deck from a brief, not from supplied text** — intake, scaffold, ghost deck, the two user gates |
+| `references/accents.md` | The look: accent packs, the hero-visual catalogue that `plan.md`'s `visual:` field names |
 | `references/pptx-xml.md` | Hand-editing OOXML |
+
+**Writing slide text rather than placing text the user supplied?** Read
+`references/language.md` first. Every title is a sentence stating the
+conclusion, not a label for the topic — it is the difference between a deck that
+argues and a deck that lists, and `qa.py` checks it.
+
+**Asked for a deck on a subject, rather than handed the content for one?** That
+is step 0 above, and `references/storyline.md` runs before anything on this
+page. If you have already written a build script, you are past the point where
+reading it helps.
 
 ## Company template (default)
 
