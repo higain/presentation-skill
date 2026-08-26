@@ -1,0 +1,157 @@
+{
+  "number": 6,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FDF6F1",
+  "reading_order": {
+    "full_width": [
+      0,
+      1
+    ],
+    "columns": [
+      [
+        4,
+        5
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        12,
+        13
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 0,
+      "name": "Text 0",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 2540,
+      "width": 49476,
+      "height": 772,
+      "sample_text": "COLUMN LAYOUT",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "Text 1",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 3630,
+      "width": 49476,
+      "height": 1830,
+      "sample_text": "Three even pillars",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 49.5
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 9483,
+      "width": 15560,
+      "height": 1186,
+      "sample_text": "Simple",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 10934,
+      "width": 14570,
+      "height": 3280,
+      "sample_text": "Each column carries one idea. A geometric icon, a short heading, and a couple of supporting lines.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 20.2
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "Text 8",
+      "type": "ooxml-rect",
+      "x": 18327,
+      "y": 9483,
+      "width": 15560,
+      "height": 1186,
+      "sample_text": "Balanced",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "Text 9",
+      "type": "ooxml-rect",
+      "x": 18327,
+      "y": 10934,
+      "width": 14570,
+      "height": 3280,
+      "sample_text": "Keep the columns roughly the same length so the slide feels calm and considered rather than lopsided.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 20.2
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "name": "Text 12",
+      "type": "ooxml-rect",
+      "x": 33743,
+      "y": 9483,
+      "width": 15560,
+      "height": 1186,
+      "sample_text": "Flexible",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "Text 13",
+      "type": "ooxml-rect",
+      "x": 33743,
+      "y": 10934,
+      "width": 14570,
+      "height": 3280,
+      "sample_text": "Drop to two columns for more room, or add a fourth when you need a tighter, denser grid.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 20.2
+        }
+      ]
+    }
+  ],
+  "shape_count": 14
+}

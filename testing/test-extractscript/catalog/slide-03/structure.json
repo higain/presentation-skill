@@ -1,0 +1,241 @@
+{
+  "number": 3,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FDF6F1",
+  "reading_order": {
+    "full_width": [],
+    "columns": [
+      [
+        0,
+        1,
+        2
+      ],
+      [
+        4,
+        7,
+        10,
+        13,
+        15
+      ],
+      [
+        5,
+        8,
+        11,
+        14,
+        16
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 0,
+      "name": "Text 0",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 2540,
+      "width": 20037,
+      "height": 772,
+      "sample_text": "OVERVIEW",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "Text 1",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 3683,
+      "width": 20037,
+      "height": 2429,
+      "sample_text": "Agenda",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 66.0
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "Text 2",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 23258,
+      "width": 18762,
+      "height": 2406,
+      "sample_text": "Five sections. Roughly forty-five minutes with time for questions.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 22.5
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 23243,
+      "y": 8180,
+      "width": 2063,
+      "height": 1347,
+      "sample_text": "01",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 30.0
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 25995,
+      "y": 8226,
+      "width": 9896,
+      "height": 1255,
+      "sample_text": "Where we are today",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 28.5
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "Text 7",
+      "type": "ooxml-rect",
+      "x": 23243,
+      "y": 11002,
+      "width": 2063,
+      "height": 1347,
+      "sample_text": "02",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 30.0
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "Text 8",
+      "type": "ooxml-rect",
+      "x": 25995,
+      "y": 11049,
+      "width": 12108,
+      "height": 1255,
+      "sample_text": "The numbers that matter",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 28.5
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "Text 10",
+      "type": "ooxml-rect",
+      "x": 23243,
+      "y": 13825,
+      "width": 2063,
+      "height": 1347,
+      "sample_text": "03",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 30.0
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "Text 11",
+      "type": "ooxml-rect",
+      "x": 25995,
+      "y": 13871,
+      "width": 12725,
+      "height": 1255,
+      "sample_text": "What we are building next",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 28.5
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "Text 13",
+      "type": "ooxml-rect",
+      "x": 23243,
+      "y": 16647,
+      "width": 2063,
+      "height": 1347,
+      "sample_text": "04",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 30.0
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "Text 14",
+      "type": "ooxml-rect",
+      "x": 25995,
+      "y": 16693,
+      "width": 12908,
+      "height": 1255,
+      "sample_text": "How the team fits together",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 28.5
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "Text 15",
+      "type": "ooxml-rect",
+      "x": 23243,
+      "y": 19470,
+      "width": 2063,
+      "height": 1347,
+      "sample_text": "05",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 30.0
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "name": "Text 16",
+      "type": "ooxml-rect",
+      "x": 25995,
+      "y": 19516,
+      "width": 11495,
+      "height": 1255,
+      "sample_text": "Questions & discussion",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 28.5
+        }
+      ]
+    }
+  ],
+  "shape_count": 17
+}

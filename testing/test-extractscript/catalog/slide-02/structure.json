@@ -1,0 +1,280 @@
+{
+  "number": 2,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FDF6F1",
+  "reading_order": {
+    "full_width": [
+      0,
+      1
+    ],
+    "columns": [
+      [
+        2,
+        4,
+        8
+      ],
+      [
+        6,
+        10
+      ],
+      [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      [
+        17
+      ],
+      [
+        23
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 0,
+      "name": "Text 0",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 2540,
+      "width": 49476,
+      "height": 772,
+      "sample_text": "THE SYSTEM",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "Text 1",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 3630,
+      "width": 49476,
+      "height": 1991,
+      "sample_text": "One clear, friendly style",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 54.0
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "Text 2",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 6998,
+      "width": 17688,
+      "height": 772,
+      "sample_text": "COLOR",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 3281,
+      "y": 8618,
+      "width": 7349,
+      "height": 3280,
+      "sample_text": "Coral",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "Text 6",
+      "type": "ooxml-rect",
+      "x": 11507,
+      "y": 8618,
+      "width": 7349,
+      "height": 3280,
+      "sample_text": "Sun",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "Text 8",
+      "type": "ooxml-rect",
+      "x": 3281,
+      "y": 12904,
+      "width": 7349,
+      "height": 3280,
+      "sample_text": "Ink",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "Text 10",
+      "type": "ooxml-rect",
+      "x": 11553,
+      "y": 12950,
+      "width": 7257,
+      "height": 3280,
+      "sample_text": "Cream",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "Text 11",
+      "type": "ooxml-rect",
+      "x": 20156,
+      "y": 6998,
+      "width": 15382,
+      "height": 772,
+      "sample_text": "TYPE",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 12,
+      "name": "Text 12",
+      "type": "ooxml-rect",
+      "x": 20156,
+      "y": 8247,
+      "width": 15382,
+      "height": 1692,
+      "sample_text": "Poppins",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 48.0
+        }
+      ]
+    },
+    {
+      "index": 13,
+      "name": "Text 13",
+      "type": "ooxml-rect",
+      "x": 20156,
+      "y": 9993,
+      "width": 15382,
+      "height": 772,
+      "sample_text": "Display & headings",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "Text 14",
+      "type": "ooxml-rect",
+      "x": 20156,
+      "y": 11348,
+      "width": 15382,
+      "height": 1347,
+      "sample_text": "DM Sans",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 30.0
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "Text 15",
+      "type": "ooxml-rect",
+      "x": 20156,
+      "y": 12749,
+      "width": 15382,
+      "height": 772,
+      "sample_text": "Body & captions",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "name": "Text 16",
+      "type": "ooxml-rect",
+      "x": 20156,
+      "y": 13998,
+      "width": 14403,
+      "height": 1991,
+      "sample_text": "The quick brown fox jumps over the lazy dog. 0123456789.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 18.0
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "name": "Text 17",
+      "type": "ooxml-rect",
+      "x": 35304,
+      "y": 6998,
+      "width": 13843,
+      "height": 772,
+      "sample_text": "LOGO",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 23,
+      "name": "Text 23",
+      "type": "ooxml-rect",
+      "x": 41487,
+      "y": 19051,
+      "width": 1857,
+      "height": 1117,
+      "sample_text": "Kite",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 25.5
+        }
+      ]
+    }
+  ],
+  "shape_count": 24
+}

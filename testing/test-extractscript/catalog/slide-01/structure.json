@@ -1,0 +1,123 @@
+{
+  "number": 1,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FDF6F1",
+  "reading_order": {
+    "full_width": [
+      3,
+      4
+    ],
+    "columns": [
+      [
+        5,
+        6
+      ],
+      [
+        2
+      ],
+      [
+        8
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 2,
+      "name": "Text 2",
+      "type": "ooxml-rect",
+      "x": 4550,
+      "y": 3070,
+      "width": 1658,
+      "height": 1002,
+      "sample_text": "Kite",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 22.5
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "Text 3",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 15710,
+      "width": 49476,
+      "height": 841,
+      "sample_text": "BRAND PRESENTATION SYSTEM",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 18.0
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 17134,
+      "width": 40745,
+      "height": 3510,
+      "sample_text": "The Master Deck",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 99.0
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 21438,
+      "width": 24526,
+      "height": 2590,
+      "sample_text": "A friendly, flexible set of slide templates for the whole team to build on.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 25.5
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "Text 6",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 25616,
+      "width": 7958,
+      "height": 841,
+      "sample_text": "Q3 2026 · Company-wide",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 18.0
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "Text 8",
+      "type": "ooxml-rect",
+      "x": 46054,
+      "y": 25616,
+      "width": 2046,
+      "height": 818,
+      "sample_text": "kite.co",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 18.0
+        }
+      ]
+    }
+  ],
+  "shape_count": 9
+}

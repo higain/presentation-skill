@@ -1,0 +1,257 @@
+{
+  "number": 7,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FDF6F1",
+  "reading_order": {
+    "full_width": [
+      0,
+      1
+    ],
+    "columns": [
+      [
+        4,
+        5,
+        6,
+        14,
+        15,
+        16
+      ],
+      [
+        9,
+        10,
+        11,
+        19,
+        20,
+        21
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 0,
+      "name": "Text 0",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 2540,
+      "width": 49476,
+      "height": 772,
+      "sample_text": "KICKER BOXES",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "Text 1",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 3630,
+      "width": 49476,
+      "height": 1830,
+      "sample_text": "Tagged cards for quick points",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 49.5
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 4544,
+      "y": 7941,
+      "width": 2203,
+      "height": 725,
+      "sample_text": "SPEED",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 4120,
+      "y": 9356,
+      "width": 21581,
+      "height": 1186,
+      "sample_text": "Fast to assemble",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "Text 6",
+      "type": "ooxml-rect",
+      "x": 4120,
+      "y": 10754,
+      "width": 20207,
+      "height": 2129,
+      "sample_text": "Duplicate a card, swap the kicker, done. The grid keeps everything aligned for you.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "Text 9",
+      "type": "ooxml-rect",
+      "x": 27483,
+      "y": 7941,
+      "width": 2781,
+      "height": 725,
+      "sample_text": "CLARITY",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "name": "Text 10",
+      "type": "ooxml-rect",
+      "x": 27060,
+      "y": 9356,
+      "width": 21581,
+      "height": 1186,
+      "sample_text": "Easy to scan",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 11,
+      "name": "Text 11",
+      "type": "ooxml-rect",
+      "x": 27060,
+      "y": 10754,
+      "width": 20207,
+      "height": 2129,
+      "sample_text": "The colored tag tells the audience what kind of point each card is making at a glance.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 14,
+      "name": "Text 14",
+      "type": "ooxml-rect",
+      "x": 4544,
+      "y": 18255,
+      "width": 3468,
+      "height": 725,
+      "sample_text": "CONTRAST",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 15,
+      "name": "Text 15",
+      "type": "ooxml-rect",
+      "x": 4120,
+      "y": 19669,
+      "width": 21581,
+      "height": 1186,
+      "sample_text": "Emphasis on demand",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 16,
+      "name": "Text 16",
+      "type": "ooxml-rect",
+      "x": 4120,
+      "y": 21068,
+      "width": 20207,
+      "height": 2129,
+      "sample_text": "Flip a card to ink to make the single most important point stand apart from the rest.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 19,
+      "name": "Text 19",
+      "type": "ooxml-rect",
+      "x": 27483,
+      "y": 18255,
+      "width": 2320,
+      "height": 725,
+      "sample_text": "RANGE",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 15.0
+        }
+      ]
+    },
+    {
+      "index": 20,
+      "name": "Text 20",
+      "type": "ooxml-rect",
+      "x": 27060,
+      "y": 19669,
+      "width": 21581,
+      "height": 1186,
+      "sample_text": "Two, three, or four",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 27.0
+        }
+      ]
+    },
+    {
+      "index": 21,
+      "name": "Text 21",
+      "type": "ooxml-rect",
+      "x": 27060,
+      "y": 21068,
+      "width": 20207,
+      "height": 2129,
+      "sample_text": "The same card works in any count. Use four for a full grid or two for a bolder pair.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    }
+  ],
+  "shape_count": 22
+}

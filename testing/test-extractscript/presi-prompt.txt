@@ -1,0 +1,1 @@
+use the presentation skill to build a presentation of this analysis and the project plan in the excel file. use the templates for powerpoint slides provided in the @Kite_brand_master_slide_deck.pptx and save them in a new file (copy and edit the slides from the master deck)

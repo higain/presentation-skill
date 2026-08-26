@@ -1,0 +1,191 @@
+{
+  "number": 5,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FDF6F1",
+  "reading_order": {
+    "full_width": [
+      0,
+      1,
+      2
+    ],
+    "columns": [
+      [
+        3,
+        4
+      ],
+      [
+        5,
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 0,
+      "name": "Text 0",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 2540,
+      "width": 49476,
+      "height": 772,
+      "sample_text": "CONTENT-RICH LAYOUT",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 16.5
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "Text 1",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 3630,
+      "width": 37834,
+      "height": 1830,
+      "sample_text": "Room for the full story",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 49.5
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "Text 2",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 5726,
+      "width": 32702,
+      "height": 2406,
+      "sample_text": "Use this layout when a topic needs real explanation. Three balanced columns keep dense text scannable.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 22.5
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "Text 3",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 9402,
+      "width": 15405,
+      "height": 1071,
+      "sample_text": "Background",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 24.0
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 10792,
+      "width": 14424,
+      "height": 4338,
+      "sample_text": "Set the context first. Explain what changed, why it matters now, and who is affected. Keep each idea to a short paragraph so the eye can rest between them.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 18397,
+      "y": 9402,
+      "width": 15405,
+      "height": 1071,
+      "sample_text": "What we found",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 24.0
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "name": "Text 6",
+      "type": "ooxml-rect",
+      "x": 18397,
+      "y": 10792,
+      "width": 14424,
+      "height": 3280,
+      "sample_text": "Present the evidence in plain language. Lead with the finding, then the detail that supports it.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "Text 7",
+      "type": "ooxml-rect",
+      "x": 18397,
+      "y": 14443,
+      "width": 14424,
+      "height": 2222,
+      "sample_text": "Two shorter paragraphs read better than one long block on a projected slide.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "name": "Text 8",
+      "type": "ooxml-rect",
+      "x": 33884,
+      "y": 9402,
+      "width": 15405,
+      "height": 1071,
+      "sample_text": "What it means",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 24.0
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "name": "Text 9",
+      "type": "ooxml-rect",
+      "x": 33884,
+      "y": 10792,
+      "width": 14425,
+      "height": 4338,
+      "sample_text": "Close with the implication and the recommended next step. This is the part the audience will remember, so keep it direct and specific rather than hedged.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    }
+  ],
+  "shape_count": 10
+}

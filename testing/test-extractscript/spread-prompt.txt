@@ -1,0 +1,1 @@
+read the excel file in @Aurora_PM_Planning.xlsx with the spreadsheet skill and document your analysis result in a markdown file

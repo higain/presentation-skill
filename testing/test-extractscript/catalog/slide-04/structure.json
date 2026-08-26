@@ -1,0 +1,87 @@
+{
+  "number": 4,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#FF5A3C",
+  "reading_order": {
+    "full_width": [
+      0,
+      1
+    ],
+    "columns": [
+      [
+        2
+      ],
+      [
+        5
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 0,
+      "name": "Text 0",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 8109,
+      "width": 49476,
+      "height": 6018,
+      "sample_text": "01",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 210.0
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "Text 1",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 14657,
+      "width": 49476,
+      "height": 2636,
+      "sample_text": "Getting started",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 72.0
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "name": "Text 2",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 17981,
+      "width": 27251,
+      "height": 2590,
+      "sample_text": "A quick tour of the templates in this deck and how to make them your own.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 25.5
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 4286,
+      "y": 25988,
+      "width": 1511,
+      "height": 887,
+      "sample_text": "Kite",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    }
+  ],
+  "shape_count": 6
+}

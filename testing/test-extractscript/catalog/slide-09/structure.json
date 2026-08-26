@@ -1,0 +1,106 @@
+{
+  "number": 9,
+  "layout": 20,
+  "master": "DEFAULT",
+  "background": "#241D1A",
+  "reading_order": {
+    "full_width": [
+      3
+    ],
+    "columns": [
+      [
+        4,
+        5
+      ],
+      [
+        2
+      ],
+      [
+        7
+      ]
+    ]
+  },
+  "slots": [
+    {
+      "index": 2,
+      "name": "Text 2",
+      "type": "ooxml-rect",
+      "x": 4550,
+      "y": 3070,
+      "width": 1658,
+      "height": 1002,
+      "sample_text": "Kite",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 22.5
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "name": "Text 3",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 16598,
+      "width": 49476,
+      "height": 3418,
+      "sample_text": "Thank you",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 96.0
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "name": "Text 4",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 20704,
+      "width": 24526,
+      "height": 2590,
+      "sample_text": "Copy this deck, keep the style, and make it yours. Questions are always welcome.",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 25.5
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "Text 5",
+      "type": "ooxml-rect",
+      "x": 2910,
+      "y": 24882,
+      "width": 4553,
+      "height": 887,
+      "sample_text": "hello@kite.co",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "name": "Text 7",
+      "type": "ooxml-rect",
+      "x": 45901,
+      "y": 24882,
+      "width": 2199,
+      "height": 864,
+      "sample_text": "kite.co",
+      "fonts": [
+        {
+          "font": "Arial",
+          "size": 19.5
+        }
+      ]
+    }
+  ],
+  "shape_count": 8
+}
