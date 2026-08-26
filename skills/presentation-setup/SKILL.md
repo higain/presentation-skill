@@ -100,16 +100,21 @@ Then write it:
 
 ```bash
 python3 scripts/make_pack.py --name acme --template brand.pptx \
-    --colour accent=#009EE0 --colour alert=#E2001A --colour ok=#009036 \
-    --colour muted=#D9D9D9 --colour neutral=#4A4A4A \
-    --series '#009EE0,#F29400,#97BF0D' \
+    --colour accent=#RRGGBB --colour alert=#RRGGBB --colour ok=#RRGGBB \
+    --colour muted=#RRGGBB --colour neutral=#RRGGBB \
+    --series '#RRGGBB,#RRGGBB,#RRGGBB' \
     --size display=60 --size title=16 --size subtitle=14 --size body=14 \
     --size label=12 --size caption=10 --size footnote=9 \
     --default
 ```
 
-It warns rather than fails: an accent under 4.5:1 on white is headline-only,
-under 3:1 it can never be a word at all. **Both are normal for a brand colour**
+**Every `#RRGGBB` above is a placeholder.** `make_pack.py` refuses a colour the
+template's slides do not contain and names the nearest one they do — that check
+exists because the first pack built with this script took three of its colours
+from an example command written for a different template.
+
+It warns rather than fails on the rest: an accent under 4.5:1 on white is
+headline-only, under 3:1 it can never be a word at all. **Both are normal for a brand colour**
 and knowing which one you have decides how every deck on this template looks.
 
 ## Stage 3 — Authoring notes  ·  **ask the user**

@@ -2,11 +2,15 @@
 """Write a template pack from the answers a person gave.
 
     python3 scripts/make_pack.py --name acme --template brand.pptx \\
-        --colour accent=#009EE0 --colour alert=#E2001A --colour ok=#009036 \\
-        --colour muted=#D9D9D9 --colour neutral=#4A4A4A \\
-        --series '#009EE0,#F29400,#97BF0D' \\
+        --colour accent=#RRGGBB --colour alert=#RRGGBB --colour ok=#RRGGBB \\
+        --colour muted=#RRGGBB --colour neutral=#RRGGBB \\
+        --series '#RRGGBB,#RRGGBB,#RRGGBB' \\
         --size display=60 --size title=16 --size body=14 --size caption=10 \\
         --note Example --note-prefix 'Instructions: 1.'
+
+Every #RRGGBB above is a placeholder on purpose. The first person to use this
+script pasted an example's real hex values into a pack for a different
+template, and three of that pack's colours were another company's.
 
 Creates `templates/<name>/` in the presentation skill, copies the template in,
 and writes `profile.json`. Re-running updates the profile and leaves the
@@ -14,9 +18,9 @@ catalog alone -- roles get revised after somebody looks at a real deck, and
 that must not cost the catalog.
 
 **Every value here came from a person answering a question about counted
-evidence.** This script chooses nothing: it validates that the colours are in
-the template, that the roles it needs are present, and that the scale
-descends -- then writes what it was told. The counting is `count_style.py`, the
+evidence.** This script chooses nothing. It refuses a colour the template does
+not contain, warns when a role is missing or the scale does not descend, and
+otherwise writes what it was told. The counting is `count_style.py`, the
 asking is the skill, and keeping the three apart is what stops a setup run from
 quietly inventing a brand.
 """
@@ -34,6 +38,8 @@ from _skill import engine, presentation_skill, templates_dir  # noqa: E402
 engine()
 
 from office.draw import contrast_ratio  # noqa: E402
+
+from count_style import survey  # noqa: E402
 
 #: Roles the drawing primitives and the accent packs both rely on.  A pack
 #: missing one of these still works -- `D.color` raises with the list -- but
@@ -98,6 +104,34 @@ def _name_for(colour):
         if hue < edge:
             return f"{name}_light" if light > 0.75 else name
     return "colour"
+
+
+def unseen(template, wanted):
+    """Colours asked for that the template does not contain.
+
+    The one check that has to be mechanical. Every other guard in this skill is
+    advice a person can overrule; this one catches the exact failure the whole
+    pack idea exists to prevent -- a deck built in colours the company does not
+    own -- and it caught it the first time somebody used this script, because
+    the example command in SKILL.md carried real hex values from another
+    template and they were pasted verbatim.
+
+    Compared against what `count_style.py` counts on the slides. A colour that
+    lives only in the master or a theme is invisible to that and legitimate,
+    which is what ``--allow-unseen`` is for; it is rare enough to be worth
+    typing.
+    """
+    found = survey(template)
+    present = set(found["fills"]) | set(found["text"])
+    return [colour for colour in wanted if colour not in present], present
+
+
+def _nearest(colour, present):
+    """The counted colour closest to one that is not there."""
+    def distance(other):
+        return sum((((colour >> shift) & 255) - ((other >> shift) & 255)) ** 2
+                   for shift in (16, 8, 0))
+    return min(present, key=distance) if present else None
 
 
 def build_profile(args, existing=None):
@@ -213,6 +247,9 @@ def main():
                     help="An authoring note matched on the whole string")
     ap.add_argument("--note-prefix", action="append", metavar="TEXT",
                     help="An authoring note matched on its opening words")
+    ap.add_argument("--allow-unseen", action="store_true",
+                    help="Accept a colour the template's slides do not show "
+                         "(it lives only in the master)")
     ap.add_argument("--default", action="store_true",
                     help="Make this the pack used when no template is named")
     args = ap.parse_args()
@@ -223,6 +260,25 @@ def main():
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", args.name):
         ap.error("--name: lowercase letters, digits, dash and underscore — it "
                  "is a directory name and a build script types it")
+
+    asked = [colour for _role, colour in (args.colour or ())] + list(args.series or ())
+    if asked and not args.allow_unseen:
+        missing, present = unseen(template, asked)
+        if missing:
+            lines = []
+            for colour in dict.fromkeys(missing):
+                near = _nearest(colour, present)
+                lines.append(f"    #{colour:06X}"
+                             + (f"  — nearest colour the template does use: "
+                                f"#{near:06X}" if near is not None else ""))
+            ap.error(
+                "these colours are not in %s:\n%s\n"
+                "  Take them from count_style.py rather than from an example "
+                "command — a pack in colours the company does not own is the "
+                "one failure this skill exists to prevent.\n"
+                "  If a colour really is the brand's and lives only in the "
+                "master, pass --allow-unseen."
+                % (template, "\n".join(lines)))
 
     root = templates_dir() / args.name
     root.mkdir(parents=True, exist_ok=True)
