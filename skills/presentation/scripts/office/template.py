@@ -37,6 +37,7 @@ from pathlib import Path
 import uno
 
 from office.impress import add_slide, notes_text, set_notes, shapes
+from office.pack import active_profile
 
 # Properties clone_shape must not copy: identity, or geometry it sets itself.
 # Name is copied deliberately -- duplicates are legal and keep probe.py output
@@ -1134,25 +1135,24 @@ def retext(page, mapping, **kw):
 # ship unless deleted.  Which strings those are is a fact about one template, so
 # they live beside that template rather than in this module: the engine should
 # not know any company's German.
-_PROFILE = None
-_PROFILE_PATH = (Path(__file__).resolve().parent.parent.parent
-                 / "assets" / "company-template.profile.json")
-
-
-def template_profile():
-    """Per-template facts shipped beside the asset, or ``{}`` if there are none.
+def template_profile(template=None):
+    """Per-template facts from the template's pack, or ``{}``.
 
     The annotation strings, the palette and the type scale.  Annotations are
     matched on the whole string, so a slide titled "Vorgehen zum Bilden eines
     Modells" is not mistaken for the "Vorgehen:" instruction block.
+
+    ``template`` is the file being built on.  With none given the **active
+    pack** answers -- set by ``build_deck`` for the length of a build, so that
+    ``D.color("accent")`` inside a ``fill`` callback means this deck's accent.
+    Outside a build it is the default pack, which is what a script poking at a
+    single installed template should get.
+
+    This used to be one module-level path read once per process, and a deck
+    built on a client's template came out in the house brand's colours with
+    nothing to indicate it.
     """
-    global _PROFILE
-    if _PROFILE is None:
-        try:
-            _PROFILE = json.loads(_PROFILE_PATH.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            _PROFILE = {}
-    return _PROFILE
+    return active_profile(template)
 
 
 def _hex(value):
@@ -1165,7 +1165,7 @@ def _hex(value):
         return None
 
 
-def palette(profile=None):
+def palette(profile=None, template=None):
     """The template's own colours, ``{name: int}``, or ``{}``.
 
     **Counted off the asset, not chosen.**  Every colour in it is one the
@@ -1180,7 +1180,8 @@ def palette(profile=None):
     template this is empty, and the palette is a design decision:
     ``references/design.md``.
     """
-    raw = (template_profile() if profile is None else profile).get("palette", {})
+    raw = (template_profile(template) if profile is None
+           else profile).get("palette", {})
     out = {}
     for name, value in raw.items():
         if name.startswith("_"):
@@ -1191,15 +1192,16 @@ def palette(profile=None):
     return out
 
 
-def palette_roles(profile=None):
+def palette_roles(profile=None, template=None):
     """``{"accent": int, "alert": int, "ok": int, "series": [int, ...]}``.
 
     The same colours as :func:`palette`, resolved through the profile's
     ``_roles`` so a build script can ask for "the accent" without knowing that
     this template's accent is cyan.
     """
-    raw = (template_profile() if profile is None else profile).get("palette", {})
-    names = palette(profile)
+    raw = (template_profile(template) if profile is None
+           else profile).get("palette", {})
+    names = palette(profile, template)
     out = {}
     for role, value in (raw.get("_roles") or {}).items():
         if isinstance(value, list):
@@ -1211,7 +1213,7 @@ def palette_roles(profile=None):
     return out
 
 
-def type_scale(profile=None):
+def type_scale(profile=None, template=None):
     """The template's own type sizes in points, ``{role: float}``, or ``{}``.
 
     Counted the same way: these are the sizes the template types at.  A build
@@ -1219,7 +1221,8 @@ def type_scale(profile=None):
     the next, and a caption smaller than anything the designer ever set --
     which is legible on a monitor and not from a seat.
     """
-    raw = (template_profile() if profile is None else profile).get("type_scale", {})
+    raw = (template_profile(template) if profile is None
+           else profile).get("type_scale", {})
     out = {}
     for role, value in raw.items():
         if role.startswith("_"):
@@ -1231,7 +1234,8 @@ def type_scale(profile=None):
     return out
 
 
-def strip_annotations(page, exact=None, prefixes=None, profile=None):
+def strip_annotations(page, exact=None, prefixes=None, profile=None,
+                      template=None):
     """Delete a template's authoring annotations from a slide.
 
     Reaches inside groups -- a template's "example" flag is routinely in one.
@@ -1246,7 +1250,7 @@ def strip_annotations(page, exact=None, prefixes=None, profile=None):
     Returns the texts it removed, so you can see what went.
     """
     if profile is None:
-        profile = template_profile().get("annotations", {})
+        profile = template_profile(template).get("annotations", {})
     exact = tuple(profile.get("exact", ())) if exact is None else exact
     prefixes = tuple(profile.get("prefixes", ())) if prefixes is None else prefixes
     if not exact and not prefixes:

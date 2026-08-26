@@ -34,7 +34,8 @@ Writes to:
     catalog/decision_table.json     the aggregate (--aggregate pass)
 
 Then assemble the catalog:
-    python3 scripts/catalog_build.py catalog/ -o references/company-template.md
+    python3 scripts/catalog_build.py templates/acme/catalog/ \
+        -o templates/acme/catalog.md
 
 The human-readable spec for these prompts is references/gemma-catalog-prompt.md;
 the strings below mirror it. If you tune one, tune the other.

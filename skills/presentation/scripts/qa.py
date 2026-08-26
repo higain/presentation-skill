@@ -69,7 +69,8 @@ from office.impress import (  # noqa: E402
     placeholder, shapes, slides,
 )
 from office.deckbuild import find_template, recorded_designs  # noqa: E402
-from office.draw import MIN_READABLE_PT, contrast_ratio  # noqa: E402
+from office.pack import active  # noqa: E402
+from office.draw import contrast_ratio, min_readable  # noqa: E402
 from office.template import (  # noqa: E402
     _bleed_key, colliding, footer_text, ink_box, offslide, offslide_baseline,
     overflowing, walk_shapes,
@@ -504,10 +505,11 @@ def _text_sizes(shape):
 def tiny_type_issues(page, number, baseline=frozenset()):
     """Text set smaller than the deck's own smallest role.
 
-    The floor is ``draw.MIN_READABLE_PT``, which is the smallest size the house
-    template itself types at -- so this is the design's own limit rather than a
-    number invented here.  Anything the *template* set that small is baselined
-    out: its think-cell stubs and corner marks are 3 and 5pt by design.
+    The floor is ``draw.min_readable()`` -- the smallest size **this deck's
+    template** itself types at, so the limit is the design's own rather than a
+    number invented here, and it differs per template.  Anything the *template*
+    set that small is baselined out: a pattern collection's think-cell stubs
+    and corner marks are 3 and 5pt by design.
 
     Short strings are ignored. A lone digit or a units mark at 6pt is a
     diagram's furniture; a sentence at 6pt is a footnote nobody in the room can
@@ -515,10 +517,11 @@ def tiny_type_issues(page, number, baseline=frozenset()):
     """
     # Clustered by size: one caption set too small is usually a row of them,
     # and a line per cell reads as twelve mistakes instead of one decision.
+    floor = min_readable()
     seen = {}
     for address, shape in walk_shapes(page):
         for size, sample in _text_sizes(shape).items():
-            if size >= MIN_READABLE_PT or len(sample) < 12:
+            if size >= floor or len(sample) < 12:
                 continue
             if _norm(sample) in baseline:
                 continue
@@ -529,7 +532,7 @@ def tiny_type_issues(page, number, baseline=frozenset()):
                 if count > 1 else "")
         out.append(
             f"slide {number} shape [{address}]: {size:g}pt text -- under "
-            f"the {MIN_READABLE_PT:g}pt floor this template types at, "
+            f"the {floor:g}pt floor this template types at, "
             f"legible on a monitor and not from a seat: {sample[:40]!r}{more}. "
             f"Use the scale: D.text(..., role='footnote')"
         )
@@ -1270,6 +1273,15 @@ def check(path, template=None, wanted=None):
     leftovers = {}
     footers = {}
     deck_texts = []
+    # Every check that reads a template fact -- the readable floor, the
+    # palette a contrast check compares against -- has to read *this* deck's,
+    # not whichever pack happens to be installed.
+    with active(template):
+        return _check(path, template, wanted, issues, leftovers, footers,
+                      deck_texts)
+
+
+def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
     # Whatever the template already does -- its wording, the decorations it
     # bleeds past the trim on purpose, its brand colour pairings, the shapes it
     # stacks -- is duplicated into the deck unchanged, and is not a defect this

@@ -2,7 +2,8 @@
 """
 Recover the judged half of a catalog from a catalog that was written by hand.
 
-    python3 scripts/catalog_import.py references/company-template.md catalog/
+    python3 scripts/catalog_import.py templates/acme/catalog.md \
+        templates/acme/catalog/
 
 **A migration aid, run once per template.**  Stage B's output --
 ``catalog/entries/slide-NN.json`` and ``catalog/decision_table.json`` -- is what
@@ -29,7 +30,8 @@ the template itself, and the hand-written file is exactly where they went stale.
 Anything the markdown does not carry comes out absent rather than guessed, and
 the run prints what it could not parse.  Check the result with:
 
-    scripts/catalog_build.py catalog/ -o references/company-template.md --check
+    scripts/catalog_build.py templates/acme/catalog/ \
+        -o templates/acme/catalog.md --check
 """
 
 import argparse
@@ -145,7 +147,7 @@ def main():
         description="Recover catalog/entries + decision_table.json from a "
                     "hand-written catalog markdown file")
     ap.add_argument("markdown", help="The existing catalog, e.g. "
-                                     "references/company-template.md")
+                                     "the pack's catalog.md")
     ap.add_argument("catalog", help="The directory catalog_extract.py wrote")
     ap.add_argument("--force", action="store_true",
                     help="Overwrite entries that already exist")

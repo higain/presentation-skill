@@ -32,6 +32,10 @@ import shutil
 import zipfile
 from pathlib import Path
 
+from .pack import (
+    SKILL, TEMPLATES, active, default_pack, describe_install, pack_named,
+)
+
 from .impress import (
     load_document, save_as, slides, duplicate_slide, delete_slide,
 )
@@ -118,15 +122,20 @@ def _call_fill(fill, doc, page, slot, design):
     return fill(doc, page, slot, design) if wants_doc else fill(page, slot, design)
 
 
-def find_template(template) -> Path:
-    """Resolve a template path, falling back to the skill's own folder.
+def find_template(template=None) -> Path:
+    """Resolve a template: a path, a pack name, or the default pack.
 
     A build script is written next to the deck and run from there, but the
-    template it names is quoted from this skill's documentation -- so
-    ``"assets/company-template.pptx"`` is relative to the *skill*, not to the
-    working directory, and every first build died on ``FileNotFoundError``
-    before the script had a chance to be wrong about anything else.  Resolving
-    it here costs nothing and an absolute path still wins.
+    template it names is quoted from this skill's documentation -- so a bare
+    pack-relative path is relative to the *skill*, not to the working
+    directory, and every first build died on ``FileNotFoundError`` before the
+    script had a chance to be wrong about anything else.  Resolving it here
+    costs nothing and an absolute path still wins.
+
+    ``find_template()`` with nothing at all is the common case now: with one
+    pack installed it is that pack's template, which is what "build a deck"
+    with no template named should mean.  ``find_template("acme")`` names a pack
+    directly, so a build script never has to spell out a path inside the skill.
 
     Anything that takes a template path from the caller comes through here.
     ``make_deck.py`` used to test ``--template`` with a bare ``Path.exists()``,
@@ -134,20 +143,32 @@ def find_template(template) -> Path:
     ``build_deck``, once for ``--template`` -- resolved in one place and died
     in the other.
     """
+    if template is None:
+        pack = default_pack()
+        if pack is None:
+            raise FileNotFoundError(
+                "build_deck() was given no template. " + describe_install())
+        return pack.template
+
     path = Path(template)
     if path.exists():
         return path
-    here = Path(__file__).resolve().parent.parent.parent    # the skill folder
-    for candidate in (here / path, here / "assets" / path.name):
+
+    named = pack_named(str(template))
+    if named is not None and named.template is not None:
+        return named.template
+
+    for candidate in (SKILL / path, TEMPLATES / path.name):
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
-        f"no template at {template!r}, and none at {here / path} either.\n"
-        f"  The skill's own template is {here / 'assets' / 'company-template.pptx'}"
+        f"no template at {template!r}, and none at {SKILL / path} either.\n"
+        f"  {describe_install()}"
     )
 
 
-def build_deck(template, out, designs, fill=None, qa=True, footer=KEEP) -> Path:
+def build_deck(template, out, designs, fill=None, qa=True,
+               footer=KEEP) -> Path:
     """Write ``out``: one slide per entry of ``designs``, in that order.
 
     ``designs`` holds 1-based slide numbers in ``template`` -- the numbers a
@@ -194,7 +215,10 @@ def build_deck(template, out, designs, fill=None, qa=True, footer=KEEP) -> Path:
 
     shutil.copyfile(template, out)
     try:
-        return _build(template, out, designs, fill, qa, footer)
+        # Everything drawn inside `fill` resolves its colours and type sizes
+        # against *this* template, not against whatever pack is installed.
+        with active(template):
+            return _build(template, out, designs, fill, qa, footer)
     except BaseException:
         # The output at this point is a copy of the template -- every design in
         # it, none of your content.  Left on disk it looks like a built deck,

@@ -2,7 +2,8 @@
 """
 Assemble a layout catalog from the extraction and the model pass -- stage C.
 
-    python3 scripts/catalog_build.py catalog/ -o references/company-template.md
+    python3 scripts/catalog_build.py templates/acme/catalog/ \
+        -o templates/acme/catalog.md --asset templates/acme/template.pptx
 
 Reads what ``catalog_extract.py`` measured (``manifest.json`` and each
 ``slide-NN/structure.json``) and what the vision model judged
@@ -10,7 +11,7 @@ Reads what ``catalog_extract.py`` measured (``manifest.json`` and each
 writes the catalog the skill reads at build time.
 
 **Why this exists.**  The instruction used to be "fold the model's JSON into
-references/company-template.md by hand".  What that produced, once, was a good
+the catalog by hand".  What that produced, once, was a good
 catalog -- and the fields that made it good were the ones added by hand
 afterwards: the ``retext`` keys, the empty slots, the canvas indices, the title
 budgets.  None of them survived into the skeleton, so the next template would
@@ -35,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # hand out.  (These pull in ``uno``; this script runs on the infra that ran
 # ``catalog_extract.py``, which needs LibreOffice anyway.)
 from office.draw import contrast_ratio  # noqa: E402
+from office.pack import SKILL, TEMPLATE_EXTS, pack_for  # noqa: E402
 from office.template import palette, palette_roles, type_scale  # noqa: E402
 
 #: A title box at or above this size is a display slot -- a divider headline
@@ -300,11 +302,14 @@ def _palette_block(asset):
     and a purple this template does not contain, and a footnote came out 9pt on
     one slide and 12pt on the next.
     """
-    profile_path = Path(asset).with_suffix(".profile.json")
-    try:
-        profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
+    profile = pack_for(asset).profile() if pack_for(asset) else {}
+    if not profile:
+        # A template profiled in place rather than installed as a pack.
+        try:
+            profile = json.loads(Path(asset).with_suffix(".profile.json")
+                                 .read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
 
     colours = palette(profile)
     roles = palette_roles(profile)
@@ -518,12 +523,35 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
     return "\n".join(out) + "\n"
 
 
+def _asset_beside(catalog: Path):
+    """The template of the pack a ``catalog/`` directory sits in, or ``None``.
+
+    ``catalog_build.py templates/acme/catalog/`` should not also have to be
+    told where ``templates/acme/template.pptx`` is.  The old default was one
+    hardcoded path, which worked for exactly one company.
+    """
+    pack = pack_for(catalog.resolve())
+    if pack is not None and pack.template is not None:
+        # Skill-relative if it lives in the skill: the catalog is read by
+        # someone writing a build script, and an absolute path from the
+        # machine that generated it is noise to them and drift to `--check`.
+        try:
+            return str(pack.template.relative_to(SKILL))
+        except ValueError:
+            return str(pack.template)
+    for ext in TEMPLATE_EXTS:
+        candidate = catalog.resolve().parent / f"template{ext}"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(
-        description="Assemble references/company-template.md from a catalog/")
+        description="Assemble a pack's catalog.md from its catalog/")
     ap.add_argument("catalog", help="The directory catalog_extract.py wrote")
     ap.add_argument("-o", "--output", help="Write here (default: stdout)")
-    ap.add_argument("--asset", default="assets/company-template.pptx",
+    ap.add_argument("--asset", default=None,
                     help="Path the skill will load the template from")
     ap.add_argument("--title", default="Company template — layout catalog")
     ap.add_argument("--overrides",
@@ -537,7 +565,11 @@ def main():
                          "is now.")
     args = ap.parse_args()
 
-    text = build(Path(args.catalog), args.asset, args.title, args.overrides)
+    asset = args.asset or _asset_beside(Path(args.catalog))
+    if asset is None:
+        ap.error("--asset: no template found beside %s. Pass the path to the "
+                 "template this catalog was extracted from." % args.catalog)
+    text = build(Path(args.catalog), asset, args.title, args.overrides)
 
     if args.check:
         if not args.output:

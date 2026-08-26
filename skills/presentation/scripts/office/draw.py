@@ -119,9 +119,10 @@ LABEL_MAX_PT = 18.0
 CENTRE_MAX_PT = 16.0
 
 # Below this, text is legible on the monitor it was built on and not from a
-# seat in the room.  It is the smallest size the house template itself types
-# at, so it is a floor taken from the design rather than invented here, and
-# ``qa.py`` reports anything under it that the build put on the slide.
+# seat in the room.  The floor of *last resort*: it applies to a deck whose
+# template nothing is known about.  Where a profile exists the number comes
+# from the template instead -- see ``min_readable`` -- because 9pt is one
+# company's smallest role and another's is 12.
 MIN_READABLE_PT = 9.0
 
 # The sizes a build script would otherwise pick one at a time.  Read from the
@@ -131,6 +132,22 @@ MIN_READABLE_PT = 9.0
 _SCALE_FALLBACK = {"display": 40.0, "title": 20.0, "subtitle": 16.0,
                    "body": 14.0, "label": 12.0, "caption": 10.0,
                    "footnote": 9.0}
+
+
+def min_readable(template=None):
+    """The smallest type size this deck's template itself sets, in points.
+
+    A floor taken from the design rather than invented here: text under the
+    smallest size a designer ever used is text the designer would not have set.
+    ``MIN_READABLE_PT`` when nothing is known about the template, which is the
+    honest answer for a deck built from nothing.
+
+    Deliberately not capped.  A template whose smallest role is 18pt really
+    does mean that 12pt is off-style on it, and a check that quietly clamped to
+    9 would report nothing on exactly the templates with the most to say.
+    """
+    scale = type_scale(template=template)
+    return min(scale.values()) if scale else MIN_READABLE_PT
 
 
 def size_for(role):
@@ -171,11 +188,15 @@ def color(name):
         "  Colours: %s\n"
         "  Roles: %s\n"
         "  %s"
-        % (name, ", ".join(sorted(names)) or "(none -- this deck has no "
-                                             "template profile)",
+        % (name, ", ".join(sorted(names)) or "(none -- this deck's template "
+                                             "has no pack)",
            ", ".join(sorted(k for k, v in roles.items()
                             if not isinstance(v, list))) or "(none)",
-           "series() gives the ordered colours for the nth thing on a figure."))
+           "series() gives the ordered colours for the nth thing on a figure."
+           if names else
+           "Run the `presentation-setup` skill on this template to count its "
+           "palette, or read the colours off the deck with probe.py -- do not "
+           "invent one."))
 
 
 def series(n=None):
