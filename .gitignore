@@ -16,7 +16,7 @@ template-testdir/
 # templates/README.md is the only thing in here a published skill contains.
 skills/*/templates/*
 !skills/*/templates/README.md
-testing/delta-extract/
+testing/*-extract/
 
 # Contact sheets of a brand's own slides, as images, wherever they land.
 skills/*/company-template-*.jpg

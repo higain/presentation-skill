@@ -24,7 +24,7 @@ from office.impress import mm, parse_slide_spec                 # noqa: E402
 
 
 class FakePage:
-    """Enough of a slide for the geometry: the delta template's size."""
+    """Enough of a slide for the geometry: a 16:9 page in 1/100 mm."""
     Width, Height = 32001, 18000
 
 
