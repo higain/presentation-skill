@@ -62,6 +62,17 @@ DESIGNS_PROPERTY = "Designs"
 _SLDID_RE = re.compile(r'<p:sldId[^>]*r:id="rId\d+"[^>]*/>')
 _SLDIDLST_RE = re.compile(r"<p:sldIdLst>.*?</p:sldIdLst>", re.S)
 
+_MASTER_PART_RE = re.compile(r"^ppt/slideMasters/slideMaster(\d+)\.xml$")
+_THEME_TARGET_RE = re.compile(r"theme/(theme\d+\.xml)")
+_LAYOUT_TARGET_RE = re.compile(r"slideLayouts/(slideLayout\d+\.xml)")
+_CSLD_NAME_RE = re.compile(r'<p:cSld[^>]*\bname="([^"]*)"')
+_THEME_ELEMENTS_RE = re.compile(r"<a:themeElements>.*?</a:themeElements>", re.S)
+_CLRSCHEME_RE = re.compile(r"<a:clrScheme\b.*?</a:clrScheme>", re.S)
+
+#: The twelve slots of a theme colour scheme, in schema order.
+_SCHEME_SLOTS = ("dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3",
+                 "accent4", "accent5", "accent6", "hlink", "folHlink")
+
 
 def reorder_pptx(path: Path, slot_at_position) -> Path:
     """Permute a saved deck's slide order.
@@ -102,6 +113,154 @@ def reorder_pptx(path: Path, slot_at_position) -> Path:
             out.writestr(name, parts[name])
     staged.replace(path)
     return path
+
+
+def _scheme_colours(theme_xml: str):
+    """The twelve theme colours as lowercase hex, or ``None`` if unreadable.
+
+    Compares by *resolved colour* rather than by markup, because the two files
+    write the same colour differently: a hand-built template says
+    ``<a:sysClr val="window" lastClr="FFFFFF"/>`` where LibreOffice's export
+    says ``<a:srgbClr val="ffffff"/>``.  Comparing the XML would call those a
+    difference and rewrite every theme in every deck.
+    """
+    elements = _THEME_ELEMENTS_RE.search(theme_xml)
+    if not elements:
+        return None
+    scheme = _CLRSCHEME_RE.search(elements.group(0))
+    if not scheme:
+        return None
+    body = scheme.group(0)
+    found = []
+    for slot in _SCHEME_SLOTS:
+        m = re.search(
+            rf"<a:{slot}>\s*<a:(?:srgbClr\s+val|sysClr[^>]*?\blastClr)="
+            rf'"([0-9A-Fa-f]{{6}})"', body)
+        if not m:
+            return None
+        found.append(m.group(1).lower())
+    return tuple(found)
+
+
+def _master_map(parts: dict[str, bytes]):
+    """``{master part: (theme part, {layout names})}`` for one .pptx."""
+    out = {}
+    for name in parts:
+        if not _MASTER_PART_RE.match(name):
+            continue
+        rels_name = name.replace("slideMasters/", "slideMasters/_rels/") + ".rels"
+        rels = parts.get(rels_name, b"").decode("utf8", "replace")
+        theme = _THEME_TARGET_RE.search(rels)
+        if not theme:
+            continue
+        names = set()
+        for layout in _LAYOUT_TARGET_RE.findall(rels):
+            xml = parts.get("ppt/slideLayouts/" + layout, b"").decode("utf8", "replace")
+            found = _CSLD_NAME_RE.search(xml)
+            if found:
+                names.add(found.group(1))
+        out[name] = ("ppt/theme/" + theme.group(1), names)
+    return out
+
+
+def repair_theme_colours(template: Path, out: Path) -> list[str]:
+    """Restore the template's theme colours on a deck LibreOffice re-exported.
+
+    **The reason this exists.**  ``build_deck`` copies the template, opens it in
+    Impress and saves it back, and that round trip does not preserve the theme
+    colour scheme.  Measured on a 3-master template whose every theme sets
+    ``dk2`` to the brand navy ``#022A3A``: the saved deck came back with *six*
+    masters, of which two were invented by LibreOffice and carried its own
+    default scheme (``dk2=cccccc``), while the template's real masters were
+    renumbered out to 44-47.  A section-divider layout paints its background as
+    ``<a:schemeClr val="dk2"/>``, so the divider rendered light grey with white
+    text on it -- about 1.6:1, and nothing in QA can see it because QA reads
+    shapes, not the theme behind them.
+
+    The fix maps each exported master back to the template master it came from
+    by **layout-name overlap** -- layout names survive the round trip even when
+    master numbering does not -- and rewrites that master's ``<a:clrScheme>``
+    to the one the template gave it.  Only the colour scheme is touched; the
+    font and format schemes LibreOffice writes are left alone.
+
+    Conservative by construction.  A theme is rewritten only when it is
+    reachable from a master, maps to exactly one template scheme, and actually
+    differs from it.  A theme shared by masters that disagree is left alone --
+    rewriting it would fix one master by breaking another.  Returns a line per
+    theme changed, for the caller to report.
+    """
+    with zipfile.ZipFile(template) as archive:
+        src_parts = {name: archive.read(name) for name in archive.namelist()}
+    with zipfile.ZipFile(out) as archive:
+        names = archive.namelist()
+        parts = {name: archive.read(name) for name in names}
+
+    src_masters = _master_map(src_parts)
+    if not src_masters:
+        return []
+
+    # {template theme part: (scheme colours, layout names it covers)}
+    src_schemes = {}
+    for theme, layout_names in src_masters.values():
+        colours = _scheme_colours(src_parts.get(theme, b"").decode("utf8", "replace"))
+        if colours is None:
+            continue
+        known, covered = src_schemes.get(theme, (colours, set()))
+        src_schemes[theme] = (known, covered | layout_names)
+    if not src_schemes:
+        return []
+
+    fallback = None
+    if len({colours for colours, _ in src_schemes.values()}) == 1:
+        fallback = next(iter(src_schemes))
+
+    # Choose a template scheme per output theme, refusing ties.
+    wanted: dict[str, set[str]] = {}
+    for theme, layout_names in _master_map(parts).values():
+        scored = [(len(layout_names & covered), part)
+                  for part, (_, covered) in src_schemes.items()]
+        best = max(score for score, _ in scored)
+        if best == 0:
+            chosen = fallback
+        else:
+            tied = [part for score, part in scored if score == best]
+            # Masters that tie but specify the same colours are not in
+            # conflict: any of them names the scheme the deck should carry.
+            chosen = tied[0] if len(
+                {src_schemes[part][0] for part in tied}) == 1 else None
+        if chosen:
+            wanted.setdefault(theme, set()).add(chosen)
+
+    changed = []
+    for theme, sources in wanted.items():
+        if len({src_schemes[part][0] for part in sources}) != 1:
+            continue                          # masters disagree; leave it
+        source = next(iter(sources))
+        target = src_schemes[source][0]
+        xml = parts.get(theme, b"").decode("utf8", "replace")
+        if _scheme_colours(xml) == target:
+            continue
+        elements = _THEME_ELEMENTS_RE.search(xml)
+        replacement = _CLRSCHEME_RE.search(
+            _THEME_ELEMENTS_RE.search(
+                src_parts[source].decode("utf8", "replace")).group(0))
+        if not elements or not replacement:
+            continue
+        patched = _CLRSCHEME_RE.sub(
+            lambda _: replacement.group(0), elements.group(0), count=1)
+        parts[theme] = (xml[:elements.start()] + patched
+                        + xml[elements.end():]).encode("utf8")
+        changed.append(f"{theme}: colour scheme restored from {source}")
+
+    if not changed:
+        return []
+
+    staged = Path(out).with_suffix(".theme-tmp")
+    with zipfile.ZipFile(staged, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in names:
+            archive.writestr(name, parts[name])
+    staged.replace(out)
+    return changed
 
 
 def _call_fill(fill, doc, page, slot, design):
@@ -269,6 +428,9 @@ def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP) -> Path:
         doc.close(False)
 
     reorder_pptx(out, order)
+    # After the save, because it repairs what the save damaged.
+    for line in repair_theme_colours(template, out):
+        print(f"[build_deck] {line}")
     if qa and not os.environ.get(SKIP_QA_ENV):
         _report_qa(out, template)
     return out

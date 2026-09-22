@@ -391,6 +391,7 @@ document properties was round-tripped three ways:
 | Text and character formatting | kept | kept | kept |
 | Document properties | kept | kept | kept |
 | Master **count** | kept | **grows** | **grows** |
+| Theme **colour scheme** | kept | **lost** on invented masters | **lost** on invented masters |
 
 Two findings worth acting on:
 
@@ -401,6 +402,17 @@ Two findings worth acting on:
   still renders correctly, but **do not loop a deck through repeated `.pptx`
   saves.** Build in one pass and save once; if the work needs several editing
   rounds, keep the working copy as `.odp` and export to `.pptx` at the end.
+- **The masters LibreOffice invents carry its own theme colours, not the
+  template's.** Measured on a 3-master template whose every theme set `dk2`
+  to the brand navy: the saved deck had six masters, two of them new and
+  carrying `dk2=cccccc`. A divider layout that paints its background as
+  `<a:schemeClr val="dk2"/>` rendered light grey under white text, about
+  1.6:1, and every shape-level check passed because the defect lives in the
+  theme behind the shapes. `build_deck` repairs this after the save
+  (`deckbuild.repair_theme_colours`): each exported master is mapped back to
+  the template master it came from by layout-name overlap and its colour
+  scheme is restored. It reports every theme it rewrote; a theme shared by
+  masters that disagree is left alone.
 
 One-time normalisation to expect in both formats: a table shape is resized to
 the natural height of its rows on first load. It is stable afterwards.
@@ -409,9 +421,14 @@ the natural height of its rows on first load. It is stable afterwards.
 
 ```bash
 python3 tests/test_geometry.py       # no LibreOffice, well under a second
+python3 tests/test_theme_repair.py   # same: four XML strings stand in for a .pptx
 python3 tests/roundtrip_report.py check fixture.odp   # after a LibreOffice upgrade
 ```
 
 `test_geometry.py` covers the arithmetic that decides whether a slide is right —
 `Box` slicing, table widths, text fitting, contrast, Venn bounds. Every case in
 it is a defect somebody shipped. Run it after touching `office.draw`.
+`test_theme_repair.py` holds down the theme-colour repair above: the
+sysClr-versus-srgbClr comparison, the fallback for masters LibreOffice
+invented, and the refusal to paint one brand in another's colours. Run it
+after touching `office.deckbuild`.

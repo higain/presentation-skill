@@ -191,7 +191,7 @@ scripts/dump.py deck.odp` does the same thing if the executable bit was lost.
 | `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** |
 | `scripts/catalog_extract.py` · `scripts/catalog_build.py` | **Build-time only, not per deck:** teach the skill a new company template. See `README.md` |
-| `tests/test_geometry.py` · `tests/roundtrip_report.py` | Fast geometry checks; and the fidelity re-proof after a LibreOffice upgrade |
+| `tests/test_geometry.py` · `tests/test_theme_repair.py` · `tests/roundtrip_report.py` | Fast geometry and theme-repair checks; and the fidelity re-proof after a LibreOffice upgrade |
 
 The `office` modules a build script imports:
 
