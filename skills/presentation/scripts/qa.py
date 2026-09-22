@@ -1466,7 +1466,13 @@ def main():
             print(f"Error: {e}", file=sys.stderr)
             return 2
 
-    wanted = _parse_slides(args.slides) if args.slides else None
+    wanted = None
+    if args.slides:
+        try:
+            wanted = _parse_slides(args.slides)
+        except ValueError as e:
+            print(f"Error: --slides {e}", file=sys.stderr)
+            return 2
 
     try:
         issues, checked, sparse, notes, prose = check(

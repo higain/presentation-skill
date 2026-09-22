@@ -1,215 +1,209 @@
-# Teaching this skill your company template — the catalog pipeline
+# Template packs: the build-time manual
 
-**This is the build-time manual.** It is run once per template, on your own
-infrastructure, and its output is two files the skill then uses forever after.
-The runtime documentation — how a deck actually gets built — is `SKILL.md`.
+**This is the reference for making and maintaining a pack.** It is run once
+per template, on your own infrastructure, and its output is a directory the
+skill then uses for every deck. The runtime documentation, how a deck actually
+gets built, is `SKILL.md`. The guided, interactive version of this manual is
+the **`presentation-setup`** skill: point a coding agent at your template and
+it walks through the same stages, asking the questions only a person can
+answer. Read this file when you want to drive the scripts yourself, or to
+understand what the setup skill wrote.
 
-**Privacy boundary — read this first.** Every step here runs on your own
-hardware. The only model that ever sees your real slides is your internal vision
-model. No slide, render, or template file is sent to a hosted model. The
-extraction step uses no model at all — it is deterministic. Keep the template,
-the renders and the finished catalog in your **internal fork only**; never push
-them to a remote outside the company.
+**Privacy boundary, first.** Every step here runs on your own hardware. The
+extraction uses no model at all. The two steps that *can* call a model are
+opt-in and say so; point them at a local server and nothing leaves the
+machine. `templates/*` is gitignored, so a pack cannot be committed by
+forgetting a step.
 
 ---
 
-## What you are building
+## What a pack is
 
-Five artifacts, dropped into the skill:
+```
+templates/acme/
+  template.pptx        the master itself; build_deck duplicates slides out of it
+  profile.json         palette, type scale, authoring notes   (make_pack.py)
+  catalog.md           which design carries which content    (generated)
+  overrides.md         the prose no script can measure        (hand-written)
+  catalog/
+    manifest.json      one row per design                     (catalog_extract.py)
+    slide-NN/          render.png + structure.json per design (catalog_extract.py)
+    entries/*.json     what each design is for                (judged: model or person)
+    decision_table.json  content situation -> design         (judged)
+    designs.md         the worksheet, if you filled one       (name_designs.py)
+```
 
-| Artifact | Path | What it is |
+Two halves feed the catalog, and keeping them apart is the point:
+
+| Half | Written by | Contains |
 |---|---|---|
-| **Asset** | `templates/acme/template.pptx` | The template itself — one slide per design. `build_deck` duplicates slides out of it. |
-| **Catalog** | `templates/acme/catalog.md` | Which design for which content, what each design holds, and the exact strings to `retext`. The skill reads this to choose designs. **Generated — never edit it by hand.** |
-| **Overrides** | `templates/acme/overrides.md` | The prose no script can measure, spliced into the catalog at named anchors. **This is where your review notes go.** |
-| **Judged half** | `catalog/entries/*.json`, `catalog/decision_table.json` | What the model wrote, per design. Commit these: they cost a model pass and a human review, and nothing can recreate them from the template. |
-| **Profile** | `templates/acme/profile.json` | The template's own authoring annotations — an "example" flag, a customer-logo marker — so `strip_annotations` can delete them without the engine knowing any company's wording. |
+| **measured** | `catalog_extract.py`, deterministically | retext keys, empty slots, group counts, canvas hint, title budgets, geometry |
+| **judged** | a person (worksheet) or a local vision model | name, purpose, use/avoid, capacity, imagery, the decision table |
 
-No wiring step: `SKILL.md` already points at those paths. Drop the files in and
-the default is live.
+The first version of this pipeline asked a model for the catalog wholesale.
+Everything that made the result usable was added by hand afterwards, and none
+of it survived to the next template. All of it is transcription or arithmetic,
+so the extractor measures it and nobody is asked.
 
-## The pipeline at a glance
-
-| Stage | You run | Model? | Produces |
-|---|---|---|---|
-| **A. Extract** | `catalog_extract.py` | no | `catalog/` — one dossier per design, with everything measurable already measured |
-| **B. Judge** | `catalog_gemma.py` (or opencode) | **yes, locally** | per-design purpose, capacity, imagery + a decision table |
-| **C. Assemble** | `catalog_build.py` | no | `templates/acme/catalog.md`, ready to review |
-| **D. Calibrate** | `make_deck.py` on real briefs | no | a catalog that is actually good |
-
-**The catalog is a build output.** Stages A and C run again every time the
-template changes, and a rebuild overwrites the file completely. Anything you
-learn while reviewing goes in the **overrides file**, never in the catalog
-itself — see [Stage C](#stage-c--assemble). This is not a style preference: the
-house catalog was edited in place for a month, and by the end it had silently
-fallen twelve `retext` keys behind its own template while carrying paragraphs
-that existed in no other file. `catalog_build.py --check` now fails on exactly
-that.
-
-**The split between A and B is the point.** The first version of this pipeline
-asked the model for the catalog wholesale. What made the resulting catalog
-usable was everything added by hand afterwards — the retext keys, the empty
-slots, the group counts, the canvas indices, the title budgets — and none of
-that survived into the skeleton, so the next template would have lost it. All of
-it is transcription or arithmetic, so stage A measures it and the model is never
-asked.
+`templates/README.md` says how a pack is chosen at build time. `references/catalog.example.md`
+shows the generated format with each field marked measured or judged.
 
 ---
 
-## Stage A — Extract
+## Stage A: palette, type scale, authoring notes
 
 ```bash
-scripts/catalog_extract.py company.pptx -o catalog/
+SETUP=../presentation-setup/scripts          # the setup skill's scripts
+python3 scripts/thumbnail.py brand.pptx      # contact sheet: count the designs
+python3 $SETUP/count_style.py brand.pptx     # every colour and size the file uses
+python3 $SETUP/find_notes.py brand.pptx      # strings that look like builder notes
 ```
 
-Deterministic, no model, no network. It writes:
+Then write what a person decided:
 
-```
-catalog/
-├── manifest.json            one row per design: number, layout, master, render, slots
-├── slide-01/
-│   ├── render.png           the design rendered, for the vision model to look at
-│   └── structure.json       slots, retext keys, empty slots, canvas hint, budgets
-├── slide-02/ ...
+```bash
+python3 $SETUP/make_pack.py --name acme --template brand.pptx \
+    --colour accent=#RRGGBB --colour alert=#RRGGBB --colour ok=#RRGGBB \
+    --colour muted=#RRGGBB --colour neutral=#RRGGBB \
+    --series '#RRGGBB,#RRGGBB,#RRGGBB' \
+    --size display=60 --size title=16 --size subtitle=14 --size body=14 \
+    --size label=12 --size caption=10 --size footnote=9 \
+    --note 'EXAMPLE' --note-prefix 'Instructions: 1.' \
+    --default
 ```
 
-Each `structure.json` carries, per design:
+That creates `templates/acme/` with the template copied in and `profile.json`
+written. `make_pack.py` refuses a colour the template does not contain, and
+re-running it merges: anything not on the command line is kept from the
+profile on disk.
+
+`profile.json` is plain JSON if you would rather write it yourself:
+
+```json
+{
+  "name": "acme",
+  "asset": "template.pptx",
+  "annotations": {"exact": ["EXAMPLE"], "prefixes": ["Instructions: 1."]},
+  "palette": {
+    "_order": ["blue", "orange", "grey"],
+    "blue": "#2A7DE1", "orange": "#F28C28", "grey": "#5A5A5A",
+    "_roles": {"accent": "blue", "alert": "orange", "ok": "blue",
+               "muted": "grey", "neutral": "grey",
+               "series": ["blue", "orange", "grey"]}
+  },
+  "type_scale": {"display": 60, "title": 16, "subtitle": 14, "body": 14,
+                 "label": 12, "caption": 10, "footnote": 9}
+}
+```
+
+`D.color("accent")` resolves through `_roles`; `role="body"` through
+`type_scale`; `strip_annotations(page)` deletes exactly the `annotations`.
+
+---
+
+## Stage B: extract
+
+```bash
+python3 scripts/catalog_extract.py brand.pptx -o templates/acme/catalog
+```
+
+Deterministic, no model, no network, about thirty seconds. One folder per
+design with its render and a `structure.json`:
 
 | Field | What it is |
 |---|---|
 | `slots` | every text-bearing shape: index, name, type, geometry, sample text, fonts |
 | `retext_keys` | **every string on the slide with the address that carries it**, group children included (`6.2`), truncated the way a catalog quotes them |
-| `empty_slots` | shapes with no text — `retext` can never match these, and a build that assumes otherwise wastes an attempt finding out |
-| `text_counts` | how many text shapes are inside groups versus at the top level |
-| `title_budgets` | per title slot: box width, point size, and characters that fit on one line |
+| `empty_slots` | shapes with no text; `retext` can never match these |
+| `text_counts` | how many text shapes sit inside groups versus at the top level |
+| `title_budgets` | per display title slot: box width, point size, characters that fit on one line |
 | `canvas` | the `keep=` tuple `draw.canvas` would use and the free `Box` it would return |
-| `images` | picture shapes with geometry — the model only has to say what they depict |
+| `images` | picture shapes with geometry |
 | `reading_order` | shapes grouped into columns, since z-order is not reading order |
 
-Hidden slides are rendered too (from an all-visible copy), so image N is always
-design N.
+Hidden slides are rendered too, from an all-visible copy, so image N is
+always design N. Re-running the extraction into the same directory refreshes
+the measured half and leaves `entries/`, `decision_table.json` and
+`designs.md` alone.
 
-**Sanity-check before spending model time:** open a couple of `render.png`s and
-confirm `manifest.json` has one row per real design. If a design is missing or
-doubled, fix the source template and re-extract — a wrong catalog starts here.
-
----
-
-## Stage B — Judge, with a local vision model
-
-Two passes: **per-design** (one call per slide, with its render and structure),
-then **aggregate** (one call over all the per-design answers, producing the
-decision table). The prompts are in
-[`references/gemma-catalog-prompt.md`](references/gemma-catalog-prompt.md); the
-driver below embeds the same text.
-
-The model is asked for judgement only: name, purpose, content types, capacity,
-use/avoid, what the pictures depict, and quirks. It is told explicitly **not**
-to produce retext keys, indices, geometry or budgets — those are already
-measured, and a model asked for them invents plausible wrong ones.
-
-### Method 1 — batch driver against your model endpoint *(recommended)*
-
-`catalog_gemma.py` talks to any **OpenAI-compatible** `/chat/completions`
-endpoint — ollama, vLLM, llama.cpp-server and LM Studio all expose one. Stdlib
-only; no pip.
-
-```bash
-# per-design pass: sends each render.png + structure.json to the model
-scripts/catalog_gemma.py catalog/ \
-    --base-url http://localhost:11434/v1 \
-    --model gemma3:27b
-
-# aggregate pass: folds catalog/entries/*.json into a decision table
-scripts/catalog_gemma.py catalog/ --aggregate \
-    --base-url http://localhost:11434/v1 \
-    --model gemma3:27b
-```
-
-Flags: `--base-url` (default `http://localhost:11434/v1`), `--model` (the vision
-model name your server knows), `--api-key` (only if your endpoint needs one).
-
-**Verify the wiring before a full run:**
-
-```bash
-scripts/catalog_gemma.py catalog/ --dry-run
-```
-
-`--dry-run` writes the exact request bodies to `catalog/entries/*.request.json`
-(image blob elided) and calls nothing, so you can confirm the endpoint path and
-message shape are what your server wants.
-
-Output:
-```
-catalog/entries/slide-NN.json   one entry per design
-catalog/decision_table.json     the aggregate (from --aggregate)
-```
-
-**No local GPU?** `--openrouter` points the same two passes at OpenRouter,
-reading `OPENROUTER_API_KEY` from the environment:
-
-```bash
-OPENROUTER_API_KEY=... scripts/catalog_gemma.py catalog/ \
-    --openrouter --model google/gemma-4-31b-it
-```
-
-That is a hosted model seeing your slides, so it is outside the privacy boundary
-above — a deliberate exception, for a template you are willing to send.
-
-> **Model choice.** The default `gemma3:27b` is an ollama tag — change it to
-> whatever your server calls its vision-capable model. It **must** accept
-> images; a text-only model ignores the render and guesses layouts from
-> structure alone, which is exactly the quality you are trying to avoid. If your
-> endpoint speaks ollama's native `/api/chat` rather than the OpenAI schema,
-> point `--base-url` at ollama's `/v1` path as shown — ollama serves both.
-
-### Method 2 — drive it with opencode
-
-If you would rather your agent handled the loop and the file IO, run opencode in
-the `catalog/` directory and give it:
-
-> Read `../references/gemma-catalog-prompt.md`. For each `slide-NN/` folder
-> here, look at its `render.png` and `structure.json` and produce the per-layout
-> JSON object the prompt specifies. Write each to `entries/slide-NN.json`. Then
-> run the aggregation prompt over all entries and write `decision_table.json`.
-
-More forgiving of a nonstandard serving setup, less repeatable than the script.
+**Sanity-check before judging:** open a couple of renders and confirm
+`manifest.json` has one row per real design. A design missing or doubled here
+is wrong in every later stage.
 
 ---
 
-## Stage C — Assemble
+## Stage C: judge
+
+The judged half is what each design is *for*. Two ways to write it.
+
+### Method 1: a worksheet, no model
 
 ```bash
-scripts/catalog_build.py catalog/ -o templates/acme/catalog.md \
-    --overrides templates/acme/overrides.md
+python3 $SETUP/name_designs.py templates/acme/catalog            # writes designs.md
+# fill purpose / use_when / avoid_when per design, beside the renders
+python3 $SETUP/name_designs.py templates/acme/catalog --import   # -> entries/, decision_table.json
 ```
 
-Merges the measured fields from stage A with the judged fields from stage B and
-writes the catalog in its shipped format: header, decision table (with the
-canvas row **last** — it used to be first, where "a diagram, a comparison, a
-matrix" is the first match for almost anything and four runs in a row built
-every slide on it), variety rule, coverage gaps, display-title budgets, the
-palette and type scale read from the asset's profile, and one entry per design. `references/catalog.example.md` shows that format
-annotated with which half each field comes from.
+Every measured field is pre-filled; only judgement is asked for. Twenty
+designs is about five minutes with the contact sheet open, and a person does
+this better than a 31B model did. The worksheet's `## Canvas` block lets you
+name the canvas design and its `keep` tuple by hand when the measured pick is
+wrong (stage E shows you).
 
-It flags rather than hides what went wrong:
+### Method 2: a local vision model
 
-- a decision-table row citing a slide the template does not have gets a ⚠ row;
-- a design with no model entry reads _(not catalogued)_ and is listed at the
-  foot as incomplete;
-- a design whose imagery count disagrees with the model's description says so;
-- an override block whose anchor does not land warns, and is listed at the foot.
+`catalog_gemma.py` talks to any OpenAI-compatible `/chat/completions`
+endpoint (ollama, vLLM, llama.cpp server, LM Studio). Stdlib only.
+
+```bash
+# per-design pass: each render.png + structure.json -> entries/slide-NN.json
+python3 scripts/catalog_gemma.py templates/acme/catalog \
+    --base-url http://localhost:11434/v1 --model gemma3:27b
+# aggregate pass: entries -> decision_table.json
+python3 scripts/catalog_gemma.py templates/acme/catalog --aggregate \
+    --base-url http://localhost:11434/v1 --model gemma3:27b
+```
+
+`--dry-run` writes the exact request bodies to `entries/*.request.json` and
+calls nothing, so you can confirm the endpoint and message shape first. The
+prompts are in `references/gemma-catalog-prompt.md`; the model is asked for
+judgement only and told not to produce keys, indices or budgets.
+
+**The model must accept images.** A text-only model ignores the render and
+guesses from structure alone, and every design comes back "bulleted content".
+
+`--openrouter` points the same two passes at OpenRouter (`OPENROUTER_API_KEY`
+from the environment). That is a hosted model seeing your slides, outside the
+privacy boundary above; a deliberate exception for a template you are willing
+to send.
+
+---
+
+## Stage D: assemble
+
+```bash
+python3 scripts/catalog_build.py templates/acme/catalog
+```
+
+Inside a pack this needs no flags: it finds `template.pptx`, splices in
+`overrides.md` if there is one, and writes `catalog.md`. Elsewhere pass
+`--asset`, `--overrides` and `-o`.
+
+The catalog is: header, designs by role (canvas, dividers, cover), the
+decision table with the canvas row **last**, variety rule, coverage gaps,
+display-title budgets, palette and type scale, and one entry per design. It
+flags rather than hides what went wrong: a row citing a design the template
+does not have gets a ⚠, a design with no judged entry reads *(not
+catalogued)*, an override anchor that does not land is listed at the foot.
 
 **Then review it against the renders.** Every capacity figure and every
-decision-table row. The model overstates capacity — that is its most common
-failure and no script can catch it. This human pass is where the catalog earns
-its keep.
+decision-table row. Capacity is what a model overstates most.
 
-### Write review notes into the overrides file, not the catalog
+### Review notes go in `overrides.md`, never in `catalog.md`
 
-The catalog is regenerated from `catalog/` every time; edits to it are lost on
-the next run, silently. Everything you want to keep goes in
-`templates/acme/overrides.md`, as a `## anchor` section:
+The catalog is regenerated from `catalog/` every time; edits to it are lost
+on the next run. Everything you want to keep goes in `templates/acme/overrides.md`
+as a `## anchor` section:
 
 | Anchor | Lands |
 |---|---|
@@ -220,126 +214,93 @@ the next run, silently. Everything you want to keep goes in
 | `design-N` | at the end of that design's entry |
 | `footer` | after the last entry, before the provenance note |
 
-Blocks **add to** the generated text rather than replacing it, so write them as
-additions. An anchor that no longer lands — `design-14` on a template that lost
-a design the template does not have — prints a warning and appears as a ⚠
-line in the catalog, so prose
-cannot go quietly missing the way it did before this existed.
+Blocks add to the generated text rather than replacing it. An anchor that no
+longer lands prints a warning and appears as a ⚠ line in the catalog, so
+prose cannot go quietly missing.
 
-That file is where the hard-won things live: that the footer sits on the master
-where no per-slide check can see it, that a given design is dense rather than
-a blank one, that this template has no cover design and a title slide has to be
-built on a canvas.
-
-### Check that the shipped catalog still matches the template
+### Drift check
 
 ```bash
-scripts/catalog_extract.py company.pptx -o catalog/     # re-measure
-scripts/catalog_build.py catalog/ -o templates/acme/catalog.md \
-    --overrides templates/acme/overrides.md --check
+python3 scripts/catalog_extract.py templates/acme/template.pptx -o templates/acme/catalog
+python3 scripts/catalog_build.py templates/acme/catalog --check
 ```
 
-`--check` writes nothing: it rebuilds, diffs against the committed catalog, and
-exits 1 with a unified diff if they differ. Run it whenever the template file
-changes. A drifted catalog is not a cosmetic problem — its `retext` keys are
-what a build script copies, and a missing key is a German label on a finished
-English slide.
+`--check` writes nothing: it rebuilds, diffs against `catalog.md`, and exits 1
+with the diff if they differ. Run it whenever the template file changes. A
+drifted catalog is not cosmetic: its retext keys are what a build script
+copies, and a missing key is a template label left on a finished slide.
 
-### Recovering a catalog written before this pipeline
+### Recovering a catalog that lost its judged half
 
-If the judged half was never committed — `catalog/entries/` deleted as scratch,
-or a catalog assembled by hand before stage B existed — the catalog cannot be
-rebuilt at all, and its measured fields can never be refreshed.
-`catalog_import.py` reads them back out of the markdown:
+If `entries/` was deleted, or a catalog was written by hand before this
+pipeline existed, `catalog_import.py` reads the judged fields back out of the
+markdown so the pack can be rebuilt:
 
 ```bash
-scripts/catalog_extract.py company.pptx -o catalog/
-scripts/catalog_import.py templates/acme/catalog.md catalog/
-scripts/catalog_build.py catalog/ -o templates/acme/catalog.md \
-    --overrides templates/acme/overrides.md --check
+python3 scripts/catalog_extract.py templates/acme/template.pptx -o templates/acme/catalog
+python3 scripts/catalog_import.py templates/acme/catalog.md templates/acme/catalog
+python3 scripts/catalog_build.py templates/acme/catalog --check
 ```
 
-It recovers only the judged fields — name, purpose, capacity, use/avoid,
-imagery, notes, decision table. The measured ones are deliberately ignored:
-the hand-maintained file is exactly where those went stale.
-
-Finally, place the other two artifacts:
-
-```bash
-cp company.pptx templates/acme/template.pptx
-$EDITOR templates/acme/profile.json     # the template's own annotations
-```
-
-The profile is a short JSON file listing the strings the template uses to talk
-to whoever builds from it — an "example" flag, a "customer logo here" marker, a
-build-instruction block. `strip_annotations(page)` deletes exactly those, and
-nothing else in the engine knows any of your wording. Stage A's `retext_keys`
-across all designs is where you find them: a string that appears on many
-unrelated designs is almost always an annotation rather than content.
+It recovers only the judged fields. The measured ones are deliberately
+ignored: the hand-maintained file is exactly where those went stale.
 
 ---
 
-## Stage D — Calibrate
-
-Build three or four real briefs with the now-defaulted skill. For each:
+## Stage E: probe, then calibrate
 
 ```bash
-scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx
+python3 $SETUP/probe_deck.py acme          # three real slides -> probe.pptx
+python3 scripts/render.py probe.pptx       # -> render/slide-1.png ...
 ```
 
-then open every render it prints. `make_deck.py` covers what `qa.py` and
-`render.py` used to do separately, and writes `<deck>-report.md` beside the deck.
+A divider, a content slide retexted through the catalog's own keys, and a
+drawn slide on the canvas design in the pack's colours. Look at all three. A
+wrong colour means the roles in stage A were mapped wrong; leftover wording
+means a missed authoring note; furniture showing through the drawing means the
+canvas design is wrong, which the worksheet's `## Canvas` block fixes.
 
-Calibrating is the pass most worth having a vision model on, because it is the
-one where you are judging *looks* rather than correctness:
+Then build three or four real briefs with the now-defaulted skill:
 
 ```bash
-export PRESENTATION_REVIEW_MODEL=google/gemma-4-31b-it   # must accept images
-export OPENROUTER_API_KEY=...
+python3 scripts/make_deck.py build.py out.pptx --template acme
+```
+
+and open every render it prints. Every wrong design choice gets corrected
+**in the catalog** (through `overrides.md` or the worksheet), not in the build
+script: the point is that the next deck picks better without being told. Two
+passes and the default is genuinely good.
+
+Calibrating is the pass most worth having a vision model on, because it
+judges looks rather than correctness:
+
+```bash
+export PRESENTATION_REVIEW_MODEL=gemma3:27b                     # local
+export PRESENTATION_REVIEW_BASE_URL=http://localhost:11434/v1
 ```
 
 Every `make_deck.py` run then also sends the renders to that model and prints
-what it saw. It is advisory and never fails a build — see *The vision reviewer*
-in `references/qa.md`.
-
-A calibration pass is finished when: every finding in the report is fixed and
-the run comes back clean; every render has been looked at; and every wrong
-design choice has been corrected **in the catalog**, not in the build script —
-the whole point is that the next deck picks better without being told.
-
-Two passes and the default is genuinely good.
+what it saw. Advisory, never fails a build; see *The vision reviewer* in
+`references/qa.md`.
 
 ---
 
-## Privacy & git rules
+## Privacy and git
 
-- The template, the renders in `catalog/`, `templates/acme/catalog.md`,
-  `templates/acme/overrides.md` and
-  `templates/acme/profile.json` are brand-internal. Commit them to the
-  **internal fork only**.
-- **Commit `catalog/entries/*.json` and `catalog/decision_table.json`.** They
-  are the model pass's output: a model call and a human review each, and nothing
-  can recreate them from the template. The rest of `catalog/` — the renders, the
-  per-slide `structure.json`, the manifest — is regenerated in 30 seconds by
-  `catalog_extract.py`, so `catalog/.gitignore` leaves it out.
-
-  This is the one instruction here that was wrong before, and it cost something:
-  the advice used to be "`.gitignore catalog/` once the catalog is written",
-  which threw away the only copy of the judged half. The catalog then could not
-  be regenerated, so its measured half was maintained by hand, so it drifted.
-  `catalog_import.py` exists to recover from exactly that.
-- Nothing in this pipeline calls a hosted model *by default*. Two steps can, and
-  both are opt-in and explicit: `catalog_gemma.py --openrouter`, and
-  `review_renders.py` once `$PRESENTATION_REVIEW_MODEL` is set. If any other
-  step wants network access to anything but your own endpoint, stop.
-- **The vision reviewer sends slide images off the machine** when it is pointed
-  at a hosted endpoint — that is a rendered picture of the deck, content and
-  all, going to a third party. For a confidential deck, point
-  `$PRESENTATION_REVIEW_BASE_URL` at a local server (ollama, vLLM, llama.cpp)
-  and the images never leave. Unset `$PRESENTATION_REVIEW_MODEL` and nothing is
-  sent at all.
-- Keys are read from the environment (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`)
-  or passed explicitly. No script here reads another tool's credential store.
+- `templates/*` is gitignored (`templates/README.md` excepted). The template,
+  the renders, the catalog and the profile are brand-internal and stay on the
+  machine that built them.
+- If your company keeps packs in a private fork, un-ignore the pack directory
+  there and commit **all of it**, `catalog/entries/*.json` and
+  `catalog/decision_table.json` included: they cost a model call or a human
+  review each, and nothing can recreate them from the template. The renders
+  and `structure.json` files are regenerated in thirty seconds, so leaving
+  those out is fine.
+- Nothing here calls a hosted model by default. `catalog_gemma.py` and
+  `review_renders.py` call the endpoint you give them; `--openrouter` and a
+  provider-qualified model name (`vendor/model`) are the two spellings that
+  mean a hosted one. Keys are read from `OPENROUTER_API_KEY` or
+  `OPENAI_API_KEY`; no script reads another tool's credential store.
 
 ---
 
@@ -347,21 +308,22 @@ Two passes and the default is genuinely good.
 
 | Symptom | Cause / fix |
 |---|---|
-| `catalog_extract.py` crashes on `AttributeError` for a shape property | A shape type your template has that the probe did not guard. The known ones (`LineColor`, `FillColor`) are handled in `probe.py`; a new one wants the same `getattr(..., None)` guard. |
-| `manifest.json not found` | Point `catalog_gemma.py`/`catalog_build.py` at the directory `catalog_extract.py` wrote, not at a `slide-NN/` subfolder. |
-| Model reply is not valid JSON | `catalog_gemma.py` strips ``` fences and extracts the first JSON value. If it still fails it prints the reply head — usually the model added prose. Temperature is already 0; trim empty slots from the structure, or use a larger model. |
+| `catalog_extract.py` crashes on `AttributeError` for a shape property | A shape type the probe did not guard. The known ones (`LineColor`, `FillColor`) are handled in `probe.py`; a new one wants the same `getattr(..., None)` guard. |
+| `no manifest.json in …` | Point the script at the directory `catalog_extract.py` wrote, not at a `slide-NN/` subfolder. |
+| `--asset: no template found beside …` | The catalog directory is not inside a pack. Pass `--asset path/to/template.pptx`. |
+| `make_pack.py` refuses a colour | It is not on any slide of the template. Take it from `count_style.py`; `--allow-unseen` for a colour that lives only in the master. |
+| Model reply is not valid JSON | `catalog_gemma.py` strips fences and extracts the first JSON value. If it still fails it prints the reply head; usually the model added prose. Temperature is already 0; use a larger model. |
 | Every design catalogued as "bulleted content" | The model is not seeing the images. Confirm with `--dry-run` that the image part is present and that `--model` names a vision model. |
-| The vision review is generic, or praises slides that are broken | Same cause: a text-only model. It will answer confidently about an image it never received. Check the model's input modalities — `deepseek-v4-flash` is text-only, `gemma-4-31b-it` and `qwen3.6-27b` are not. |
-| A vision finding looks wrong and the string it names is nowhere in the file | Check *how* you looked before deciding it is wrong. A footer is a page property, not a shape, so a shape search cannot see one — that exact reasoning shipped a deck with a German footer on all ten slides. `wireframe.py` and `probe.py` settle most of the rest; a finding nothing can settle stands. |
-| `make_deck.py` prints "No visual review" | `$PRESENTATION_REVIEW_MODEL` is unset. That is the default; set it to enable the reviewer. |
+| The vision review is generic, or praises slides that are broken | Same cause: a text-only model. Check the model's input modalities. |
+| A vision finding looks wrong and the string it names is nowhere in the file | Check *how* you looked. A footer is a page property, not a shape, so a shape search cannot see one. `wireframe.py` and `probe.py` settle most of the rest; a finding nothing can settle stands. |
+| `make_deck.py` prints "No visual review" | `$PRESENTATION_REVIEW_MODEL` is unset. That is the default. |
 | `no per-layout entries` on `--aggregate` | Run the per-design pass first; aggregate reads `catalog/entries/*.json`. |
-| Capacity figures look too generous | Expected. Fix them in the overrides file, or in `catalog/entries/slide-NN.json` if the figure itself is wrong, and rebuild. |
-| My edits to `templates/acme/catalog.md` disappeared | It is generated; the next `catalog_build.py` overwrote them. Put them in `templates/acme/overrides.md` under an anchor, and rebuild. |
-| `--check` reports drift after the template changed | Expected, and the point of it. Re-extract, rebuild, re-read the diff — the `retext` keys are what changed. |
-| An override block warns that it "matched no anchor" | The anchor name is misspelled, or it is a `design-N` for a design this template no longer has. Valid names are listed in stage C. |
-| The first QA run after touching the template is a minute slower | The template baseline is recomputed and re-cached; it is a pure function of the template and the checker sources, so any change to either invalidates it. Later runs are ~40 s faster. |
-| A ⚠ row in the built catalog | The model cited a slide number the template does not have. Correct the row or delete it. |
-| The canvas row picked a design you would not have | It picks the largest free area whose canvas keeps the design's chrome and drops one body shape. Override it by editing the row; if it is wrong for your template, say so and the heuristic can be tightened. |
+| Capacity figures look too generous | Expected. Fix them in `overrides.md`, or in `catalog/entries/slide-NN.json`, and rebuild. |
+| My edits to `catalog.md` disappeared | It is generated. Put them in `overrides.md` under an anchor and rebuild. |
+| `--check` reports drift after the template changed | Expected, and the point of it. Re-extract, rebuild, read the diff. |
+| An override block "matched no anchor" | Misspelled, or a `design-N` for a design this template no longer has. Valid names are in stage D. |
+| The first QA run after touching the template is a minute slower | The template baseline is recomputed and cached under `$XDG_CACHE_HOME/presentation-skill/`. Later runs are about 40 s faster. |
+| The canvas row picked a design you would not have | It picks the largest free area whose canvas keeps the design's chrome. Name the right one in the worksheet's `## Canvas` block (or a `canvas` object in `decision_table.json`), re-import, rebuild. |
 
 ---
 
@@ -369,17 +331,18 @@ Two passes and the default is genuinely good.
 
 | Path | Role | Runs when |
 |---|---|---|
-| `scripts/catalog_extract.py` | Stage A — template → `catalog/` dossiers | build-time |
-| `scripts/catalog_gemma.py` | Stage B — dossiers → judged entries + decision table | build-time |
-| `scripts/catalog_build.py` | Stage C — both halves + overrides → the catalog; `--check` for drift | build-time |
-| `scripts/catalog_import.py` | Recovery — a hand-written catalog → the stage B entries it never kept | once, if needed |
-| `scripts/review_renders.py` | The vision reviewer — renders → advisory findings | runtime, when `$PRESENTATION_REVIEW_MODEL` is set |
-| `scripts/wireframe.py` | A render as a text ink-map — emptiness, banding, what is not centred, with no model at all | runtime, and in every report for the slides it flags |
-| `references/gemma-catalog-prompt.md` | The prompt spec (human-readable source of truth) | reference |
-| `references/catalog.example.md` | The finished format, annotated | reference |
-| `templates/acme/catalog.md` | The catalog *(generated — do not edit)* | runtime |
-| `templates/acme/overrides.md` | The prose spliced into it *(edit this instead)* | build-time |
-| `catalog/entries/`, `catalog/decision_table.json` | The judged half *(commit these)* | build-time |
-| `templates/acme/template.pptx` | The template asset *(you copy it in)* | runtime |
-| `templates/acme/profile.json` | The template's authoring annotations | runtime |
-| `SKILL.md` | The runtime documentation — how decks get built | runtime |
+| `../presentation-setup/scripts/count_style.py` | Stage A: the colours and sizes a template uses | build-time |
+| `../presentation-setup/scripts/find_notes.py` | Stage A: candidate authoring notes | build-time |
+| `../presentation-setup/scripts/make_pack.py` | Stage A: write the pack and its `profile.json` | build-time |
+| `scripts/catalog_extract.py` | Stage B: template to `catalog/` dossiers | build-time |
+| `../presentation-setup/scripts/name_designs.py` | Stage C without a model: worksheet in, entries out | build-time |
+| `scripts/catalog_gemma.py` | Stage C with a model: dossiers to judged entries and a decision table | build-time |
+| `scripts/catalog_build.py` | Stage D: both halves plus overrides to `catalog.md`; `--check` for drift | build-time |
+| `scripts/catalog_import.py` | Recovery: a hand-written catalog to the entries it never kept | once, if needed |
+| `../presentation-setup/scripts/probe_deck.py` | Stage E: three real slides on the new pack | build-time |
+| `scripts/review_renders.py` | The vision reviewer: renders to advisory findings | runtime, when `$PRESENTATION_REVIEW_MODEL` is set |
+| `scripts/wireframe.py` | A render as a text ink-map, no model | runtime |
+| `references/gemma-catalog-prompt.md` | The prompt spec | reference |
+| `references/catalog.example.md` | The generated format, annotated | reference |
+| `templates/README.md` | What a pack is and how one is chosen | reference |
+| `SKILL.md` | The runtime documentation: how decks get built | runtime |

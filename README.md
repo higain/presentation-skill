@@ -1,96 +1,140 @@
-> **Note:** This repository contains Anthropic's implementation of skills for Claude. For information about the Agent Skills standard, see [agentskills.io](http://agentskills.io).
+# presentation-skill
 
-[![skills.sh](https://skills.sh/b/anthropics/skills)](https://skills.sh/anthropics/skills)
+Two [Agent Skills](https://agentskills.io) that let a coding agent build,
+edit and check slide decks in **your company's own template**, driven by a
+headless LibreOffice Impress over UNO. `.pptx` and `.odp` alike, saved back in
+the format they arrived in, with nothing rewritten by hand.
 
-# Skills
-Skills are folders of instructions, scripts, and resources that Claude loads dynamically to improve performance on specialized tasks. Skills teach Claude how to complete specific tasks in a repeatable way, whether that's creating documents with your company's brand guidelines, analyzing data using your organization's specific workflows, or automating personal tasks.
+| Skill | What it does |
+|---|---|
+| [`skills/presentation`](skills/presentation/SKILL.md) | Build a deck from a brief or an outline on the installed template pack, edit an existing deck, extract text and notes, convert formats, render slides to PNG, and run the QA that finds overflow, leftover template wording, bad contrast and occlusion. |
+| [`skills/presentation-setup`](skills/presentation-setup/SKILL.md) | Teach the first skill your template: an interactive, five-stage walkthrough that counts the palette and type scale off the file, asks you the four questions only a person can answer, and writes a **template pack**. Twenty minutes, once. |
 
-For more information, check out:
-- [What are skills?](https://support.claude.com/en/articles/12512176-what-are-skills)
-- [Using skills in Claude](https://support.claude.com/en/articles/12512180-using-skills-in-claude)
-- [How to create custom skills](https://support.claude.com/en/articles/12512198-creating-custom-skills)
-- [Equipping agents for the real world with Agent Skills](https://anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)
+The skills ship **no template**. A deck is only ever built on a pack you
+installed, in colours and sizes counted off your own master, and the drawing
+API refuses to invent a colour when no pack is in force.
 
-# About This Repository
+## Requirements
 
-This repository contains skills that demonstrate what's possible with Claude's skills system. These skills range from creative applications (art, music, design) to technical tasks (testing web apps, MCP server generation) to enterprise workflows (communications, branding, etc.).
+Linux with LibreOffice 25.2 or newer and Python 3.11 or newer. Everything
+comes from apt; nothing is installed with pip or npm.
 
-Each skill is self-contained in its own folder with a `SKILL.md` file containing the instructions and metadata that Claude uses. Browse through these skills to get inspiration for your own skills or to understand different patterns and approaches.
-
-Many skills in this repo are open source (Apache 2.0). We've also included the document creation & editing skills that power [Claude's document capabilities](https://www.anthropic.com/news/create-files) under the hood in the [`skills/docx`](./skills/docx), [`skills/pdf`](./skills/pdf), [`skills/presentation`](./skills/presentation), and [`skills/spreadsheet`](./skills/spreadsheet) subfolders. These are source-available, not open source, but we wanted to share these with developers as a reference for more complex skills that are actively used in a production AI application.
-
-## Disclaimer
-
-**These skills are provided for demonstration and educational purposes only.** While some of these capabilities may be available in Claude, the implementations and behaviors you receive from Claude may differ from what is shown in these skills. These skills are meant to illustrate patterns and possibilities. Always test skills thoroughly in your own environment before relying on them for critical tasks.
-
-# Skill Sets
-- [./skills](./skills): Skill examples for Creative & Design, Development & Technical, Enterprise & Communication, and Document Skills
-- [./spec](./spec): The Agent Skills specification
-- [./template](./template): Skill template
-
-# Try in Claude Code, Claude.ai, and the API
-
-## Claude Code
-You can register this repository as a Claude Code Plugin marketplace by running the following command in Claude Code:
-```
-/plugin marketplace add anthropics/skills
+```bash
+sudo apt install libreoffice-impress python3-uno python3-lxml python3-defusedxml \
+                 python3-pil poppler-utils fonts-crosextra-carlito fonts-crosextra-caladea
+soffice --version        # 25.2 or newer
 ```
 
-Then, to install a specific set of skills:
-1. Select `Browse and install plugins`
-2. Select `anthropic-agent-skills`
-3. Select `document-skills` or `example-skills`
-4. Select `Install now`
+The two font packages are optional but make the overflow check trustworthy
+for Calibri and Cambria. Run the scripts with the system `python3`: a
+virtualenv or conda interpreter cannot see `python3-uno`.
 
-Alternatively, directly install either Plugin via:
+An optional vision model (any OpenAI-compatible endpoint, ollama for instance)
+adds a visual reviewer. It is never required, and nothing is sent anywhere
+unless you point a script at an endpoint.
+
+## Install
+
+Both skills must sit side by side, either in one `skills/` directory or both
+under `~/.claude/skills/`.
+
+**Claude Code**, as a plugin marketplace:
+
 ```
-/plugin install document-skills@anthropic-agent-skills
-/plugin install example-skills@anthropic-agent-skills
-```
-
-After installing the plugin, you can use the skill by just mentioning it. For instance, if you install the `document-skills` plugin from the marketplace, you can ask Claude Code to do something like: "Use the PDF skill to extract the form fields from `path/to/some-file.pdf`"
-
-## Claude.ai
-
-These example skills are all already available to paid plans in Claude.ai. 
-
-To use any skill from this repository or upload custom skills, follow the instructions in [Using skills in Claude](https://support.claude.com/en/articles/12512180-using-skills-in-claude#h_a4222fa77b).
-
-## Claude API
-
-You can use Anthropic's pre-built skills, and upload custom skills, via the Claude API. See the [Skills API Quickstart](https://docs.claude.com/en/api/skills-guide#creating-a-skill) for more.
-
-# Creating a Basic Skill
-
-Skills are simple to create - just a folder with a `SKILL.md` file containing YAML frontmatter and instructions. You can use the **template-skill** in this repository as a starting point:
-
-```markdown
----
-name: my-skill-name
-description: A clear description of what this skill does and when to use it
----
-
-# My Skill Name
-
-[Add your instructions here that Claude will follow when this skill is active]
-
-## Examples
-- Example usage 1
-- Example usage 2
-
-## Guidelines
-- Guideline 1
-- Guideline 2
+/plugin marketplace add <owner>/presentation-skill
+/plugin install presentation@presentation-skill
 ```
 
-The frontmatter requires only two fields:
-- `name` - A unique identifier for your skill (lowercase, hyphens for spaces)
-- `description` - A complete description of what the skill does and when to use it
+**Claude Code or any agent that reads `SKILL.md` files**, by copying:
 
-The markdown content below contains the instructions, examples, and guidelines that Claude will follow. For more details, see [How to create custom skills](https://support.claude.com/en/articles/12512198-creating-custom-skills).
+```bash
+git clone https://github.com/<owner>/presentation-skill.git
+ln -s "$PWD/presentation-skill/skills/presentation"       ~/.claude/skills/presentation
+ln -s "$PWD/presentation-skill/skills/presentation-setup" ~/.claude/skills/presentation-setup
+```
 
-# Partner Skills
+Then check the install:
 
-Skills are a great way to teach Claude how to get better at using specific pieces of software. As we see awesome example skills from partners, we may highlight some of them here:
+```bash
+cd presentation-skill/skills/presentation
+python3 tests/test_geometry.py && python3 tests/test_theme_repair.py && python3 tests/test_generic_docs.py
+python3 scripts/render.py tests/fixtures/kite-brand-master.pptx     # nine PNGs in render/
+```
 
-- **Notion** - [Notion Skills for Claude](https://www.notion.so/notiondevs/Notion-Skills-for-Claude-28da4445d27180c7af1df7d8615723d0)
+## First run: teach it a template
+
+Tell your agent *"set up the presentation skill with our template"* and hand
+it the `.pptx`, `.potx`, `.odp` or `.otp` master. The `presentation-setup`
+skill runs five stages and stops four times to ask you something:
+
+1. **Survey**: a contact sheet of every design, so you can confirm the file
+   is one slide per design.
+2. **Palette and type scale**: the colours and sizes the template actually
+   uses, counted. *You* say which one is the accent, which is the alert, and
+   which sizes are body, caption and so on. The script refuses a colour the
+   template does not contain.
+3. **Authoring notes**: the strings the template says to its builder
+   ("EXAMPLE", "Customer logo here"). You tick the real ones so they are
+   deleted from every deck.
+4. **Designs**: a worksheet with everything measurable pre-filled, and three
+   blanks per design for what it is for. Five minutes with the contact sheet.
+   A local vision model can fill them instead.
+5. **Probe**: three real slides built on the new pack, rendered, for you to
+   look at. Anything wrong is a five-minute fix at this point.
+
+To try it without a template of your own, use the synthetic demo master in
+`skills/presentation/tests/fixtures/kite-brand-master.pptx`. It was generated
+for testing and belongs to nobody.
+
+To drive the scripts by hand instead, `skills/presentation/README.md` is the
+same pipeline as a manual.
+
+## Then: build decks
+
+*"Build a deck about X"* runs the storyline layer first (six intake questions,
+a scaffold and a ghost deck you approve), then the recipe: one build script,
+one `build_deck` call against the pack, and a single `make_deck.py` run that
+QAs, schema-checks and renders every slide. The report it writes has a row per
+slide for a verdict, and the deck is not finished until every row has one.
+
+```python
+from office.deckbuild import build_deck
+from office.template import retext
+from office import draw as D
+
+def fill(doc, page, slot, design):
+    if slot == 0:
+        retext(page, {"Chapter title": "How we got here"})
+    if slot == 1:
+        area = D.canvas(page, keep=(0, 1))
+        D.kpis(doc, page, area, [("3", "regions"), ("12%", "growth")],
+               color=D.color("accent"))
+
+build_deck("acme", "out.pptx", [4, 5], fill=fill, footer="Q3 review · 2026")
+```
+
+```bash
+python3 scripts/make_deck.py build.py out.pptx --template acme
+```
+
+## Privacy
+
+Every step runs on your machine. The extraction uses no model. The two
+scripts that can call one (`catalog_gemma.py` and `review_renders.py`) call
+only the endpoint you give them, and say so. `skills/*/templates/*` is
+gitignored, so a company template cannot be committed by forgetting a step.
+
+## Layout
+
+```
+skills/presentation/          the skill: SKILL.md, scripts/, references/, tests/
+  scripts/office/             the engine: UNO document handling, drawing, template editing, QA
+  templates/                  packs live here (gitignored except its README)
+skills/presentation-setup/    the setup skill: SKILL.md and its five scripts
+```
+
+## Licence
+
+Apache License 2.0, see [LICENSE](LICENSE). Parts of the writing guidance
+were adapted from other projects under their own licences; the notices are in
+[`skills/presentation/THIRD-PARTY.md`](skills/presentation/THIRD-PARTY.md).

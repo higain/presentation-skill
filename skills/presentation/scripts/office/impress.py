@@ -20,9 +20,9 @@ All geometry is in **1/100 mm** (UNO's drawing unit), not points or EMU.
 
 **Read the slide size, never assume it.**  ``slide_size(doc)`` is the only
 answer that is right for the deck in front of you: a LibreOffice default page
-is 28000 x 15750, but a brand template is usually its own size -- one is
-32001 x 18000.  Hardcoding the default silently shifts every shape you place
-on a template that is 14% wider.
+is 28000 x 15750, but a brand template is usually its own size -- PowerPoint's
+own 16:9 default is 33867 x 19050.  Hardcoding the LibreOffice default silently
+shifts every shape you place on a template that is a fifth wider.
 
 One headless LibreOffice is started on first use and shut down when the process
 ends, so many documents in one script cost one startup.
@@ -33,16 +33,29 @@ import contextlib
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
 import zipfile
 from pathlib import Path
 
-import uno
-from com.sun.star.beans import PropertyValue
+try:
+    import uno
+    from com.sun.star.beans import PropertyValue
+except ImportError as exc:                      # pragma: no cover
+    raise ImportError(
+        "python3-uno is not importable: this skill drives LibreOffice through "
+        "its Python bridge, which ships as the Debian/Ubuntu package "
+        "python3-uno (apt install libreoffice-impress python3-uno). Run the "
+        "scripts with the system python3 -- a virtualenv or conda python "
+        "cannot see it."
+    ) from exc
 
 from office.soffice import SOFFICE_MISSING, free_port, get_soffice_env, profile_arg, soffice_path
+
+#: A relationship target that climbs out of the package.
+_UPWARD_TARGET = 'Target="../'
 
 # Store filters by output extension.  storeToURL() needs the exact name.
 FILTERS = {
@@ -162,13 +175,17 @@ class _Server:
         return self.proc is not None and self.proc.poll() is None
 
     def _start(self, timeout: float):
-        port = free_port()
-        self.profile = tempfile.mkdtemp(prefix="lo-uno-profile-")
         try:
             exe = soffice_path()
         except FileNotFoundError:
             raise SofficeError(SOFFICE_MISSING) from None
+        port = free_port()
+        self.profile = tempfile.mkdtemp(prefix="lo-uno-profile-")
+        _install_signal_handlers()
 
+        # Its own session, so the whole tree -- the soffice wrapper script,
+        # oosplash, soffice.bin -- can be killed as a group.  Killing only the
+        # child we spawned leaves soffice.bin running, reparented to init.
         self.proc = subprocess.Popen(
             [
                 exe,
@@ -184,6 +201,7 @@ class _Server:
             env=get_soffice_env(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         atexit.register(self.stop)
 
@@ -222,8 +240,9 @@ class _Server:
             try:
                 self.proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
-                self.proc.wait(timeout=10)
+                _kill_tree(self.proc)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    self.proc.wait(timeout=10)
             self.proc = None
         if self.profile:
             shutil.rmtree(self.profile, ignore_errors=True)
@@ -242,7 +261,53 @@ def kill():
     """Hard-kill the shared LibreOffice, for when it stops responding."""
     proc, _SERVER.proc, _SERVER.ctx = _SERVER.proc, None, None
     if proc is not None and proc.poll() is None:
-        proc.kill()
+        _kill_tree(proc)
+
+
+def _kill_tree(proc):
+    """SIGKILL the process group ``proc`` leads, falling back to the process."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+
+
+_SIGNALS_INSTALLED = False
+
+
+def _install_signal_handlers():
+    """Stop LibreOffice on SIGTERM/SIGHUP too, not only at a clean exit.
+
+    ``atexit`` does not run when the interpreter is killed by a signal, which
+    is exactly what ``timeout``, a CI runner and a closed terminal send.  Each
+    of those used to leave an ``oosplash``/``soffice.bin`` pair and a profile
+    directory behind.  Only installed for signals nothing else has claimed, and
+    only from the main thread, where Python allows it.
+    """
+    global _SIGNALS_INSTALLED
+    if _SIGNALS_INSTALLED:
+        return
+    _SIGNALS_INSTALLED = True
+    try:
+        import threading
+        if threading.current_thread() is not threading.main_thread():
+            return
+    except Exception:
+        return
+
+    def _handler(signum, frame):
+        shutdown()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        signum = getattr(signal, name, None)
+        if signum is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            if signal.getsignal(signum) in (signal.SIG_DFL, None):
+                signal.signal(signum, _handler)
 
 
 def _props(**kwargs):
@@ -380,7 +445,7 @@ def repair_pptx(path) -> list:
         if after != before:
             parts[root_rels] = after.encode("utf8")
             fixed.append(f"{root_rels}: dropped '../' from "
-                         f"{before.count('Target=\"../')} relationship target(s)")
+                         f"{before.count(_UPWARD_TARGET)} relationship target(s)")
 
     # 2. Media in the package with no content type declared for its extension.
     types_part = "[Content_Types].xml"
@@ -589,10 +654,13 @@ def placeholder(page, kind: str = "Title"):
     layout -- text typed into a placeholder inherits the master's fonts and
     positions, a free text box inherits nothing.
     """
-    want = f"com.sun.star.presentation.{kind}TextShape"
-    legacy = f"com.sun.star.presentation.{kind}Shape"
+    # Impress names the body placeholder "OutlinerShape", not "OutlineShape";
+    # asking for Outline used to match nothing on any slide.
+    aliases = {"Outline": ("OutlinerShape", "OutlineTextShape", "OutlineShape")}
+    wanted = {f"com.sun.star.presentation.{name}"
+              for name in aliases.get(kind, (f"{kind}TextShape", f"{kind}Shape"))}
     for shape in shapes(page):
-        if shape.getShapeType() in (want, legacy):
+        if shape.getShapeType() in wanted:
             return shape
     return None
 

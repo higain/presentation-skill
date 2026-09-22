@@ -47,6 +47,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -147,9 +148,22 @@ def _call(base_url, model, api_key, messages, max_tokens=6000):
         headers={"Content-Type": "application/json",
                  **({"Authorization": f"Bearer {api_key}"} if api_key else {})},
     )
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        body = json.loads(resp.read())
-    return body["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            body = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300]
+        raise SystemExit(f"{base_url}: HTTP {e.code} -- {detail}") from e
+    except (urllib.error.URLError, OSError) as e:
+        raise SystemExit(
+            f"cannot reach {base_url}: {e}\n  Is the model server running? "
+            f"--base-url names it; the default is ollama's OpenAI endpoint "
+            f"on this machine.") from e
+    try:
+        return body["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise SystemExit(f"{base_url}: unexpected reply shape: "
+                         f"{json.dumps(body)[:300]}") from e
 
 
 def _per_layout_messages(slide_dir: Path):

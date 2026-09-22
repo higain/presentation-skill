@@ -212,7 +212,11 @@ def main():
     if args.slides:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from office.impress import parse_slide_spec
-        wanted = set(parse_slide_spec(args.slides))
+        try:
+            wanted = set(parse_slide_spec(args.slides))
+        except ValueError as e:
+            print(f"Error: --slides {e}", file=sys.stderr)
+            return 2
 
     target = Path(args.path)
     if not target.exists():

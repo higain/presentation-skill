@@ -11,6 +11,11 @@ be passed straight to an image viewer.  The output directory is cleared of stale
 slide-*.png first -- otherwise images from a previous run survive alongside the
 new ones and you review a deck that no longer exists.
 
+**Image N is slide N.**  Hidden slides are rendered too, from an all-visible
+copy, so the numbering lines up with `qa.py`, `probe.py` and `dump.py` and a
+finding on slide 7 is in `slide-07.png`.  A deck as it would be presented --
+hidden slides left out -- is what `convert.py deck.pptx deck.pdf` gives you.
+
 Rendering goes through PDF, which is what LibreOffice itself would print, so
 what you see here is what the deck looks like -- with one caveat: fonts the
 machine does not have are substituted, and a substitute with different metrics
@@ -27,11 +32,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from office.impress import PRESENTATION_EXTS, SofficeError, parse_slide_spec  # noqa: E402
 from office.rasterize import rasterize  # noqa: E402
 
-_parse_slides = parse_slide_spec          # kept: qa.py and make_deck.py use it
+_parse_slides = parse_slide_spec
 
 
 def render(source: Path, outdir: Path, dpi: int,
-           wanted: list[int] | None = None, hidden: str = "drop") -> list[Path]:
+           wanted: list[int] | None = None, hidden: str = "show") -> list[Path]:
     """One PNG per rendered slide.  See ``office.rasterize`` for ``hidden``."""
     return rasterize(source, outdir, dpi=dpi, fmt="png", wanted=wanted,
                      hidden=hidden)

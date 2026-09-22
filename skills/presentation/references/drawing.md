@@ -101,9 +101,9 @@ error says what to write instead: that is true of every keyword
   and nothing could see it. `D.color` raises with the list of real names;
   `D.palette()` is the whole dict and the pack's `catalog.md` prints
   it with each colour's contrast on white.
-- **Most brand colours are fill colours, not text colours.** The house cyan is
-  3.0:1 on white and its orange is 2.3:1 — fine behind white text, not fine
-  *as* text. Check with `D.contrast_ratio(a, b)` before committing; under 3.0 is
+- **Most brand colours are fill colours, not text colours.** One template's
+  brand cyan is 3.0:1 on white and its orange is 2.3:1 — fine behind white
+  text, not fine *as* text. Check with `D.contrast_ratio(a, b)` before committing; under 3.0 is
   not readable from a seat, and `qa.py` reports it. `D.readable_on(bg)` picks
   black or white for you.
 - **One scale, not a size per call.** `role=` keeps a footnote the same size on
@@ -261,8 +261,8 @@ D.statement(doc, page, area, "One sentence, as large as it fits.")
 - **`note` sits on the card's floor**, so a row of cards has its owner/date line
   on one baseline instead of three.
 - **The accent titles a card only when it can be read on it.** Brand colours are
-  picked against white and a panel fill is not white — the house cyan on the
-  house grey is 2.7:1. If any accent in the row fails, every title in the row
+  picked against white and a panel fill is not white — one brand's cyan on its
+  own light grey is 2.7:1. If any accent in the row fails, every title in the row
   falls back to black, because peers styled two ways is a defect nothing
   measures. The colour still marks the card: it is the number chip's fill.
 - **`D.statement` chooses the size and the line breaks together**, then checks

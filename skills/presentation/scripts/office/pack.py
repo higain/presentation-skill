@@ -160,6 +160,12 @@ def default_pack():
         for pack in installed:
             if pack.name == wanted:
                 return pack
+        if wanted:
+            import sys
+            print(f"warning: templates/{DEFAULT_MARKER} names {wanted!r}, "
+                  f"which is not an installed pack "
+                  f"({', '.join(p.name for p in installed) or 'none'})",
+                  file=sys.stderr)
     if len(installed) == 1:
         return installed[0]
     return None

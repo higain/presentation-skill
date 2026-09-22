@@ -2,8 +2,9 @@
 
 
 Only for OOXML details UNO cannot express. A UNO round trip is lossless for
-everything listed above; reach for raw XML when you need PowerPoint-specific
-markup that Impress has no model for.
+everything `references/qa.md` lists under *What a round trip preserves*; reach
+for raw XML when you need PowerPoint-specific markup that Impress has no model
+for.
 
 ```python
 import sys, zipfile; sys.path.insert(0, "scripts")
@@ -16,8 +17,8 @@ with zipfile.ZipFile("deck.pptx") as zf:
 rezip(Path("unpacked"), Path("out.pptx"))
 ```
 
-Use `rezip`, not the `zip` command — `zip` is not installed, and `rezip` writes
-the member order and compression a `.pptx` needs.
+Use `rezip`, not the `zip` command: `rezip` writes the member order and
+compression a `.pptx` needs, and the `zip` command does not.
 
 - **Parse with `defusedxml.minidom`.** Round-tripping OOXML through
   `xml.etree.ElementTree` rewrites namespace prefixes and corrupts the deck.

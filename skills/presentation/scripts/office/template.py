@@ -30,11 +30,7 @@ geometry and character formatting of every slide, which is what you need to
 know which ``s[i]`` to write to.
 """
 
-import json
 import re
-from pathlib import Path
-
-import uno
 
 from office.impress import add_slide, notes_text, set_notes, shapes
 from office.pack import active_profile
@@ -242,7 +238,7 @@ def set_footer(page, text):
     on the master changes nothing that renders::
 
         for page in slides(doc):
-            set_footer(page, "The Lethal Trifecta · Board briefing · 2026")
+            set_footer(page, "Q3 review · Board briefing · 2026")
 
     ``build_deck(..., footer=...)`` does this for a whole deck.  Returns the
     text now in force.
@@ -925,10 +921,6 @@ def set_char_color(shape, color):
                 portions.nextElement().CharColor = color
             except Exception:
                 pass
-            continue
-        runs = para.createEnumeration()
-        while runs.hasMoreElements():
-            runs.nextElement().CharColor = color
 
 
 def shape_by_text(page, prefix):
@@ -979,11 +971,6 @@ def _scan(page):
         except Exception:
             texts[address] = ""
     return texts, entries
-
-
-def _shape_texts(page):
-    """``{address: text}`` for every shape on the slide, groups included."""
-    return _scan(page)[0]
 
 
 def _inventory(texts):
@@ -1156,7 +1143,7 @@ def template_profile(template=None):
 
 
 def _hex(value):
-    """``"#009EE0"`` or ``9494240`` to an int, or ``None``."""
+    """``"#2A7DE1"`` or ``9494240`` to an int, or ``None``."""
     if isinstance(value, int):
         return value
     try:
@@ -1243,8 +1230,8 @@ def strip_annotations(page, exact=None, prefixes=None, profile=None,
     collapsed); ``prefixes`` matches the start of it, for the multi-sentence
     build-instruction blocks.
 
-    With neither given the strings come from the shipped template profile
-    (``assets/company-template.profile.json``).  For another template pass
+    With neither given the strings come from the active pack's
+    ``profile.json`` (its ``annotations`` block).  For another template pass
     ``profile={"exact": [...], "prefixes": [...]}``, or the two lists directly.
 
     Returns the texts it removed, so you can see what went.

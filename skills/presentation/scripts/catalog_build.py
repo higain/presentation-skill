@@ -250,6 +250,63 @@ def _canvas_design(structures, slide_area):
     return (best, True) if best else (fallback, False)
 
 
+def _canvas_override(aggregate, structures, slide_width, slide_height):
+    """``(number, qualified)`` from a ``canvas`` block a person wrote.
+
+    ``decision_table.json`` may carry ``{"canvas": {"design": N, "keep": [..]}}``
+    -- written by hand, or by ``name_designs.py --import`` from the worksheet.
+    It is the one judged fact about the canvas: the heuristic in
+    :func:`_canvas_design` picks the largest free area, and on a template
+    whose designs all overhang or all keep too little it picks badly and says
+    so with a ⚠.  The probe deck shows that in ten seconds; this is how the
+    answer survives a rebuild.  With ``keep`` given, the design's own
+    ``canvas`` hint is rewritten around it: the free box is the union of the
+    text-bearing top-level shapes that are not kept, clamped to the slide.
+    """
+    block = aggregate.get("canvas") if isinstance(aggregate, dict) else None
+    if not isinstance(block, dict):
+        return None, False
+    try:
+        number = int(block.get("design"))
+    except (TypeError, ValueError):
+        return None, False
+    if number not in structures:
+        print(f"warning: decision_table.json names canvas design {number}, "
+              f"which this template does not have -- ignored", file=sys.stderr)
+        return None, False
+    keep = block.get("keep")
+    if isinstance(keep, (list, tuple)) and all(isinstance(k, int) for k in keep):
+        keep = sorted(set(keep))
+        slots = [s for s in structures[number].get("slots") or []
+                 if isinstance(s.get("index"), int)]
+        dropped = [s for s in slots if s["index"] not in keep]
+        spans = [(s["x"], s["y"], s["x"] + s["width"], s["y"] + s["height"])
+                 for s in dropped
+                 if s["width"] > slide_width / 20 and s["height"] > slide_height / 20]
+        old = structures[number].get("canvas") or {}
+        free = old.get("free_box")
+        if spans:
+            x0 = max(0, min(s[0] for s in spans))
+            y0 = max(0, min(s[1] for s in spans))
+            x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
+            if x1 > slide_width:
+                x1 = slide_width - x0
+            if y1 > slide_height:
+                y1 = slide_height - y0
+            free = {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
+        structures[number]["canvas"] = {
+            "keep": keep,
+            "drops": [s["index"] for s in dropped],
+            "free_box": free,
+            "by_hand": True,
+        }
+    if not (structures[number].get("canvas") or {}).get("free_box"):
+        print(f"warning: canvas design {number} has no measurable free area; "
+              f"give it a keep= list in decision_table.json", file=sys.stderr)
+        return None, False
+    return number, True
+
+
 def _decision_table(rules, structures, canvas_number, entries, qualified=True):
     known = set(structures)
     lines = ["| When the content is… | Use slide | Design | Because |",
@@ -408,8 +465,13 @@ def _roles_block(canvas, rules, entries):
     for rule in rules:
         when = str(rule.get("when") or rule.get("content") or "")
         if re.search(r"\b(deck )?opener|title slide|cover\b", when, re.I):
+            # Rows are keyed ``use_slide`` by every writer -- the judging
+            # pass, the worksheet import and the recovery script.  Reading
+            # ``design`` here, which none of them writes, reported "no cover
+            # design" on every template that had one.
             try:
-                cover = int(str(rule.get("design")).strip("`"))
+                cover = int(str(rule.get("use_slide", rule.get("design")))
+                            .strip("`"))
             except (TypeError, ValueError):
                 cover = None
             break
@@ -454,8 +516,11 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
     variety = aggregate.get("variety_rule")
 
     missing_entries = [n for n, e in entries.items() if not e]
-    canvas_number, canvas_ok = _canvas_design(
-        structures, manifest["slide_width"] * manifest["slide_height"])
+    canvas_number, canvas_ok = _canvas_override(
+        aggregate, structures, manifest["slide_width"], manifest["slide_height"])
+    if canvas_number is None:
+        canvas_number, canvas_ok = _canvas_design(
+            structures, manifest["slide_width"] * manifest["slide_height"])
     masters = sorted({row["master"] for row in manifest["slides"]})
     grouped = [row["number"] for row in manifest["slides"]
                if row.get("grouped_text")]
@@ -566,7 +631,7 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
             "imagery and the decision table are written by a local vision model "
             "from each slide's render and reviewed by hand; the prose blocks "
             "come from the overrides file. The asset, the renders and this file "
-            "are brand-internal: commit them to the internal fork only."]
+            "are brand-internal: `templates/` is gitignored, keep it so."]
 
     if missing_entries:
         out += ["", f"> **Incomplete:** no model entry for design(s) "
@@ -614,13 +679,16 @@ def main():
     ap = argparse.ArgumentParser(
         description="Assemble a pack's catalog.md from its catalog/")
     ap.add_argument("catalog", help="The directory catalog_extract.py wrote")
-    ap.add_argument("-o", "--output", help="Write here (default: stdout)")
+    ap.add_argument("-o", "--output",
+                    help="Write here. Default: the pack's catalog.md when the "
+                         "catalog directory sits inside a pack, else stdout")
     ap.add_argument("--asset", default=None,
                     help="Path the skill will load the template from")
     ap.add_argument("--title", default="Company template — layout catalog")
     ap.add_argument("--overrides",
                     help="Markdown file of '## anchor' prose blocks spliced "
-                         "into the generated catalog. Anchors: "
+                         "into the generated catalog. Default: the pack's "
+                         "overrides.md if there is one. Anchors: "
                          + ", ".join(ANCHORS) + ", design-N")
     ap.add_argument("--check", action="store_true",
                     help="Do not write: rebuild and diff against --output, "
@@ -629,15 +697,35 @@ def main():
                          "is now.")
     args = ap.parse_args()
 
-    asset = args.asset or _asset_beside(Path(args.catalog))
+    catalog = Path(args.catalog)
+    if not (catalog / "manifest.json").is_file():
+        ap.error(f"no manifest.json in {catalog} -- point this at the "
+                 f"directory catalog_extract.py wrote")
+    asset = args.asset or _asset_beside(catalog)
     if asset is None:
         ap.error("--asset: no template found beside %s. Pass the path to the "
                  "template this catalog was extracted from." % args.catalog)
-    text = build(Path(args.catalog), asset, args.title, args.overrides)
+
+    # Inside a pack the other two files have fixed names, so a bare
+    # ``catalog_build.py templates/acme/catalog`` rebuilds the pack's own
+    # catalog.md with its own overrides.md and needs no flags at all.
+    in_pack = catalog.resolve().parent
+    if args.overrides is None and (in_pack / "overrides.md").is_file():
+        args.overrides = str(in_pack / "overrides.md")
+    if args.overrides and not Path(args.overrides).is_file():
+        ap.error(f"--overrides: {args.overrides} does not exist")
+    if args.output is None and _asset_beside(catalog) is not None:
+        args.output = str(in_pack / "catalog.md")
+
+    text = build(catalog, asset, args.title, args.overrides)
 
     if args.check:
         if not args.output:
             ap.error("--check needs --output: the catalog to compare against")
+        if not Path(args.output).is_file():
+            print(f"{args.output} does not exist yet; nothing to compare. "
+                  f"Run without --check to write it.", file=sys.stderr)
+            sys.exit(1)
         current = Path(args.output).read_text(encoding="utf-8")
         if current == text:
             print(f"{args.output} is up to date with {args.catalog}")

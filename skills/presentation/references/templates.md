@@ -1,7 +1,7 @@
 # Working with a template deck
 
-For the house template see the pack's `catalog.md` and the recipe in
-SKILL.md. **This file is for any *other* template a user brings**, and for the
+For the installed pack see its `catalog.md` and the recipe in SKILL.md.
+**This file is for any *other* template a user brings**, and for the
 mechanics underneath both: how slides get copied, how text gets replaced, and
 what breaks when you index by hand.
 
@@ -26,8 +26,8 @@ every section belongs on title-and-bullets.
 - A template carries authoring notes addressed to whoever builds from it — an
   "example" flag, a customer-logo marker, a block of build instructions.
   `office.template.strip_annotations(page)` deletes them, reaching inside
-  groups. The strings for the house template ship in
-  `templates/acme/profile.json`; for another template pass
+  groups. The strings for an installed pack live in its `profile.json`
+  (`presentation-setup` writes them); for another template pass
   `profile={"exact": [...], "prefixes": [...]}`.
 
 ## Reading the probe before you index anything
@@ -140,7 +140,7 @@ with impress_document("brand.pptx", save=False) as doc:
   you.
 - **A `.pptx` cannot hold two text colours in one shape.** The export discards
   per-paragraph character colour and writes a single colour for the whole
-  shape. Measured on the house template: three paragraphs written red, blue and
+  shape. Measured on a corporate template: three paragraphs written red, blue and
   green come back all one colour, while their per-paragraph **sizes and weights
   survive intact**. An `.odp` keeps all of it. So a heading in one colour above
   body text in another has to be **two shapes** in a `.pptx` — `office.draw.text`
@@ -192,9 +192,9 @@ from office import draw as D
 
 def fill(doc, page, slot, design):
     if design == 7:
-        retext(page, {"Formelemente, Navigator": "Kapitel 1: Vorgehen"})
+        retext(page, {"Chapter title": "Chapter 1: Method"})
     if slot == 3:
-        D.rect(doc, page, mm(20), mm(60), mm(80), mm(40), fill=0x009EE0)
+        D.rect(doc, page, mm(20), mm(60), mm(80), mm(40), fill=D.color("accent"))
 
 build_deck("templates/acme/template.pptx", "out.pptx",
            [7, 8, 13, 20, 1],          # catalog design numbers, in final order
@@ -265,17 +265,17 @@ Going the other way — the box is fixed and the words are too many — shrink t
 type rather than move the box:
 
 ```python
-retext(page, {"Formelemente, Navigator": "The Lethal Trifecta in Agentic AI"})
-shape = find_shapes(page, "Lethal Trifecta")[0][1]
+retext(page, {"Chapter title": "The quarter in three numbers and one decision"})
+shape = find_shapes(page, "three numbers")[0][1]
 shrink_to_fit(doc, page, shape, max_lines=1)     # 60pt -> 47pt, still one line
 ```
 
 **`max_lines=1` is the one that matters on a decorated divider.** A headline box
 is drawn for a set number of lines at a set size; a longer title does not clip,
 it flows on over whatever the *master* has behind it — and master decoration is
-not a shape on the page, so nothing in `qa.py` can see the result. On the house
-dividers that decoration is a large triangle, and the second line comes out with
-a line struck through it. Budgets per design: the pack's `catalog.md`.
+not a shape on the page, so nothing in `qa.py` can see the result. On one
+template's dividers that decoration is a large triangle, and the second line
+comes out with a line struck through it. Budgets per design: the pack's `catalog.md`.
 
 If the size it settles on looks wrong, the title is too long for that design
 rather than too big — shorten it, or build the slide on a canvas.

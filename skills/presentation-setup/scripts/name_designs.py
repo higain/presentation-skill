@@ -12,8 +12,8 @@ twenty designs. A person is better at it than a 31B model was, and much better
 than a text-only model, which will answer confidently about images it never
 received.
 
-`--worksheet` (the default) writes `designs.md` beside the renders: one block
-per design, the measured facts already filled, blanks where judgement goes.
+Without `--import` it writes `designs.md` beside the renders: one block per
+design, the measured facts already filled, blanks where judgement goes.
 `--import` reads it back into the `entries/*.json` and `decision_table.json`
 that `catalog_build.py` expects.
 
@@ -85,7 +85,8 @@ def _capacity(structure):
 
 
 BLOCK = re.compile(
-    r"^##\s*Design\s+(\d+).*?$(.*?)(?=^##\s*Design\s|\Z)", re.M | re.S)
+    r"^##\s*Design\s+(\d+).*?$(.*?)(?=^##\s|\Z)", re.M | re.S)
+CANVAS_BLOCK = re.compile(r"^##\s*Canvas\s*$(.*?)(?=^##\s|\Z)", re.M | re.S)
 FIELD = re.compile(r"^-\s*\*\*(?P<key>[a-z_ ]+)\*\*\s*:\s*(?P<value>.*)$", re.M)
 
 
@@ -103,6 +104,15 @@ def worksheet(catalog: Path):
         "comparison, cards, table, matrix, image, timeline, kpis, quote, "
         "one-big-idea. Anything else is fine; the table just repeats it.", "",
         "Then: `name_designs.py " + str(catalog) + " --import`", "",
+        "## Canvas", "",
+        "The design a diagram or a chart is drawn on, stripped back to its "
+        "chrome. Leave both blank and `catalog_build.py` picks the design "
+        "with the largest free area; fill them in when the probe deck shows "
+        "that pick drawing over the design's own furniture. `keep` is the "
+        "shape indices to leave standing -- the title, a topic label -- as "
+        "`probe.py` numbers them.", "",
+        "- **design**: ",
+        "- **keep**: ", "",
     ]
     for row in manifest["slides"]:
         number = row["number"]
@@ -151,6 +161,24 @@ def read_worksheet(catalog: Path):
                   for field in FIELD.finditer(match.group(2))}
         out[number] = fields
     return out
+
+
+def read_canvas(catalog: Path):
+    """``{"design": N, "keep": [...]}`` from the worksheet, or ``None``."""
+    text = (catalog / "designs.md").read_text(encoding="utf-8")
+    match = CANVAS_BLOCK.search(text)
+    if not match:
+        return None
+    fields = {field.group("key").strip(): field.group("value").strip()
+              for field in FIELD.finditer(match.group(1))}
+    digits = re.findall(r"\d+", fields.get("design") or "")
+    if not digits:
+        return None
+    block = {"design": int(digits[0])}
+    keep = [int(k) for k in re.findall(r"\d+", fields.get("keep") or "")]
+    if keep:
+        block["keep"] = keep
+    return block
 
 
 def write_entries(catalog: Path, filled):
@@ -210,7 +238,7 @@ TABLE_ORDER = [
 ]
 
 
-def write_decision_table(catalog: Path, rows):
+def write_decision_table(catalog: Path, rows, canvas=None):
     """A table derived from what each design says it carries."""
     by_kind = {}
     for number, entry in rows:
@@ -242,6 +270,8 @@ def write_decision_table(catalog: Path, rows):
         "scratch on a template it never used.")
     payload = {"decision_table": table, "variety_rule": variety,
                "written_by": "name_designs.py — measured, not judged"}
+    if canvas:
+        payload["canvas"] = canvas
     (catalog / "decision_table.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8")
@@ -271,8 +301,11 @@ def main():
 
     filled = read_worksheet(args.catalog)
     written, blank, rows = write_entries(args.catalog, filled)
-    table = write_decision_table(args.catalog, rows)
-    print(f"Wrote {written} entries and a {len(table)}-row decision table.")
+    canvas = read_canvas(args.catalog)
+    table = write_decision_table(args.catalog, rows, canvas)
+    print(f"Wrote {written} entries and a {len(table)}-row decision table"
+          + (f", canvas set by hand to design {canvas['design']}." if canvas
+             else "."))
     if blank:
         print(f"\n! {len(blank)} design(s) have no purpose or use_when: "
               + ", ".join(str(n) for n in blank)

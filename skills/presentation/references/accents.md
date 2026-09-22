@@ -6,8 +6,8 @@ visuals**. You pick from them. You do not add to them mid-deck.
 
 **The one hard rule: no new colours, ever.** Every colour here is one this template
 already fills a shape or sets text in, reached by name through `D.color(...)`. Four
-separate runs against this template wrote their own hex — `0xE8730C` for orange,
-`0x6B3FA0` for purple — and neither appears anywhere in the deck they were "matching".
+separate runs against one corporate template wrote their own hex — `0xE8730C` for
+orange, `0x6B3FA0` for purple — and neither appears anywhere in the deck they were "matching".
 Four corporate decks, off-brand, and no check in the pipeline could see it. A pack is a
 **selection and a discipline**, not a palette.
 
@@ -205,7 +205,7 @@ skipped and said so is fine; a preview nothing looked at is how an off-brand dec
 
 ## 3. Hero visuals
 
-**The `visual:` field in `plan.md` names one of these.** Eleven names, a closed
+**The `visual:` field in `plan.md` names one of these.** Twelve names, a closed
 vocabulary. "A diagram showing the relationship between…" is not a value this field
 accepts — it is how a run talks itself into a slide it cannot build.
 
@@ -314,7 +314,7 @@ before the build, not during it:
 | `stat-strip` | Same, per cell. A strip of three where one is `[TBD]` reads correctly: two answers and an open question. |
 | `area-compare` | **Cannot be drawn.** Its whole argument is the ratio of the two areas, and there is no ratio. Equalising the blocks does not defer the claim — it *makes the opposite one*. Either get the figure before the build, or swap the slide to `single-number` on the `[TBD]` and let that carry the point. |
 
-The other eight are qualitative and build unchanged; a `[TBD]` lands in their text.
+The other nine are qualitative and build unchanged; a `[TBD]` lands in their text.
 `table` is the useful case — **leave the cells blank rather than dropping the rows.** A
 table of question marks argues for the inventory better than a sentence saying the data
 is missing.

@@ -42,15 +42,60 @@ SPECIMENS = {"catalog.example.md"}
 #: is a sentence that is wrong for every reader who did not build it.
 DESIGN_NUMBER = re.compile(r"\bdesigns?\s+\d+", re.I)
 
-#: Wording, master names and retext keys from the template this skill was
-#: written against.  A published skill must not contain any of it -- and the
-#: *evidence* those runs produced is worth keeping, so what these forbid is the
+#: Wording, master names and retext keys of whatever packs are installed on
+#: this machine.  A published skill must not contain any of it -- and the
+#: *evidence* a run produced is worth keeping, so what this forbids is the
 #: identity, not the finding: "a 21-design corporate template" says the same
-#: thing to a reader who has never seen it.
+#: thing to a reader who has never seen it.  Read off the packs rather than
+#: written here, so the test itself never has to name a company either.
+#: The demo template that ships in ``tests/fixtures``.  A pack built from it
+#: is public by definition and its wording may appear in examples.
+DEMO_TEMPLATE = SKILL / "tests" / "fixtures" / "kite-brand-master.pptx"
+
+
+def _is_demo(pack):
+    if not DEMO_TEMPLATE.is_file():
+        return False
+    demo = DEMO_TEMPLATE.read_bytes()
+    return any(candidate.is_file() and candidate.read_bytes() == demo
+               for candidate in pack.glob("template.*"))
+
+
+def _brand_words():
+    import json
+    words = set()
+    templates = SKILL / "templates"
+    for pack in sorted(templates.iterdir()) if templates.is_dir() else []:
+        if not pack.is_dir() or pack.name.startswith(".") or _is_demo(pack):
+            continue
+        words.add(pack.name)
+        manifest = pack / "catalog" / "manifest.json"
+        if manifest.is_file():
+            try:
+                for row in json.loads(manifest.read_text("utf-8"))["slides"]:
+                    master = str(row.get("master") or "")
+                    if len(master) >= 6 and master.upper() != "DEFAULT":
+                        words.add(master)
+            except (ValueError, KeyError, TypeError):
+                pass
+        for structure in pack.glob("catalog/slide-*/structure.json"):
+            try:
+                data = json.loads(structure.read_text("utf-8"))
+            except ValueError:
+                continue
+            for entry in data.get("retext_keys") or []:
+                key = str(entry.get("key") or "")
+                # Long enough to be one template's own sentence rather than a
+                # phrase any template might use ("What we found", "Next steps").
+                if len(key) >= 24 and re.search(r"[^\W\d_]", key):
+                    words.add(key)
+    return words
+
+
+BRAND_WORDS = _brand_words()
 BRAND = re.compile(
-    r"Potentielle Navigatoren|Navigator \(1/2\)|AT_ST|Section_dark"
-    r"|Default 36|Gegenstand \| Titel|Kundenlogo"
-    r"|\bdelta\b(?!\s*=)",
+    "|".join(re.escape(w) for w in sorted(BRAND_WORDS, key=len, reverse=True))
+    or r"(?!x)x",
     re.I,
 )
 

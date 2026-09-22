@@ -29,25 +29,35 @@ Plus a line naming the designs that carry text **inside groups**, because
 `shapes(page)[i]` cannot reach any of it and a build that indexes by hand will
 leave the template's own wording on the slide.
 
+## Designs by role  **[measured]**
+
+A three-row table naming the **canvas** design, the **divider** designs and the
+**cover** design (or "none — build one"), so that the generic documentation can
+say "the canvas design" and this pack says which number that is.
+
 ## Decision table — content → template slide
 
 Applied top to bottom, first match wins.
 
-The **first row is always the canvas row** **[measured]**: the design with the
-largest free area that still keeps its own chrome, the `keep=` tuple that strips
-it back, and the exact free `Box`. Everything the rows below have no design for
-goes here rather than into the nearest bullet list.
+The rows are **[judged]**: the model's aggregation pass, or the worksheet a
+person filled. A row citing a slide the template does not have is written out
+with a ⚠ rather than silently dropped, so a model that fell back to layout ids
+is visible on the page.
 
-The remaining rows are **[judged]** — the model's aggregation pass. A row citing
-a slide the template does not have is written out with a ⚠ rather than silently
-dropped, so a model that fell back to layout ids is visible on the page.
+The **last row is always the canvas row** **[measured]**: the design with the
+largest free area that still keeps its own chrome, the `keep=` tuple that strips
+it back, and the exact free `Box`. Everything the rows above have no design for
+goes here rather than into the nearest bullet list. It is last on purpose: first,
+"a diagram, a comparison, a matrix" was the first match for almost anything. A
+`canvas` block in `decision_table.json` (written by hand, or from the worksheet's
+`## Canvas` section) overrides the measured pick and survives every rebuild.
 
 | When the content is… | Use slide | Design | Because |
 |---|---|---|---|
-| **a diagram, chart, matrix — anything no row below fits** | `8` | **Canvas** | Strip design 8 with `draw.canvas(page, keep=(0, 1, 2, 3))`; free area **2031, 3545 to 30003, 15702** |
 | deck opener | `7` | Section divider dark | high-impact start |
 | standard bulleted content | `8` | Content slide | headline plus one body |
 | … | | | |
+| **a diagram, chart, matrix — anything no row above fits** | `8` | **Canvas** | Strip design 8 with `draw.canvas(page, keep=(0, 1, 2, 3))`; free area **2031, 3545 to 30003, 15702** |
 
 **Variety rule** **[judged]** — one sentence on which designs to interleave so
 the deck does not read as one design repeated.
@@ -60,6 +70,12 @@ exactly the sort of thing a deck-builder has to be told once, loudly.
 more: box width, size, and how many characters fit on one line. A display title
 that wraps runs into the master's own decoration; nothing on the page collides,
 and no automated check can see it.
+
+## Palette and type scale  **[measured]**
+
+Read from the pack's `profile.json`: every colour by name and role with its
+contrast on white, and the seven type roles with their sizes. This is what
+`D.color("accent")` and `role="body"` resolve to.
 
 ## Design entries
 
@@ -91,8 +107,7 @@ One per design, in slide order.
 ---
 
 **Provenance** — a footer naming which half came from where, and the reminder
-that the asset, the renders and the catalog are brand-internal: internal fork
-only.
+that the asset, the renders and the catalog are brand-internal and gitignored.
 
 If a design's judged fields read _(not catalogued)_, the model pass did not
 cover it. Run the per-layout pass for those slides and rebuild.

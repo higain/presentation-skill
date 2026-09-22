@@ -5,10 +5,14 @@ Base validator with common validation logic for document files.
 import re
 from pathlib import Path
 
-import defusedxml.minidom
 from functools import lru_cache
 
-import lxml.etree
+try:
+    import defusedxml.minidom
+    import lxml.etree
+except ImportError as exc:                      # pragma: no cover
+    raise ImportError("validate.py needs python3-lxml and python3-defusedxml "
+                      "(apt install python3-lxml python3-defusedxml)") from exc
 
 from office.helpers import safe_extract
 
@@ -783,7 +787,7 @@ class BaseSchemaValidator:
         try:
             schema = _load_schema(str(schema_path))
 
-            with open(xml_file, "r") as f:
+            with open(xml_file, "rb") as f:
                 xml_doc = lxml.etree.parse(f)
 
             xml_doc, _ = self._remove_template_tags_from_text_nodes(xml_doc)

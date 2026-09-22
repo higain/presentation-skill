@@ -69,14 +69,55 @@ def _catalog_roles(pack):
     return canvas, keep, dividers
 
 
+def _is_annotation(text, profile):
+    """Whether ``text`` is one of the pack's authoring notes.
+
+    The same test ``strip_annotations`` applies -- whole string, case folded,
+    whitespace collapsed, or one of the prefixes -- so a key this says no to is
+    a key that survives the strip.
+    """
+    notes = profile.get("annotations") or {}
+    norm = " ".join(str(text).split()).casefold()
+    if norm in {" ".join(str(n).split()).casefold()
+                for n in notes.get("exact") or ()}:
+        return True
+    return any(norm.startswith(" ".join(str(p).split()).casefold())
+               for p in notes.get("prefixes") or () if str(p).strip())
+
+
 def _keys_for(pack, design):
-    """The retext keys the catalog records for one design."""
+    """The retext keys the catalog records for one design, largest type first.
+
+    Authoring notes are left out: ``fill`` strips them before it retexts, so a
+    key that names one would match nothing.  The first probe of a template
+    whose logo line repeats on every design took that line as the divider's
+    title and died on it.  The rest are ordered by the point size of the shape
+    that carries them, so the first key is the design's headline rather than
+    whichever box happens to come first in z-order.
+    """
     path = pack.catalog_dir / f"slide-{design:02d}" / "structure.json"
     try:
         structure = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    return [entry["key"] for entry in structure.get("retext_keys") or []]
+    profile = pack.profile()
+    sizes = {}
+    for slot in structure.get("slots") or []:
+        biggest = max((font.get("size") or 0
+                       for font in slot.get("fonts") or ()), default=0)
+        sizes[str(slot.get("index"))] = biggest
+    keys = [entry["key"] for entry in structure.get("retext_keys") or []
+            if not _is_annotation(entry.get("key", ""), profile)]
+    order = {entry["key"]: sizes.get(str(entry.get("address")), 0)
+             for entry in structure.get("retext_keys") or []}
+    return sorted(keys, key=lambda key: -order.get(key, 0))
+
+
+def _sized(text, like):
+    """``text`` repeated or cut to about the length of ``like``."""
+    width = max(len(like), 6)
+    out = (text * (width // len(text) + 1))[:width]
+    return out.rsplit(" ", 1)[0].strip() if " " in out.strip() else out.strip()
 
 
 def _content_design(pack, canvas, divider):
@@ -103,7 +144,10 @@ def _content_design(pack, canvas, divider):
                 continue
             if number not in (canvas, divider) and _keys_for(pack, number):
                 return number
-    scored = [(len(_keys_for(pack, n)), n) for n in range(1, 60)
+    numbers = sorted(int(path.name[len("slide-"):])
+                     for path in pack.catalog_dir.glob("slide-[0-9]*")
+                     if path.is_dir() and path.name[len("slide-"):].isdigit())
+    scored = [(len(_keys_for(pack, n)), n) for n in numbers
               if n not in (canvas, divider) and _keys_for(pack, n)]
     return min(scored)[1] if scored else canvas
 
@@ -135,13 +179,22 @@ def main():
     def fill(doc, page, slot, design):
         strip_annotations(page)
         if slot == 0 and divider_keys:
-            retext(page, {divider_keys[0]: "The look, checked"})
+            # The headline gets the probe's title; every other string the
+            # design carries gets a same-length stand-in, so what is left on
+            # the slide afterwards is the template's decoration and nothing
+            # of its wording.
+            words = {divider_keys[0]: "The look, checked"}
+            words.update({key: _sized("Retexted. ", key)
+                          for key in divider_keys[1:]})
+            retext(page, words)
         elif slot == 1 and content_keys:
-            retext(page, {key: value for key, value in zip(
-                content_keys,
-                ["Every key in this slide came from the catalog.",
-                 "If a word below is still the template's, the keys are wrong.",
-                 "Third slot, if this design has one."])})
+            # Every key, not the first three: the question this slide answers
+            # is "is any word still the template's", and a key left alone is a
+            # word left alone.  Each replacement is cut to the length of the
+            # string it replaces, so a label stays a label and a paragraph a
+            # paragraph and nothing overruns its box.
+            retext(page, {key: _sized(f"Key {n} came from the catalog. ", key)
+                          for n, key in enumerate(content_keys, start=1)})
         elif slot == 2:
             # Retext what the canvas keeps before drawing in what it drops:
             # otherwise the probe reports the template's own title as leftover
@@ -153,10 +206,16 @@ def main():
                     retext(page, {key: "Counted off your template — "
                                        "nothing here was invented."})
             area = D.canvas(page, keep=keep)
-            top, bottom = area.cut_top(mm(40), gap=mm(8))
+            # Proportional, not absolute: the free area on a design with a
+            # subtitle stripped out can be 50 mm tall, and a 40 mm KPI band
+            # cut off the top of that leaves the cards no room at all.  The
+            # cards take the smaller type roles for the same reason -- this
+            # slide proves the colours, not the capacity.
+            top, bottom = area.cut_top(int(area.h * 0.45), gap=mm(4))
             D.kpis(doc, page, top,
                    [("3", "slides"), ("1", "pack"), ("0", "invented colours")],
-                   color=D.color("accent"))
+                   color=D.color("accent"),
+                   max_size=min(36.0, D.size_for("display") / 2))
             D.cards(doc, page, bottom,
                     [("Accent", "One element per slide, and this is it."),
                      ("Muted", "Everything that is not the point."),
@@ -164,6 +223,8 @@ def main():
                     fill=D.color("muted"),
                     accent=[D.color("accent"), D.color("neutral"),
                             D.color("alert")],
+                    title_size=D.size_for("caption"),
+                    size=D.size_for("footnote"),
                     height="content")
 
     if keep is None:

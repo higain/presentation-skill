@@ -104,16 +104,13 @@ scripts/dump.py deck.odp
 layout offers to fill. Text is listed in z-order (the order shapes were added),
 not top-to-bottom reading order.
 
-`markitdown.sh` is **not** useful here: it rejects `.odp` outright, and on
-`.pptx` it reports text without layouts, masters or notes. Use `dump.py`.
-
 ## Typography
 
 **Font names you write are rendered by the recipient's Office, not by this
 machine.** QA renders through LibreOffice, which substitutes fonts it lacks. If
 the substitute has different metrics, your overflow check is wrong.
 
-Verified on this machine:
+Measured on Debian with the `fonts-crosextra-*` packages installed:
 
 | You write | Renders here as | Overflow QA |
 |---|---|---|
@@ -125,9 +122,9 @@ Verified on this machine:
 | Georgia, Trebuchet MS, Impact, Arial Black, Garamond, Consolas, Palatino | DejaVu family | **not trustworthy** — different widths |
 | Aptos | DejaVu Sans | **avoid** — no metric-compatible substitute anywhere, and missing from older Office installs |
 
-Calibri and Cambria are trustworthy only because `fonts-crosextra-carlito` and
-`fonts-crosextra-caladea` are installed. If `fc-match Calibri` returns anything
-but Carlito, treat them as untrustworthy again.
+Calibri and Cambria are trustworthy only when `fonts-crosextra-carlito` and
+`fonts-crosextra-caladea` are installed (both from apt). If `fc-match Calibri`
+returns anything but Carlito, treat them as untrustworthy again.
 
 For fonts outside the trustworthy list: use them where asked, size those
 containers with ~10% slack, and do not trust the preview's text fit.
@@ -168,14 +165,17 @@ rather than failing later inside LibreOffice.
 ## Notes on this environment
 
 - **apt only.** Never run `pip` or `npm`, in a script or in a shell. Everything
-  needed is installed; if something is missing, say so and stop.
+  needed comes from apt (`libreoffice-impress python3-uno python3-lxml
+  python3-defusedxml python3-pil poppler-utils`); if something is missing, name
+  the package and stop.
 - **`from com.sun.star... import ...` only works after `import uno`.** The
   `com` package is synthesised by the UNO bridge, so put those imports *below*
   your `office.*` imports or you get `ModuleNotFoundError: No module named 'com'`.
   Same for `createInstance`: services like `drawing.ShapeCollection` come from
   the remote `ServiceManager`, not from `doc`.
-- The locale is German (`de_DE.UTF-8`), so LibreOffice renders numbers and dates
-  German-style (`1.234,50`, `55,2%`). German content is normal.
+- The machine's locale decides how LibreOffice formats numbers and dates in the
+  renders (`de_DE` gives `1.234,50`, `en_US` gives `1,234.50`). Content in any
+  language is normal; write the deck in the language of the brief.
 - Macros are never used here; documents open with macro execution disabled.
 - Each script starts its own headless LibreOffice with a private profile and
   port, so parallel runs — and a LibreOffice the user has open — never collide.

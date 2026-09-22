@@ -36,7 +36,6 @@ from office.impress import (  # noqa: E402
     new_document,
     notes_text,
     placeholder,
-    pt,
     save_as,
     set_notes,
     shape_text,

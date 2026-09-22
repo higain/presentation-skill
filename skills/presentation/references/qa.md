@@ -57,8 +57,8 @@ They report what a reader would see as broken and nothing else:
   PowerPoint. One run put them in a status column of a board deck. The
   monochrome ✓ and ✗ are ordinary glyphs in the deck's own font and are not
   flagged;
-- **type under the smallest size the template itself sets** — 9pt on the house
-  template. Below that it is legible on the monitor it was built on and not
+- **type under the smallest size the template itself sets** — 9pt on one
+  corporate template we measured. Below that it is legible on the monitor it was built on and not
   from a seat. `D.text(..., role="footnote")` takes the size from the scale
   rather than picking one per slide;
 - **contrast** — each run's colour against the fill or slide background behind
@@ -89,7 +89,7 @@ decorations the template itself hangs past the edge. Lay out from the `Box`
 
 **The template baseline is cached, and you want it to be.** Measuring what the
 template already does — its wording, its bleeds, its brand colour pairings, the
-shapes it stacks — costs 37–43 s on the 21-design house template, against 29 s
+shapes it stacks — costs about 40 s on a 21-design template, against 29 s
 to check a ten-slide deck: well over half of a `--template` run, and it used to
 be paid again on every build iteration. It is a pure function of the template,
 so it is now written to `$XDG_CACHE_HOME/presentation-skill/` and reused. The
@@ -213,8 +213,10 @@ sitting where sixteen different claims should be.
 ## The vision reviewer
 
 ```bash
-export PRESENTATION_REVIEW_MODEL=google/gemma-4-31b-it
-export OPENROUTER_API_KEY=...          # or point at a local server
+export PRESENTATION_REVIEW_MODEL=gemma3:27b                     # a local ollama model
+export PRESENTATION_REVIEW_BASE_URL=http://localhost:11434/v1   # its endpoint
+# or a hosted one, which sends the renders off the machine:
+export PRESENTATION_REVIEW_MODEL=google/gemma-4-31b-it OPENROUTER_API_KEY=...
 ```
 
 With that set, `make_deck.py` sends every render to that model and prints what
@@ -228,8 +230,8 @@ scripts/review_renders.py render/ --dry-run              # see the request
 
 **The model must accept images.** Point this at a text-only model and it will
 return a confident review of a slide it never saw, which is worse than no
-review — check the model's input modalities first. `deepseek-v4-flash` is
-text-only; `gemma-4-31b-it` and `qwen3.6-27b` are not.
+review — check the model's input modalities first (at the time of writing
+`gemma3`, `gemma-4` and `qwen3.6` accept images; many chat models do not).
 
 It is asked for what measurement cannot reach: figures off-centre, peers styled
 inconsistently, cards at different heights, a Venn whose circles do not

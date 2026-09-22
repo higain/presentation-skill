@@ -103,5 +103,5 @@ none of its text is reproduced here.
 
 **Why this file exists.** Both licences above require their notice to be
 included in copies of the work. Deleting this file does not remove the
-obligation — removing the adapted text does. The skill carries no licence of its
-own; add one before publishing.
+obligation — removing the adapted text does. The skill itself is licensed under
+the Apache License 2.0; see `LICENSE` at the repository root.

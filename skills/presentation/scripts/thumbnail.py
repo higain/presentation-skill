@@ -28,7 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from office.impress import PRESENTATION_EXTS, load_document, slides as doc_slides
 from office.rasterize import existing_images, rasterize
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError as exc:                      # pragma: no cover
+    raise ImportError("thumbnail.py needs Pillow: apt install python3-pil") from exc
 
 
 THUMBNAIL_WIDTH = 300

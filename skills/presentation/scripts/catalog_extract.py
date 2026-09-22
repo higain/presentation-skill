@@ -193,10 +193,15 @@ def _canvas_hint(shape_entries, slide_width, slide_height):
              if s["width"] > slide_width / 20 and s["height"] > slide_height / 20]
     free = None
     if spans:
-        x0, y0 = min(s[0] for s in spans), min(s[1] for s in spans)
-        free = {"x": x0, "y": y0,
-                "w": max(s[2] for s in spans) - x0,
-                "h": max(s[3] for s in spans) - y0}
+        # Clamped to the slide, as ``draw.canvas`` clamps: a template whose
+        # body boxes overhang the page must not report a free area off it.
+        x0, y0 = max(0, min(s[0] for s in spans)), max(0, min(s[1] for s in spans))
+        x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
+        if x1 > slide_width:                  # overhangs: mirror the left margin
+            x1 = slide_width - x0
+        if y1 > slide_height:
+            y1 = slide_height - y0
+        free = {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
     return {
         "keep": [s["index"] for s in keep],
         "drops": [s["index"] for s in dropped],
@@ -349,10 +354,16 @@ def main():
     args = ap.parse_args()
 
     source = Path(args.input)
+    if not source.is_file():
+        ap.error(f"{source} does not exist")
     if source.suffix.lower() not in PRESENTATION_EXTS:
         ap.error(f"not a presentation: {source}")
 
-    manifest = extract(source, Path(args.outdir), args.dpi)
+    try:
+        manifest = extract(source, Path(args.outdir), args.dpi)
+    except SofficeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
     n = len(manifest["slides"])
     masters = sorted({s["master"] for s in manifest["slides"]})
     print(f"Wrote {n} layout dossiers to {args.outdir}/")
@@ -362,4 +373,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

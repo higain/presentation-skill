@@ -8,7 +8,7 @@ runs of this skill.
 Every function takes ``(doc, page, ...)`` and returns the UNO shape it made, so
 you can keep styling it afterwards.  Geometry is **1/100 mm** throughout, like
 the rest of the skill; ``mm()`` and ``pt()`` from ``office.impress`` convert.
-Colours are plain ints: ``0x009EE0``.
+Colours are plain ints: ``0x2A7DE1``.
 
     import sys; sys.path.insert(0, "<skill>/scripts")
     from office.impress import impress_document, slides, mm
@@ -16,7 +16,7 @@ Colours are plain ints: ``0x009EE0``.
 
     with impress_document("deck.pptx") as doc:
         page = slides(doc)[0]
-        D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=0x009EE0)
+        D.rect(doc, page, mm(20), mm(40), mm(60), mm(30), fill=0x2A7DE1)
         D.text(doc, page, mm(20), mm(40), mm(60), mm(30), "Q3",
                size=24, color=D.WHITE, weight=D.BOLD, align="center")
 
@@ -751,7 +751,7 @@ def rect(doc, page, x, y, w, h, fill=None, line=None, transparence=0,
 
     Takes a ``Box`` in place of ``x, y, w, h``::
 
-        D.rect(doc, page, area.top(mm(14)), fill=0x009EE0)
+        D.rect(doc, page, area.top(mm(14)), fill=0x2A7DE1)
     """
     s = _new(doc, page, "RectangleShape", x, y, w, h)
     style_fill(s, fill, transparence, line, line_width, dashed)
@@ -816,7 +816,7 @@ def ellipse(doc, page, cx, cy, rx, ry=None, fill=None, line=None,
     Pass a ``Box`` instead and it *is* read as the bounding box, which is
     usually what you have::
 
-        D.ellipse(doc, page, area.square(0.6), fill=0x009EE0)
+        D.ellipse(doc, page, area.square(0.6), fill=0x2A7DE1)
 
     For a Venn diagram use :func:`venn`, not three of these: it computes the
     overlap and the label placement, which is the part that gets drawn wrong.
@@ -1309,7 +1309,7 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
     **Give it the area and proportional widths**, like every other call here::
 
         D.table(doc, page, area, widths=[3, 2, 2, 5], rows=rows,
-                head_fill=0x009EE0)
+                head_fill=0x2A7DE1)
 
     The columns are then scaled to the box exactly, ``row_h`` defaults to the
     box height divided between the rows, and nothing can land off the slide.
@@ -1522,7 +1522,7 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
             ("Gate", "A/B/C classification becomes mandatory in design review."),
             ("Accept the trade-off", "Cap capability where all three coincide.",
              "Board decision  ·  today"),
-        ], numbered=True, accent=[0x009EE0, 0xE8730C, 0x6B3FA0])
+        ], numbered=True, accent=[0x2A7DE1, 0xE8730C, 0x6B3FA0])
 
     ``height`` is the one that matters. ``"equal"`` fills the area, which is
     what a row of cards with similar content wants. ``"content"`` gives every
@@ -1559,11 +1559,19 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
             "rows, or give them the wider box."
             % (cols, area.w / 100, cell_w / 100))
 
+    needed = max(_card_height(item, int(cell_w), title_size, size,
+                              note_size, pad, numbered)
+                 for item in items)
+    offered = (area.h - gap * (rows_n - 1)) / rows_n
+    if needed > offered * 1.15:
+        # Drawing anyway puts the body outside its own panel, which reads as
+        # a card with a coloured hat on and is not something QA measures.
+        raise ValueError(
+            "cards(): the tallest card needs %.0f mm and the box gives each "
+            "row %.0f mm. Give cards() a taller box, fewer words, or a "
+            "smaller size=/title_size=." % (needed / 100, offered / 100))
     if height == "content":
-        needed = max(_card_height(item, int(cell_w), title_size, size,
-                                  note_size, pad, numbered)
-                     for item in items)
-        row_h = min(needed, (area.h - gap * (rows_n - 1)) / rows_n)
+        row_h = min(needed, offered)
         used = row_h * rows_n + gap * (rows_n - 1)
         area = Box(area.x, int(area.y + (area.h - used) / 2), area.w, int(used))
 
@@ -1578,8 +1586,9 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
     # third is purple because its accent happens to clear 3:1 reads as three
     # kinds of card -- and "peers styled differently" is a defect no
     # measurement reports, because each card on its own is fine.
-    heads = list(title_color if not isinstance(title_color, (list, tuple))
-                 else title_color for _ in items)
+    heads = [title_color[i % len(title_color)]
+             if isinstance(title_color, (list, tuple)) else title_color
+             for i in range(len(items))]
     if title_color is None:
         page_bg = bg_color(page)
         readable = all(
@@ -1617,13 +1626,13 @@ def steps(doc, page, x, y, w, h, items, captions=None, numbered=True,
     without a legend::
 
         D.steps(doc, page, area,
-                [("Attacker sends an email", "Nothing is breached yet"),
+                [("A request arrives", "Nothing is decided yet"),
                  ("Agent reads hidden text", "…"),
                  ("Agent reads your last 50 emails", "…"),
-                 ("Data leaves via a Google Form URL", "…")],
+                 ("The answer goes out", "…")],
                 captions=["outside", "untrusted content", "private data",
                           "external comms"],
-                accent=[0x4A4A4A, 0xE8730C, 0x009EE0, 0x6B3FA0])
+                accent=[0x4A4A4A, 0xE8730C, 0x2A7DE1, 0x6B3FA0])
 
     The arrows are drawn in the gap between tiles and sized to it -- a flow
     whose arrows are 5 mm stubs floating in a 20 mm gap is the hand-rolled
@@ -1680,7 +1689,7 @@ def kpis(doc, page, x, y, w, h, items, color=None, caption_color=GREY_DK,
 
     ``items`` are ``(value, caption)`` pairs::
 
-        D.kpis(doc, page, area, [("~47,000", "downloads of the backdoored
+        D.kpis(doc, page, area, [("~47,000", "downloads of the affected
                                   package"), ("3 hours", "it sat on PyPI"),
                                  ("dozens", "frameworks depend on it")])
 
@@ -1690,8 +1699,8 @@ def kpis(doc, page, x, y, w, h, items, color=None, caption_color=GREY_DK,
     """
     if not items:
         raise ValueError("kpis(): nothing to draw -- items is empty")
-    items = [(item, "") if isinstance(item, str) else tuple(item)[:2]
-             for item in items]
+    items = [(item, "") if isinstance(item, str)
+             else (tuple(item) + ("",))[:2] for item in items]
     gap = CARD_GAP * 2 if gap is None else gap
     caption_size = size_for("caption") if caption_size is None else caption_size
     area = Box(x, y, w, h)
@@ -1988,6 +1997,10 @@ def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
             labels = r
         cx = cy = r = None
     n = len(colors)
+    if n not in (2, 3):
+        raise ValueError(
+            "venn(): %d colours -- a Venn here has two or three lobes. For "
+            "more sets draw circles with ellipse(), or use cards()." % n)
     if box is not None:
         cx, cy, r = venn_fit(box, n, labels, label_size)
     elif "radius" not in _venn_hinted:
@@ -2170,9 +2183,18 @@ def canvas(page, keep=(), remove=()):
         page.remove(shape)
 
     if spans:
-        return Box(min(s[0] for s in spans), min(s[1] for s in spans),
-                   max(s[2] for s in spans) - min(s[0] for s in spans),
-                   max(s[3] for s in spans) - min(s[1] for s in spans))
+        # Clamped to the slide: a generated template (PptxGenJS output, for
+        # one) can carry body boxes a few millimetres wider than the page, and
+        # a free area measured off them puts everything drawn in it off the
+        # right edge.  The slide is the outer limit whatever the shapes say.
+        x0 = max(0, min(s[0] for s in spans))
+        y0 = max(0, min(s[1] for s in spans))
+        x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
+        if x1 > page.Width:                   # overhangs: mirror the left margin
+            x1 = page.Width - x0
+        if y1 > page.Height:
+            y1 = page.Height - y0
+        return Box(x0, y0, x1 - x0, y1 - y0)
 
     # Nothing sizeable was removed: fall back to the page, inset by whatever
     # margin the surviving chrome sits on, and below the lowest of it.

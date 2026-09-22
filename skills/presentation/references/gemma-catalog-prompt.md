@@ -80,7 +80,7 @@ manifest, so the model is never asked for them.
 
 `structure.json` carries a `layout` field, and it is tempting to key the catalog
 on it. Don't. It is the master's autolayout id, and on a designed template it is
-the same number on every slide — the Kite fixture reports `layout: 20, master:
+the same number on every slide — the demo template in `tests/fixtures/` reports `layout: 20, master:
 DEFAULT` for all nine of its designs. A decision table keyed on it points every
 rule at the same place and is worthless.
 
@@ -127,7 +127,7 @@ layout ids shows up there rather than in the shipped catalog.
 Nothing by hand:
 
 ```bash
-scripts/catalog_build.py catalog/ -o the pack's catalog.md
+scripts/catalog_build.py templates/acme/catalog     # writes templates/acme/catalog.md
 ```
 
 `catalog_build.py` merges these judged fields with the measured ones from stage

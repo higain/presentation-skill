@@ -13,9 +13,11 @@ script pasted an example's real hex values into a pack for a different
 template, and three of that pack's colours were another company's.
 
 Creates `templates/<name>/` in the presentation skill, copies the template in,
-and writes `profile.json`. Re-running updates the profile and leaves the
-catalog alone -- roles get revised after somebody looks at a real deck, and
-that must not cost the catalog.
+and writes `profile.json`. Re-running **merges**: whatever the command line
+does not mention -- the palette, the type scale, the notes -- is kept from the
+profile already there, so the notes stage cannot wipe the palette stage and a
+role can be revised on its own. The catalog is never touched -- roles get
+revised after somebody looks at a real deck, and that must not cost it.
 
 **Every value here came from a person answering a question about counted
 evidence.** This script chooses nothing. It refuses a colour the template does
@@ -135,10 +137,60 @@ def _nearest(colour, present):
 
 
 def build_profile(args, existing=None):
-    """The profile dict, with every key the engine reads."""
-    roles = dict(args.colour or ())
-    series = list(args.series or ())
-    scale = dict(args.size or ())
+    """The profile dict, with every key the engine reads.
+
+    ``existing`` is the profile already on disk, if any. Each of the three
+    groups -- colours (roles and series together), type scale, annotations --
+    is taken from the command line when any of it was given there, and from
+    ``existing`` otherwise. The first version of this script rebuilt the
+    profile from the command line alone, and the documented notes-only re-run
+    of stage 3 silently emptied the palette stage 2 had just written.
+    """
+    existing = existing or {}
+    old_palette = existing.get("palette") or {}
+    old_roles = old_palette.get("_roles") or {}
+
+    def _parse(value):
+        try:
+            return int(str(value).lstrip("#"), 16)
+        except ValueError:
+            return None
+
+    if args.colour or args.series:
+        roles = dict(args.colour or ())
+        series = list(args.series or ())
+        if not args.colour or not args.series:
+            # Half given: keep the other half from the profile on disk.
+            kept_roles = {role: _parse(old_palette.get(key))
+                          for role, key in old_roles.items()
+                          if role != "series"}
+            kept_series = [_parse(old_palette.get(key))
+                           for key in old_roles.get("series") or ()]
+            if not args.colour:
+                roles = {r: c for r, c in kept_roles.items() if c is not None}
+            if not args.series:
+                series = [c for c in kept_series if c is not None]
+    else:
+        roles = {role: _parse(old_palette.get(key))
+                 for role, key in old_roles.items() if role != "series"}
+        roles = {r: c for r, c in roles.items() if c is not None}
+        series = [c for c in (_parse(old_palette.get(key))
+                              for key in old_roles.get("series") or ())
+                  if c is not None]
+
+    if args.size:
+        scale = dict(args.size)
+    else:
+        scale = {role: float(size) for role, size
+                 in (existing.get("type_scale") or {}).items()}
+
+    old_notes = existing.get("annotations") or {}
+    if args.note or args.note_prefix:
+        notes = list(args.note or ())
+        prefixes = list(args.note_prefix or ())
+    else:
+        notes = list(old_notes.get("exact") or ())
+        prefixes = list(old_notes.get("prefixes") or ())
 
     names, palette = {}, {}
     for colour in list(roles.values()) + series:
@@ -170,8 +222,8 @@ def build_profile(args, existing=None):
         "name": args.name,
         "asset": "template" + Path(args.template).suffix.lower(),
         "annotations": {
-            "exact": list(args.note or ()),
-            "prefixes": list(args.note_prefix or ()),
+            "exact": notes,
+            "prefixes": prefixes,
         },
         "palette": {
             "_order": [names[c] for c in
@@ -184,8 +236,6 @@ def build_profile(args, existing=None):
         },
         "type_scale": {role: float(size) for role, size in scale.items()},
     }
-    if existing and not scale:
-        profile["type_scale"] = existing.get("type_scale", {})
     return profile
 
 
@@ -304,9 +354,19 @@ def main():
 
     print(f"Wrote {root}/")
     print(f"  {asset.name}   the template")
+    kept = []
+    if existing:
+        if not (args.colour or args.series):
+            kept.append("palette")
+        if not args.size:
+            kept.append("type scale")
+        if not (args.note or args.note_prefix):
+            kept.append("notes")
     print(f"  profile.json   {len(profile['palette']) - 2} colours, "
           f"{len(profile['type_scale'])} type roles, "
-          f"{len(profile['annotations']['exact'])} notes")
+          f"{len(profile['annotations']['exact'])} notes"
+          + (f"  (kept from the existing profile: {', '.join(kept)})"
+             if kept else ""))
     for line in warnings(profile):
         print(f"  ! {line}")
     print("\nNext: extract the catalog, or the pack has a palette and no idea "

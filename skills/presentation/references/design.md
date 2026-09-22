@@ -43,8 +43,8 @@ them in that form.
 in colored circles, a consistent card shape. A motif is what makes a set of
 slides read as one deck.
 
-Not a colour bar and not an accent stripe: those are the tells, and SKILL.md's
-Composition section says why.
+Not a colour bar and not an accent stripe: those are the tells, and the
+Composition section of `references/drawing.md` says why.
 
 ### Consistency
 

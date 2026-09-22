@@ -169,7 +169,7 @@ def repair_theme_colours(template: Path, out: Path) -> list[str]:
     **The reason this exists.**  ``build_deck`` copies the template, opens it in
     Impress and saves it back, and that round trip does not preserve the theme
     colour scheme.  Measured on a 3-master template whose every theme sets
-    ``dk2`` to the brand navy ``#022A3A``: the saved deck came back with *six*
+    ``dk2`` to the brand's navy: the saved deck came back with *six*
     masters, of which two were invented by LibreOffice and carried its own
     default scheme (``dk2=cccccc``), while the template's real masters were
     renumbered out to 44-47.  A section-divider layout paints its background as

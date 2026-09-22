@@ -98,13 +98,6 @@ def _is_inert(master: str, inert_notes: bool) -> bool:
     return inert_notes and master.startswith(_NOTES_MASTERS)
 
 
-def find_shared_master_themes(files: Mapping[str, bytes]) -> list[str]:
-    return [
-        f"{master} shares {theme} with {first}"
-        for master, _, _, theme, first in _shares(files)
-    ]
-
-
 def live_shared_master_themes(files: Mapping[str, bytes]) -> list[str]:
     inert_notes = _notes_master_share_is_inert(files)
     return [

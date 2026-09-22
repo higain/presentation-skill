@@ -1,8 +1,8 @@
 ---
 name: presentation
 description: "Create, edit, read and QA presentations — .odp and .pptx alike, plus .otp/.potx templates and legacy .ppt. Use whenever a slide deck is involved: building a deck or pitch, filling in a template, editing or restyling an existing one, extracting text or speaker notes, converting between formats, or rendering slides to images for visual review. Triggers on \"PowerPoint\", \"Impress\", \"deck\", \"slides\", \"presentation\", \"Präsentation\", \"Folien\", or any .odp/.otp/.pptx/.potx/.ppt filename. The user's word for a file says nothing about its extension — a file someone calls \"the PowerPoint\" is often an .odp — so check the actual file, and save a deck back in the format it arrived in."
-compatibility: "Needs LibreOffice Impress 25.2+ with python3-uno, plus python3-lxml, python3-defusedxml, python3-pil and poppler-utils. All dependencies come from apt — never run pip or npm. Works offline; no network access required."
-license: none yet — add one before publishing. Third-party notices in THIRD-PARTY.md
+compatibility: "Needs LibreOffice Impress 25.2+ with python3-uno, plus python3-lxml, python3-defusedxml, python3-pil, poppler-utils and Python 3.11+. All dependencies come from apt — never run pip or npm. Works offline; the only network use is the optional vision reviewer, and only when you point it at a hosted endpoint."
+license: Apache-2.0 (see LICENSE at the repository root; third-party notices in THIRD-PARTY.md)
 ---
 
 # Presentations: .odp and .pptx
@@ -119,7 +119,7 @@ def fill(doc, page, slot, design):
                role="caption", align="center")      # colour picked for the bg
 
 build_deck("acme", "out.pptx", [7, 8, 13], fill=fill,
-           footer="Lethal trifecta · Board briefing · 2026")
+           footer="Q3 review · Board briefing · 2026")
 ```
 
 **Vary the designs, and set the footer.** Both are one argument of that last
@@ -170,8 +170,8 @@ timeline, a table of real numbers. See Composition in `references/drawing.md`.
 
 **Every path on this page is relative to this skill's own directory, not to
 where you are working.** Find it once — the directory holding the `SKILL.md`
-you are reading — and prefix it, or `cd` there. `assets/` and `references/` are
-inside it. (`build_deck` resolves a template against it for you, so
+you are reading — and prefix it, or `cd` there. `references/`, `templates/`
+and `scripts/` are inside it. (`build_deck` resolves a template against it for you, so
 `build_deck("acme", ...)` works from anywhere.)
 
 **Run each script directly** — every one carries a shebang and the executable
@@ -200,9 +200,9 @@ The `office` modules a build script imports:
 | `office.deckbuild` | `build_deck` — a whole deck from a template, in any order |
 | `office.draw` | `rect`, `ellipse`, `line`, `arrow`, `polygon`, `chevron`, `text`, `chip`, `bullets`, `table`, `venn`, `canvas`, `Box`, `page_box`, `restyle`, `contrast_ratio`, `readable_on`, `fit_size`, `fit_lines` — **putting new things on a slide**, and `Box` to lay it out |
 | `office.draw` — composition | `cards`, `steps`, `kpis`, `statement` — the four layouts every build draws by hand. One call each, with the padding, the equal heights, the arrows and the line breaks already right. See Composition in `references/drawing.md` |
-| `office.draw` — house style | `color`, `series`, `palette`, `size_for`, and `role=` on `text` — **the template's own colours and sizes, by name.** Four runs invented hex the template does not contain and picked a footnote size per slide; these are counted off the asset. the pack's `catalog.md` prints both tables |
+| `office.draw` — house style | `color`, `series`, `palette`, `size_for`, and `role=` on `text` — **the template's own colours and sizes, by name.** Four runs invented hex the template does not contain and picked a footnote size per slide; these are counted off the asset. The pack's `catalog.md` prints both tables |
 | `office.template` | `retext`, `set_text`, `find_shapes`, `shape_by_text`, `clone_slide`, `strip_annotations`, `fit_pill`, `shrink_to_fit`, `scale_bars`, `text_overflow`, `overflowing`, `colliding`, `set_footer` — editing what a template slide already has |
-| `office.impress` | open, save, slides, shapes, placeholders, notes, `slide_size`, `mm()`/`pt()` |
+| `office.impress` | `impress_document` / `load_document`, `save_as`, `slides`, `shapes`, `placeholder`, `notes_text` / `set_notes`, `slide_size`, `mm()`/`pt()` |
 | `office.rasterize` | `rasterize` — deck to images, with the hidden-slide policy as an argument |
 
 **Importing `office.*`:** `make_deck.py` puts this skill's `scripts/` directory
@@ -345,12 +345,13 @@ is what the renders are for. Details, and what each finding means:
 
 ## Notes on this environment
 
-- **apt only.** Never run `pip` or `npm`. Everything needed is installed; if
-  something is missing, say so and stop.
+- **apt only.** Never run `pip` or `npm`. Everything needed comes from apt
+  (the package list is in the frontmatter above and in the README); if
+  something is missing, name the package and stop.
 - **Geometry is 1/100 mm.** Use `mm()`/`pt()`; read `slide_size(doc)` rather
-  than assuming. A brand template is usually its own size: one is
-  32001 × 18000 against LibreOffice's 28000 × 15750, and every offset computed
-  against the default lands 14% too far left.
+  than assuming. A brand template is usually its own size: PowerPoint's 16:9
+  default is 33867 × 19050 against LibreOffice's 28000 × 15750, and every
+  offset computed against the wrong one lands a fifth too far left.
 - **`from com.sun.star... import ...` only works after `import uno`.**
 - **The deck's language is the user's, not the machine's.** Write in the
   language of the brief, leave a template's own footer in its language only if

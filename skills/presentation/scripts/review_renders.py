@@ -368,7 +368,10 @@ def main():
     if args.slides:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from office.impress import parse_slide_spec
-        wanted = set(parse_slide_spec(args.slides))
+        try:
+            wanted = set(parse_slide_spec(args.slides))
+        except ValueError as e:
+            ap.error(f"--slides {e}")
 
     pngs = find_renders(outdir, wanted)
     if not pngs:

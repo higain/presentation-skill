@@ -399,13 +399,22 @@ def main():
     print(f"# Checking — {deck.name}\n")
     wanted = None
     if args.slides:
-        from qa import _parse_slides
-        wanted = _parse_slides(args.slides)
+        try:
+            wanted = qa._parse_slides(args.slides)
+        except ValueError as e:
+            print(f"Error: --slides {e}", file=sys.stderr)
+            if render_proc is not None:
+                render_proc.kill()
+            return 2
     try:
         issues, checked, sparse, notes, prose = check(
             deck, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
+        if render_proc is not None:
+            # Started before the checks; nobody will read its pipes now.
+            render_proc.kill()
+            render_proc.communicate()
         return 2
 
     print(f"{checked} slide(s) checked.\n")
@@ -467,8 +476,9 @@ def main():
             print(f"\n{review}")
         elif images and not os.environ.get(REVIEW_MODEL_ENV):
             print(f"\n(No visual review: set ${REVIEW_MODEL_ENV} to a model "
-                  f"that accepts images — e.g. google/gemma-4-31b-it — and "
-                  f"every run gets one. Nothing here has been seen.)")
+                  f"that accepts images — a local one served by ollama or "
+                  f"vLLM, or a hosted one if the deck may leave the machine — "
+                  f"and every run gets one. Nothing here has been seen.)")
 
         # Rewritten now that the sheet has a name -- the early write above had
         # to guess at one, and guessed wrong on every deck short enough to fit
