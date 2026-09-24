@@ -177,7 +177,7 @@ def main():
         if dest.exists() and not args.force:
             print(f"slide {n:02d}: exists, left alone (--force to replace)")
             continue
-        # Identity is stamped from the manifest, exactly as catalog_gemma does.
+        # Identity is stamped from the manifest, as name_designs does.
         stamped = {"slide": n, "layout": rows[n]["layout"],
                    "master": rows[n]["master"], "recovered_from":
                    str(Path(args.markdown).name), **entry}

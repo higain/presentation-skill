@@ -210,69 +210,47 @@ Alongside it, needing no `plan.md`: **one headline used on more than one slide**
 reported as prose. That is the visible shape of the same defect — a section name
 sitting where sixteen different claims should be.
 
-## The vision reviewer
+## Visual QA through the vision-agent
 
-```bash
-export PRESENTATION_REVIEW_MODEL=gemma3:27b                     # a local ollama model
-export PRESENTATION_REVIEW_BASE_URL=http://localhost:11434/v1   # its endpoint
-# or a hosted one, which sends the renders off the machine:
-export PRESENTATION_REVIEW_MODEL=google/gemma-4-31b-it OPENROUTER_API_KEY=...
-```
+**You cannot see the renders yourself** — a build model has no image processing —
+so the eyes of this skill are the **vision-agent** (the `vision` subagent).
+After `make_deck.py` writes `render/` (or `scripts/render.py deck.odp` prints
+its PNG paths), **delegate every PNG to the vision-agent** and write its
+per-slide verdicts into the report's Verdicts table. That delegation is the
+required visual half of QA, with the same standing as the automated half: **a
+deck is not finished while a verdict is blank**, and a build model must never
+describe a slide it has not seen.
 
-With that set, `make_deck.py` sends every render to that model and prints what
-it saw, in the report and on stdout. Standalone:
-
-```bash
-scripts/review_renders.py render/ --openrouter --model google/gemma-4-31b-it
-scripts/review_renders.py render/ --model gemma3:27b     # local ollama
-scripts/review_renders.py render/ --dry-run              # see the request
-```
-
-**The model must accept images.** Point this at a text-only model and it will
-return a confident review of a slide it never saw, which is worse than no
-review — check the model's input modalities first (at the time of writing
-`gemma3`, `gemma-4` and `qwen3.6` accept images; many chat models do not).
-
-It is asked for what measurement cannot reach: figures off-centre, peers styled
+Give the vision-agent the same brief the scripted reviewer used to get: report
+what measurement cannot reach — figures off-centre, peers styled
 inconsistently, cards at different heights, a Venn whose circles do not
-overlap, a region that reads as unfinished, text left in another language. It
-is told that overflow, off-slide geometry, contrast and collisions are already
-measured, so it does not spend its findings re-reporting them.
+overlap, a region that reads as unfinished, text left in another language —
+and do not re-report overflow, off-slide geometry, contrast or collisions,
+which `qa.py` already measures. Forbid it from reporting spelling, typos,
+grammar or punctuation: the deck's exact text is read from the file by `qa.py`,
+and a model guessing letters out of pixels is strictly worse. Language and
+leftover placeholder wording are still fair game.
 
-**It is forbidden to report spelling, typos, grammar or punctuation.** The
-deck's exact text is read from the file by `qa.py`; a vision model guessing
-letters out of pixels is strictly worse, and on the first real run it produced
-two findings of the form *"misspelling of 'EXFILTRATION' as 'EXFILTRATION'"* —
-self-contradicting, and 2 of 10 findings wasted. Language and leftover
-placeholder wording are still fair game; those are not letter-level claims.
+What to check, most common first:
 
-**Findings are clustered across slides before they are printed.** Every slide
-is its own call, so a model has no idea it already reported the footer four
-slides ago — it just reports it again in different words. Findings whose
-wording *and location* overlap by 40% of their content words are folded into
-one line naming every slide. That run went from ten lines to six, with the four
-footer findings becoming one; a second run described the same footer as
-"placeholder text in a different language" twice and "placeholder text in
-footer" once, which share one content word out of four and need the shared
-"bottom left footer" to come together.
+- **Text overflow, or text cut off at a box or slide edge.**
+- Overlapping elements (text through shapes, lines through words)
+- Footers or citations colliding with the content above
+- Elements closer than 0.3", or margins under 0.5"
+- Uneven gaps — cramped in one place, empty in another. **Start with the
+  slides the run listed under "slides to look at"**, the ones already measured
+  as painting almost nothing
+- Columns or repeated cards not aligned consistently
+- Low-contrast text or icons (light on light, dark on dark)
+- Template decoration left behind after text replacement — e.g. a title
+  underline positioned for one line when the new title wraps to two
+- Leftover placeholder text
 
-**Expect the findings themselves to move between runs.** Those two runs over
-the same deck agreed on the footer and on the emptiest slide and on nothing
-else — where the first invented two spelling defects, the second invented a
-misaligned Venn and an off-centre table, both measurably false. Banning a
-category of junk redirects it rather than removing it; the model has an
-appetite for finding something on every slide. Treat a finding as a reason to
-open the slide, never as a fact about it.
-
-**Advisory, always.** `review_renders.py` exits 0 whether it finds ten things
-or none, and `make_deck.py` never fails a build on it. A vision model's
-false-positive rate on slide layout is unknown, and a check that cannot be
-satisfied is a check that gets ignored — taking the measured ones with it. Read
-the finding, look at the slide, decide. A reviewer that is down, slow, or
-talking nonsense costs you nothing: the run says nobody looked and carries on.
-
-**But advisory is not the same as dismissible on argument.** A finding here is
-dismissed only by a measurement you show:
+**Treat what the vision-agent reports as a reason to look, never as a fact.**
+A vision model's false-positive rate on slide layout is unknown and its findings
+move between runs — where one invented a spelling defect, another invented a
+misaligned Venn that was measurably false. A finding here is dismissed only by a
+measurement you show, never by reasoning about why the reviewer must be wrong:
 
 | It says | Settle it with |
 |---|---|
@@ -289,35 +267,6 @@ finding as a hallucination in its own report. The search was wrong, the reviewer
 was right, and the deck shipped in two languages. **If nothing can settle it,
 the finding stands.**
 
-This does not replace your own eyes where you have them. Where you have none it
-is one of two things you do have, the other being `wireframe.py` — and unlike
-the reviewer, the wireframe cannot invent anything.
-
-## Visual QA
-
-Slides are visual. Read the renders; do not reason about coordinates.
-
-```bash
-scripts/render.py deck.odp          # prints absolute PNG paths
-```
-
-Pass those paths to the view tool and look at every slide. After staring at the
-generating code you see what you expected rather than what rendered, so look
-fresh. What to check, most common first:
-
-- **Text overflow, or text cut off at a box or slide edge.**
-- Overlapping elements (text through shapes, lines through words)
-- Footers or citations colliding with the content above
-- Elements closer than 0.3", or margins under 0.5"
-- Uneven gaps — cramped in one place, empty in another. **Start with the
-  slides the run listed under "slides to look at"**, which are the ones already
-  measured as painting almost nothing
-- Columns or repeated cards not aligned consistently
-- Low-contrast text or icons (light on light, dark on dark)
-- Template decoration left behind after text replacement — e.g. a title
-  underline positioned for one line when the new title wraps to two
-- Leftover placeholder text
-
 **Hidden slides are not rendered.** A deck with hidden slides produces fewer
 pages than it has slides, so PNG numbers stop matching slide numbers after the
 first hidden one. `dump.py` flags which slides are hidden, and
@@ -325,16 +274,15 @@ first hidden one. `dump.py` flags which slides are hidden, and
 when the numbering has to line up.
 
 `thumbnail.py` works on your finished deck too, not just on templates: one
-contact sheet to scan, then per-slide renders only for the slides that look
-wrong. That is a great deal cheaper than reading fifteen PNGs one at a time.
+contact sheet for the vision-agent to scan, then per-slide renders only for the
+slides that look wrong. That is a great deal cheaper than reading fifteen PNGs
+one at a time.
 
-**If you cannot see images**, run `wireframe.py` over the render directory, say
-that is what you worked from, and name the slides you could not verify — rather
-than claiming the deck is checked.
-Set `$PRESENTATION_REVIEW_MODEL` (see *The vision reviewer* above) so something
-looks — then report what it found *as a model's opinion*, run `qa.py`, and
-still ask the user to eyeball the slides, naming them. A build model without
-vision must never describe a slide it has not seen.
+**If the vision-agent is unavailable**, run `wireframe.py` over the render
+directory, say that is what you worked from, and name the slides nothing with
+eyes has seen — rather than claiming the deck is checked. The wireframe cannot
+invent anything, but it shows only emptiness, banding and placement — never
+whether a slide is any good.
 
 ## Content QA
 

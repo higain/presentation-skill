@@ -10,7 +10,7 @@ Two sources feed every entry:
 | Marked | Comes from | Trust |
 |---|---|---|
 | **[measured]** | `catalog_extract.py`, read out of the template file | exact |
-| **[judged]** | the local vision model, from each slide's render | review it |
+| **[judged]** | the vision-agent, from each slide's render | review it |
 
 The measured fields are the ones a build script cannot work without, and exactly
 the ones a model gets wrong when asked to invent them: the retext keys, the

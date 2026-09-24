@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Name a template's designs without a vision model.
+"""Name a template's designs from a worksheet.
 
     python3 scripts/name_designs.py templates/acme/catalog            # worksheet
     python3 scripts/name_designs.py templates/acme/catalog --import   # read it back
 
-The catalog's judged half -- what each design is *for* -- is normally written by
-a local vision model looking at the renders. **A published skill cannot require
+The catalog's judged half -- what each design is *for* -- is normally written
+by the vision-agent looking at the renders. **A published skill cannot require
 a GPU**, so this is the other way: measurements fill in what measurements can,
-and a person fills the rest from the contact sheet in about five minutes for
-twenty designs. A person is better at it than a 31B model was, and much better
-than a text-only model, which will answer confidently about images it never
-received.
+and the vision-agent (or, failing that, a person) fills the rest from the
+renders in about five minutes for twenty designs. A person is better at it than
+a 31B model was, and much better than a text-only model, which will answer
+confidently about images it never received.
 
 Without `--import` it writes `designs.md` beside the renders: one block per
 design, the measured facts already filled, blanks where judgement goes.
@@ -200,7 +200,7 @@ def write_entries(catalog: Path, filled):
             "slide": number,
             "layout": structure.get("layout"),
             "master": structure.get("master"),
-            "written_by": "name_designs.py + a person",
+            "written_by": "name_designs.py + the vision-agent",
             "name": fields.get("name") or guess_name,
             "purpose": fields.get("purpose") or "",
             "use_when": fields.get("use_when") or "",
@@ -293,9 +293,9 @@ def main():
     if not args.do_import:
         out = worksheet(args.catalog)
         print(f"Wrote {out}")
-        print("\nOpen it beside the renders and fill `purpose`, `use_when` and "
-              "`avoid_when` for each design. The measured lines are already "
-              "right.\n")
+        print("\nDelegate each design's `render.png` to the vision-agent and "
+              "fill `purpose`, `use_when` and `avoid_when` from what it "
+              "reports. The measured lines are already right.\n")
         print(f"Then: python3 {sys.argv[0]} {args.catalog} --import")
         return 0
 

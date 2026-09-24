@@ -38,7 +38,7 @@ Two halves feed the catalog, and keeping them apart is the point:
 | Half | Written by | Contains |
 |---|---|---|
 | **measured** | `catalog_extract.py`, deterministically | retext keys, empty slots, group counts, canvas hint, title budgets, geometry |
-| **judged** | a person (worksheet) or a local vision model | name, purpose, use/avoid, capacity, imagery, the decision table |
+| **judged** | a person or the vision-agent (worksheet) | name, purpose, use/avoid, capacity, imagery, the decision table |
 
 The first version of this pipeline asked a model for the catalog wholesale.
 Everything that made the result usable was added by hand afterwards, and none
@@ -150,32 +150,23 @@ this better than a 31B model did. The worksheet's `## Canvas` block lets you
 name the canvas design and its `keep` tuple by hand when the measured pick is
 wrong (stage E shows you).
 
-### Method 2: a local vision model
+### Method 2: the vision-agent
 
-`catalog_gemma.py` talks to any OpenAI-compatible `/chat/completions`
-endpoint (ollama, vLLM, llama.cpp server, LM Studio). Stdlib only.
+The same worksheet, but the blanks are filled by **delegating each design's
+`render.png` to the vision-agent** (the `vision` subagent) — it reads the
+image, and you put its judgement into `purpose` / `use_when` / `avoid_when`.
+This is the deck-pipeline's "no-hosted-model" rule applied to the catalog too:
+the vision-agent runs on your own infrastructure and the renders never leave
+the machine.
+
+Ask the vision-agent only for what needs eyes — what the layout is *for*, what
+its pictures depict — never for retext keys, indices or budgets, which are
+measured. Keep the user in the loop: the vision-agent proposes, the user
+approves. Then the same import as Method 1:
 
 ```bash
-# per-design pass: each render.png + structure.json -> entries/slide-NN.json
-python3 scripts/catalog_gemma.py templates/acme/catalog \
-    --base-url http://localhost:11434/v1 --model gemma3:27b
-# aggregate pass: entries -> decision_table.json
-python3 scripts/catalog_gemma.py templates/acme/catalog --aggregate \
-    --base-url http://localhost:11434/v1 --model gemma3:27b
+python3 $SETUP/name_designs.py templates/acme/catalog --import
 ```
-
-`--dry-run` writes the exact request bodies to `entries/*.request.json` and
-calls nothing, so you can confirm the endpoint and message shape first. The
-prompts are in `references/gemma-catalog-prompt.md`; the model is asked for
-judgement only and told not to produce keys, indices or budgets.
-
-**The model must accept images.** A text-only model ignores the render and
-guesses from structure alone, and every design comes back "bulleted content".
-
-`--openrouter` points the same two passes at OpenRouter (`OPENROUTER_API_KEY`
-from the environment). That is a hosted model seeing your slides, outside the
-privacy boundary above; a deliberate exception for a template you are willing
-to send.
 
 ---
 
@@ -271,17 +262,11 @@ and open every render it prints. Every wrong design choice gets corrected
 script: the point is that the next deck picks better without being told. Two
 passes and the default is genuinely good.
 
-Calibrating is the pass most worth having a vision model on, because it
-judges looks rather than correctness:
-
-```bash
-export PRESENTATION_REVIEW_MODEL=gemma3:27b                     # local
-export PRESENTATION_REVIEW_BASE_URL=http://localhost:11434/v1
-```
-
-Every `make_deck.py` run then also sends the renders to that model and prints
-what it saw. Advisory, never fails a build; see *The vision reviewer* in
-`references/qa.md`.
+Calibrating is the pass most worth having eyes on, because it judges looks
+rather than correctness: build the deck, then **delegate every render to the
+vision-agent** (the `vision` subagent) and correct what it flags in the
+catalog. Nothing here calls a hosted model; the renders never leave the
+machine.
 
 ---
 
@@ -296,11 +281,10 @@ what it saw. Advisory, never fails a build; see *The vision reviewer* in
   review each, and nothing can recreate them from the template. The renders
   and `structure.json` files are regenerated in thirty seconds, so leaving
   those out is fine.
-- Nothing here calls a hosted model by default. `catalog_gemma.py` and
-  `review_renders.py` call the endpoint you give them; `--openrouter` and a
-  provider-qualified model name (`vendor/model`) are the two spellings that
-  mean a hosted one. Keys are read from `OPENROUTER_API_KEY` or
-  `OPENAI_API_KEY`; no script reads another tool's credential store.
+- Nothing here calls a hosted model by default. The only step that needs eyes
+  — judging a design or reviewing a render — is the vision-agent, which runs on
+  your own infrastructure; no script reads another tool's credential store.
+  Per-deck visual QA and catalog judging keep the renders on the machine.
 
 ---
 
@@ -312,12 +296,10 @@ what it saw. Advisory, never fails a build; see *The vision reviewer* in
 | `no manifest.json in …` | Point the script at the directory `catalog_extract.py` wrote, not at a `slide-NN/` subfolder. |
 | `--asset: no template found beside …` | The catalog directory is not inside a pack. Pass `--asset path/to/template.pptx`. |
 | `make_pack.py` refuses a colour | It is not on any slide of the template. Take it from `count_style.py`; `--allow-unseen` for a colour that lives only in the master. |
-| Model reply is not valid JSON | `catalog_gemma.py` strips fences and extracts the first JSON value. If it still fails it prints the reply head; usually the model added prose. Temperature is already 0; use a larger model. |
-| Every design catalogued as "bulleted content" | The model is not seeing the images. Confirm with `--dry-run` that the image part is present and that `--model` names a vision model. |
-| The vision review is generic, or praises slides that are broken | Same cause: a text-only model. Check the model's input modalities. |
+| The vision-agent's judgement is generic, or praises a broken slide | It is not seeing the renders, or is a text-only model. Confirm it actually reads the `render.png` you delegate to it. |
 | A vision finding looks wrong and the string it names is nowhere in the file | Check *how* you looked. A footer is a page property, not a shape, so a shape search cannot see one. `wireframe.py` and `probe.py` settle most of the rest; a finding nothing can settle stands. |
-| `make_deck.py` prints "No visual review" | `$PRESENTATION_REVIEW_MODEL` is unset. That is the default. |
-| `no per-layout entries` on `--aggregate` | Run the per-design pass first; aggregate reads `catalog/entries/*.json`. |
+| No vision-agent is available for the visual half of QA | `wireframe.py` over `render/` is the fallback; say which slides nothing with eyes has seen. |
+| `no per-layout entries` on `--aggregate` | Run `name_designs.py --import` first; aggregate reads `catalog/entries/*.json`. |
 | Capacity figures look too generous | Expected. Fix them in `overrides.md`, or in `catalog/entries/slide-NN.json`, and rebuild. |
 | My edits to `catalog.md` disappeared | It is generated. Put them in `overrides.md` under an anchor and rebuild. |
 | `--check` reports drift after the template changed | Expected, and the point of it. Re-extract, rebuild, read the diff. |
@@ -335,14 +317,13 @@ what it saw. Advisory, never fails a build; see *The vision reviewer* in
 | `../presentation-setup/scripts/find_notes.py` | Stage A: candidate authoring notes | build-time |
 | `../presentation-setup/scripts/make_pack.py` | Stage A: write the pack and its `profile.json` | build-time |
 | `scripts/catalog_extract.py` | Stage B: template to `catalog/` dossiers | build-time |
-| `../presentation-setup/scripts/name_designs.py` | Stage C without a model: worksheet in, entries out | build-time |
-| `scripts/catalog_gemma.py` | Stage C with a model: dossiers to judged entries and a decision table | build-time |
+| `../presentation-setup/scripts/name_designs.py` | Stage C without a hosted model: worksheet in, entries out | build-time |
+| `scripts/catalog_gemma.py` — *removed* | Used to judge dossiers with a hosted vision model; that job is now the vision-agent filling the `name_designs.py` worksheet | build-time |
 | `scripts/catalog_build.py` | Stage D: both halves plus overrides to `catalog.md`; `--check` for drift | build-time |
 | `scripts/catalog_import.py` | Recovery: a hand-written catalog to the entries it never kept | once, if needed |
 | `../presentation-setup/scripts/probe_deck.py` | Stage E: three real slides on the new pack | build-time |
-| `scripts/review_renders.py` | The vision reviewer: renders to advisory findings | runtime, when `$PRESENTATION_REVIEW_MODEL` is set |
-| `scripts/wireframe.py` | A render as a text ink-map, no model | runtime |
-| `references/gemma-catalog-prompt.md` | The prompt spec | reference |
+| `scripts/review_renders.py` — *removed* | The per-deck visual reviewer used to send renders to a hosted model; that job is now the vision-agent, which the build agent delegates to. |
+| `scripts/wireframe.py` | A render as a text ink-map, no model; the fallback when the vision-agent is unavailable | runtime |
 | `references/catalog.example.md` | The generated format, annotated | reference |
 | `templates/README.md` | What a pack is and how one is chosen | reference |
 | `SKILL.md` | The runtime documentation: how decks get built | runtime |

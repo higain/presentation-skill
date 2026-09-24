@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-Build a per-layout dossier from a company template, ready to hand to a local
-vision model (e.g. gemma) that writes the human catalog.
+Build a per-layout dossier from a company template, ready to judge -- by the
+vision-agent, or a person -- into the human catalog.
 
     python3 scripts/catalog_extract.py company.pptx -o catalog/
 
 This is stage A of turning a brand template into a baked-in default; the whole
 pipeline is in README.md.  It runs entirely on your machine, calls no network,
-and emits only *structure* -- plus one render per slide.  Nothing here needs a
-model; the model comes next, reading what this writes.
+and emits only *structure* -- plus one render per slide.  Nothing here needs
+eyes; the vision-agent comes next, reading what this writes.
 
-**Everything a model cannot be trusted with is measured here.**  The first
+**Everything eyes cannot be trusted with is measured here.**  The first
 version of this pipeline asked the model for the catalog wholesale, and the
 first catalog then grew, by hand, the fields that actually decide whether a
 build works: the ``retext`` keys, which slots are empty, how much text lives
 inside groups, how many characters a title box holds, and which shapes a canvas
 keeps.  None of that is judgement -- it is transcription and arithmetic -- so it
-is extracted, and the model is left with what needs eyes.
+is extracted, and the vision-agent is left with what needs eyes.
 
 For each slide of the template it writes, under the output directory:
 
@@ -24,12 +24,13 @@ For each slide of the template it writes, under the output directory:
       manifest.json          one row per slide: number, layout, master, png, slots
       slide-01/
         structure.json       slots, retext keys, canvas hint, title budgets
-        render.png           the slide as an image, for the vision model
+        render.png           the slide as an image, for the vision-agent
       slide-02/ ...
 
-Feed each slide-NN/ pair (render.png + structure.json) to the model together
-with references/gemma-catalog-prompt.md, then assemble the catalog with
-``catalog_build.py``.
+`name_designs.py` turns each slide-NN/ pair into a worksheet (`designs.md`)
+with the measured facts filled and three blanks per design; the vision-agent
+fills the blanks from `render.png`, then `name_designs.py --import` and
+``catalog_build.py`` assemble the catalog.
 """
 
 import argparse
@@ -345,7 +346,7 @@ def extract(source: Path, outdir: Path, dpi: int) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Extract per-layout dossiers from a template for a vision model"
+        description="Extract per-layout dossiers from a template for judging"
     )
     ap.add_argument("input", help="Template .pptx/.potx/.odp/.otp to survey")
     ap.add_argument("-o", "--outdir", default="catalog",
@@ -368,8 +369,9 @@ def main():
     masters = sorted({s["master"] for s in manifest["slides"]})
     print(f"Wrote {n} layout dossiers to {args.outdir}/")
     print(f"Masters seen: {', '.join(masters)}")
-    print(f"Next: feed each slide-NN/ to your model with "
-          f"references/gemma-catalog-prompt.md")
+    print(f"Next: name_designs.py {args.outdir} to write the worksheet, fill "
+          f"its blanks with the vision-agent, then "
+          f"name_designs.py {args.outdir} --import")
 
 
 if __name__ == "__main__":

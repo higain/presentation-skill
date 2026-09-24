@@ -17,11 +17,13 @@ Give it your build script and the deck that script writes, and it will:
 6. print a contact sheet of the whole deck,
 7. leave a per-slide verdict table in the report, with the verdicts blank.
 
-Then **open the PNGs and look at them.**  Steps 2 and 3 cannot see a slide;
+Then **give the PNGs to the vision-agent** and write its per-slide verdicts into
+the report.  Steps 2 and 3 cannot see a slide;
 they catch text that runs off the page and words nobody replaced, and they are
 blind to a title colliding with its underline, a diagram drawn off-centre, or a
 slide that is simply empty.  Every deck that shipped broken had passed a check
-like this one and had never been looked at.
+like this one and had never been looked at — and a build model with no eyes
+must delegate that looking to the vision-agent rather than skip it.
 
 Exit codes: 0 clean, 1 the build failed or the checks found something, 2 bad
 usage.
@@ -39,7 +41,6 @@ sys.path.insert(0, str(HERE))
 from office.deckbuild import SKIP_QA_ENV, find_template  # noqa: E402
 from office.impress import PRESENTATION_EXTS, SofficeError, shutdown  # noqa: E402
 from qa import check, validate_pptx  # noqa: E402
-from review_renders import MODEL_ENV as REVIEW_MODEL_ENV  # noqa: E402
 
 PPTX_EXTS = {".pptx", ".potx"}
 
@@ -154,8 +155,7 @@ def _wireframes(outdir: Path, numbers) -> list:
 
 
 def _write_report(deck: Path, issues: list, checked: int, outdir=None,
-                  sheet=None, sparse=(), review=None, looked=False,
-                  notes=(), prose=None) -> Path:
+                  sheet=None, sparse=(), notes=(), prose=None) -> Path:
     """Leave the findings on disk, next to the deck, as ``<deck>-report.md``.
 
     A build that ends between "here is what is wrong" and "fixed it" otherwise
@@ -179,8 +179,7 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     # already know whether anything has looked at this deck.  It used to be the
     # last line of the file, under the render paths, and it was read as a
     # footnote by every run that shipped a deck nobody had opened.
-    eyes = ("a vision model (advisory)" if looked
-            else "nothing — no render has been looked at yet")
+    eyes = "nothing — no render has been looked at yet"
     lines = [
         f"# {deck.name}", "",
         f"**Eyes:** {eyes}", "",
@@ -199,7 +198,7 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
                   "text and pictures, markdown, contrast and occlusion all "
                   "clean.", "",
                   "This says nothing about whether the slides look right. "
-                  "Open the renders."]
+                  "Give the renders to the vision-agent."]
     if sparse:
         lines += ["", f"## {len(sparse)} slide(s) to look at", "",
                   "Measured, but not defects: a statement slide is sparse on "
@@ -225,25 +224,12 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
                   "can have an honest use and a short title is right on a "
                   "divider. See `references/language.md`.", ""]
         lines += [f"- [ ] {finding}" for finding in prose_issues]
-    if review:
-        lines += ["", review, "",
-                  "**A finding here is dismissed only by a measurement you "
-                  "show.** Reasoning about why the reviewer must be wrong is "
-                  "how a German footer shipped on every slide of an English "
-                  "deck: the run searched the shapes, found nothing, and wrote "
-                  "the finding off as a hallucination — the footer is a page "
-                  "property, and the search could never have reached it. "
-                  "`probe.py`, `qa.py` and `wireframe.py` settle most of these; "
-                  "if none of them can, the finding stands and the fix is "
-                  "cheaper than the argument."]
     if outdir is not None:
         lines += ["", "## Renders", "",
                   f"- [ ] Look at every slide in `{outdir}`"]
         if sheet is not None:
             lines += [f"- [ ] Start with the contact sheet, `{sheet}`"]
         lines += ["",
-                  "A vision model looked at these. You still have not."
-                  if looked else
                   "Nothing above was seen by anything with eyes.", "",
                   "## Verdicts", "",
                   "One row per slide. **The deck is not finished while a "
@@ -257,43 +243,6 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     except OSError:
         return None
     return report
-
-
-def _review(outdir: Path, timeout=600):
-    """Ask a vision model to look at the renders.
-
-    Returns ``(markdown, looked)``.  ``looked`` is the honest bit: a reviewer
-    that timed out or refused still produces text to print, and reporting that
-    as "a vision model has looked at these" is the same lie as a clean report
-    on a deck nobody opened.  ``(None, False)`` when none is configured.
-
-    Runs whenever ``$PRESENTATION_REVIEW_MODEL`` names one, so looking at the
-    slides is a property of the environment rather than a step the build agent
-    has to remember.  That is the whole point: the run this was written for was
-    told to open the PNGs, was handed their paths, and never opened one.
-
-    Never raises and never fails the build -- see ``review_renders.py``.  A
-    reviewer that is down, slow or talking nonsense must not cost you a deck
-    that is otherwise finished.
-    """
-    if not os.environ.get(REVIEW_MODEL_ENV):
-        return None, False
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(HERE / "review_renders.py"), str(outdir)],
-            capture_output=True, text=True, timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return (f"## Visual review timed out after {timeout}s\n\n"
-                f"Nobody looked at these slides."), False
-    except Exception as e:                       # missing script, bad interpreter
-        return f"## Visual review could not run\n\n{type(e).__name__}: {e}", False
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout).strip()[:400] or "no output"
-        return (f"## Visual review could not run\n\n{detail}\n\n"
-                f"Nobody looked at these slides."), False
-    text = proc.stdout.strip()
-    return (text, True) if text else (None, False)
 
 
 def _contact_sheet(deck: Path, outdir: Path):
@@ -471,35 +420,25 @@ def main():
         if sheet:
             print(f"\ncontact sheet: {sheet.resolve()}")
 
-        review, looked = _review(outdir) if images else (None, False)
-        if review:
-            print(f"\n{review}")
-        elif images and not os.environ.get(REVIEW_MODEL_ENV):
-            print(f"\n(No visual review: set ${REVIEW_MODEL_ENV} to a model "
-                  f"that accepts images — a local one served by ollama or "
-                  f"vLLM, or a hosted one if the deck may leave the machine — "
-                  f"and every run gets one. Nothing here has been seen.)")
-
         # Rewritten now that the sheet has a name -- the early write above had
         # to guess at one, and guessed wrong on every deck short enough to fit
         # on a single sheet.
         _write_report(deck, issues, checked, outdir,
-                      sheet.resolve() if sheet else None, sparse, review,
-                      looked, notes, prose)
+                      sheet.resolve() if sheet else None, sparse, notes, prose)
         if images:
             print(
-                "\n**Open these and look at them.** "
-                + ("A vision model has, and said what it saw above — that is a "
-                   "second opinion, not a substitute for yours."
-                   if looked else
-                   "The checks above cannot see a slide: they will not tell "
-                   "you that a diagram is off-centre, that two shapes collide, "
-                   "or that one is still in the template's language.")
+                "\n**Give the renders to the vision-agent and write a verdict "
+                "per slide in the report's Verdicts table.** "
+                "The checks above cannot see a slide: they will not tell you "
+                "that a diagram is off-centre, that two shapes collide, or "
+                "that one is still in the template's language. Delegate every "
+                "render to the vision-agent — it reads images, and it is how "
+                "a build model with no eyes does the visual half of this "
+                "check."
                 + (" Start with slide%s %s — measured above as possibly empty."
                    % ("" if len(sparse) == 1 else "s",
                       ", ".join(str(n) for n, _ in sparse)) if sparse else "")
-                + " Then write a verdict per slide in the report's Verdicts "
-                  "table; a blank one is a slide nobody has looked at."
+                + " A blank verdict is a slide nobody has looked at."
             )
         else:
             print(

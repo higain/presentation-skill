@@ -29,9 +29,9 @@ The two font packages are optional but make the overflow check trustworthy
 for Calibri and Cambria. Run the scripts with the system `python3`: a
 virtualenv or conda interpreter cannot see `python3-uno`.
 
-An optional vision model (any OpenAI-compatible endpoint, ollama for instance)
-adds a visual reviewer. It is never required, and nothing is sent anywhere
-unless you point a script at an endpoint.
+An optional vision-agent adds the visual half of QA: the build agent delegates
+the rendered slides to it and writes its per-slide verdicts. It is never
+required, and no render is ever sent anywhere off the machine.
 
 ## Install
 
@@ -77,10 +77,10 @@ skill runs five stages and stops four times to ask you something:
    ("EXAMPLE", "Customer logo here"). You tick the real ones so they are
    deleted from every deck.
 4. **Designs**: a worksheet with everything measurable pre-filled, and three
-   blanks per design for what it is for. Five minutes with the contact sheet.
-   A local vision model can fill them instead.
+   blanks per design for what it is for. The vision-agent (or you) fills them.
 5. **Probe**: three real slides built on the new pack, rendered, for you to
-   look at. Anything wrong is a five-minute fix at this point.
+   look at — through the vision-agent. Anything wrong is a five-minute fix at
+   this point.
 
 To try it without a template of your own, use the synthetic demo master in
 `skills/presentation/tests/fixtures/kite-brand-master.pptx`. It was generated
@@ -119,9 +119,10 @@ python3 scripts/make_deck.py build.py out.pptx --template acme
 
 ## Privacy
 
-Every step runs on your machine. The extraction uses no model. The two
-scripts that can call one (`catalog_gemma.py` and `review_renders.py`) call
-only the endpoint you give them, and say so. `skills/*/templates/*` is
+Every step runs on your machine. The extraction uses no model, and nothing
+here calls a hosted one: per-deck visual QA and catalog judging both delegate
+to a vision-agent, so company slides never leave the machine.
+`skills/*/templates/*` is
 gitignored, so a company template cannot be committed by forgetting a step.
 
 ## Layout

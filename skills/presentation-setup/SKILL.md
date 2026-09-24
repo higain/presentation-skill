@@ -2,7 +2,7 @@
 name: presentation-setup
 description: "Teach the presentation skill a company template. Use when a deck should be built in a company's own design and no template pack is installed yet, when someone brings a .pptx/.potx/.odp/.otp master or corporate design to 'set up', 'onboard' or 'teach' the tooling, when D.color() raises because a deck has no palette, or when an existing pack needs updating after the template changed. Triggers on 'company template', 'corporate design', 'Firmentemplate', 'Folienmaster', 'brand template', 'set up the presentation skill', 'no pack installed'."
 license: Apache-2.0
-compatibility: "Needs the `presentation` skill installed beside this one (same skills/ directory or ~/.claude/skills/), and its dependencies: LibreOffice Impress 25.2+ with python3-uno, python3-lxml, python3-defusedxml, python3-pil, poppler-utils, Python 3.11+. All from apt, never pip or npm. Works offline; a vision model is optional and never required."
+compatibility: "Needs the `presentation` skill installed beside this one (same skills/ directory or ~/.claude/skills/), and its dependencies: LibreOffice Impress 25.2+ with python3-uno, python3-lxml, python3-defusedxml, python3-pil, poppler-utils, Python 3.11+. All from apt, never pip or npm. Works offline. Judging each design's render is done by the vision-agent (or a person) and never sends a render anywhere."
 ---
 
 # Teaching the presentation skill your template
@@ -26,8 +26,9 @@ template.pptx ─▶ 1 SURVEY ─▶ 2 PALETTE ─▶ 3 NOTES ─▶ 4 DESIGNS �
 ```
 
 About twenty minutes for a twenty-design master. **Nothing leaves the
-machine**: the extraction uses no model at all, and the one step that can
-call one is opt-in and says so.
+machine**: the extraction uses no model at all, and the one step that needs
+eyes — judging what each design is for — is done by the vision-agent, which
+runs on your own infrastructure.
 
 ## Before you start
 
@@ -53,9 +54,9 @@ Ask three things, and write the answers down:
 2. **What language are decks written in?** The template's own footer and
    labels are in *some* language, and a deck in another one has to override
    them. This is the fact stage 5 checks.
-3. **Is there a local vision model?** If yes, stage 4 can use it. If no, stage
-   4 still works: it is a worksheet instead of a model pass, and the result is
-   usually better.
+3. **Is the vision-agent available?** If yes, stage 4 delegates judging each
+   design's render to it. If no, stage 4 still works: fill the worksheet
+   yourself with the user, and the result is usually better.
 
 ---
 
@@ -66,7 +67,8 @@ python3 $SKILL/scripts/thumbnail.py brand.pptx      # writes brand.jpg, a contac
 python3 scripts/count_style.py brand.pptx           # the colours and sizes it uses
 ```
 
-Open the contact sheet and **count**. Does the design count match what you
+Open the contact sheet — delegate it to the vision-agent if you cannot see
+images — and **count**. Does the design count match what you
 see? Is it one slide per design, or does the file repeat a layout with
 different content? If it repeats, say so now: the catalog will have twelve
 rows meaning the same thing, and no later stage recovers from that.
@@ -162,43 +164,35 @@ python3 $SKILL/scripts/catalog_extract.py brand.pptx -o $SKILL/templates/acme/ca
 
 Thirty seconds, no model. One folder per design with its render and a
 `structure.json` of everything measurable: retext keys, empty slots, title
-budgets, the canvas hint. Then take one of two paths for the judged half.
+budgets, the canvas hint. Then judge what each design is for:
 
-**Without a vision model (the default, and usually better):**
+Write the judged half into the worksheet:
 
 ```bash
 python3 scripts/name_designs.py $SKILL/templates/acme/catalog
 ```
 
-That writes `designs.md` beside the renders, with every measured field
-already filled and three blanks per design: `purpose`, `use_when`,
-`avoid_when`. **Fill them with the user, not for them.** Open the contact
-sheet, go design by design, propose one sentence for each blank from what
-you see, and let the user correct it. Twenty designs is about five minutes.
-Then:
+That writes `designs.md` beside the renders, with every measured field already
+filled and three blanks per design: `purpose`, `use_when`, `avoid_when`. Fill
+the blanks one of two ways:
+
+- **Delegate each design's `render.png` to the vision-agent** and fill the
+  blanks from what it reports. Ask it only for what needs eyes — what the
+  layout is *for*, what its pictures depict — never for retext keys, indices
+  or budgets, which are measured. Keep the user in the loop: the vision-agent
+  proposes, the user approves.
+- **By hand with the user.** Open the contact sheet, go design by design,
+  propose one sentence for each blank from what you see, and let the user
+  correct it. Twenty designs is about five minutes.
+
+The measured lines are already right and must not be edited. Then import:
 
 ```bash
 python3 scripts/name_designs.py $SKILL/templates/acme/catalog --import
 ```
 
 A design left blank still builds; the decision table just never picks it for
-the right reason, and the import says which ones.
-
-**With a local vision model**, the `presentation` skill's own pipeline does
-the same job from the renders:
-
-```bash
-python3 $SKILL/scripts/catalog_gemma.py $SKILL/templates/acme/catalog \
-    --base-url http://localhost:11434/v1 --model gemma3:27b
-python3 $SKILL/scripts/catalog_gemma.py $SKILL/templates/acme/catalog --aggregate \
-    --base-url http://localhost:11434/v1 --model gemma3:27b
-```
-
-**It must be a vision model.** A text-only one answers confidently about
-images it never received, and every design comes back "bulleted content".
-Check that `--dry-run` shows an image part in the request.
-
-Either way, assemble:
+the right reason, and the import says which ones. Assemble:
 
 ```bash
 python3 $SKILL/scripts/catalog_build.py $SKILL/templates/acme/catalog
@@ -216,7 +210,8 @@ python3 $SKILL/scripts/render.py probe.pptx   # writes render/slide-1.png ...
 
 Three real slides: a divider, a content slide retexted through the catalog's
 own keys, and a drawn slide on the pack's canvas design in the pack's own
-colours. **Open the three PNGs and ask, in order:**
+colours. **Delegate the three PNGs to the vision-agent** (you cannot see images
+yourself) and ask, in order:
 
 1. Does the divider title fit on one line, clear of the master's decoration?
 2. Is any word on slide 2 still the template's own?
@@ -241,11 +236,12 @@ A finding on a shape the template itself drew past the slide edge (some
 generated masters do this) is the template's, not the pack's; note it in
 `overrides.md` and move on.
 
-Then run the probe again and look again.
+Then run the probe again and look again — through the vision-agent.
 
-**If you cannot see images, say so and stop here.** Do not report a pack as
-finished on the strength of a clean QA run. QA cannot see a title crossing a
-decoration, and that is precisely what this stage is for.
+**You cannot see the images yourself, so the vision-agent is how this stage
+is done — do not skip it.** Do not report a pack as finished on the strength
+of a clean QA run. QA cannot see a title crossing a decoration, and that is
+precisely what this stage is for.
 
 ## Afterwards
 
@@ -275,10 +271,9 @@ the diff. The retext keys are what changed.
   writes is counted off the template or answered by a person. Four separate
   runs against one corporate template drew decks in a hex the company does
   not own, and no check in the pipeline could see it.
-- **Nothing leaves the machine by default.** Extraction uses no model.
-  `catalog_gemma.py` calls the endpoint you give it; point it at localhost.
-  A hosted endpoint means slide images going to a third party: say so out
-  loud before doing it, and never for a confidential template.
+- **Nothing leaves the machine by default.** Extraction uses no model, and
+  judging is done by the vision-agent on your own infrastructure. A template
+  and its renders are brand-internal: never send them to a hosted service.
 - **apt only.** Never run `pip` or `npm`.
 - **The template file is brand-internal.** `templates/*` is gitignored in the
   presentation skill. Keep it that way.

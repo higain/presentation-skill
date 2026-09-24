@@ -6,8 +6,9 @@ A render, coarse enough to read as text: where the ink is, and where it is not.
     scripts/wireframe.py render/ --slides 1,7-9
     scripts/wireframe.py render/slide-01.png --cols 80 --rows 30
 
-**This is for the reviewer who cannot see the image.**  ``review_renders.py``
-needs a model with eyes; this needs nothing but the PNG.  It cannot tell you a
+**This is for the reviewer who cannot see the image.**  Prefer delegating the
+render to the vision-agent, which has eyes; this needs nothing but the PNG and
+is the fallback when the vision-agent is unavailable.  It cannot tell you a
 diagram is ugly, but it does tell you -- in a form that survives being read as
 text -- the two things that went wrong most often in the runs it was written
 for: a slide that is mostly empty, and a block of content that is not where the
