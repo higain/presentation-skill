@@ -262,6 +262,11 @@ and open every render it prints. Every wrong design choice gets corrected
 script: the point is that the next deck picks better without being told. Two
 passes and the default is genuinely good.
 
+While the build is still failing, iterate with `--build-only` or `--skip-qa`
+(no report is written, so a not-yet-checked deck never looks clean); the full
+command above is the gate and is run once. `--require-verdicts` exits 1 unless
+every slide has a verdict in the report's table.
+
 Calibrating is the pass most worth having eyes on, because it judges looks
 rather than correctness: build the deck, then **delegate every render to the
 vision-agent** (the `vision` subagent) and correct what it flags in the

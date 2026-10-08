@@ -78,6 +78,127 @@ from office.template import (  # noqa: E402
 
 PPTX_EXTS = {".pptx", ".potx"}
 
+#: Sidecar file, beside the deck, that lets a build acknowledge a finding as
+#: intentional and get a clean report without hacking content.  See
+#: ``load_allowlist`` and the QA section of SKILL.md.  A deck has no right to a
+#: clean report just because its author said so: an acknowledgement only counts
+#: when it matches a real finding by kind + slide + content, and carries a
+#: non-empty reason.  Stale acknowledgements -- ones that match nothing in the
+#: deck -- are themselves reported, so the list cannot silently grow into a
+#: blanket "pass everything" file.
+ALLOWLIST_SUFFIX = "-allowlist.json"
+
+
+#: The finding kinds an allowlist entry can name.  Kept explicit so a typo in a
+#: deck's allowlist is a hard error rather than a silent no-op.
+ALLOWLIST_KINDS = {"leftover-wording", "stray-image", "footer", "balance"}
+
+
+class AllowlistError(ValueError):
+    """An allowlist file is malformed, so the deck cannot be gated on it."""
+
+
+def _allowlist_path(deck):
+    """``<deck>-allowlist.json`` beside the deck, or ``None``."""
+    deck = Path(deck)
+    if deck.suffix.lower() in PRESENTATION_EXTS:
+        return deck.with_name(deck.stem + ALLOWLIST_SUFFIX)
+    return None
+
+
+def load_allowlist(deck):
+    """``{kind: {slide: {content: reason}}}`` for ``<deck>-allowlist.json``.
+
+    ``[]`` (an empty list, a missing file, a file that is an empty JSON array)
+    is the same as no allowlist.  A file that exists but is malformed raises
+    :class:`AllowlistError`, because an allowlist that cannot be read must not
+    silently let every finding through nor silently gate every one.
+
+    Each entry:
+
+    .. code-block:: json
+
+        {"slide": 16, "kind": "leftover-wording",
+         "content": "Testen",
+         "reason": "SDLC phase label on the lifecycle circle -- correct content"}
+
+    ``slide`` is the 1-based output-slide number.  ``content`` is the exact
+    text (for ``leftover-wording`` and ``footer``) or the media filename (for
+    ``stray-image``) that the finding names.  Matching is exact on all three of
+    slide + kind + content; there is no wildcard, so an entry cannot
+    accidentally cover a finding the author had not seen.
+    """
+    path = _allowlist_path(deck)
+    if path is None or not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise AllowlistError(f"{path.name}: not readable JSON ({e})") from e
+
+    if isinstance(raw, dict) and "acknowledgements" in raw:
+        entries = raw["acknowledgements"]
+    elif isinstance(raw, list):
+        entries = raw
+    else:
+        raise AllowlistError(
+            f"{path.name}: expected a list, or an object with an "
+            f"'acknowledgements' list")
+
+    out = {}
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise AllowlistError(
+                f"{path.name}: entry {i} is not an object")
+        kind = entry.get("kind")
+        slide = entry.get("slide")
+        content = entry.get("content")
+        reason = entry.get("reason", "").strip()
+        if kind not in ALLOWLIST_KINDS:
+            raise AllowlistError(
+                f"{path.name}: entry {i} kind {kind!r} not one of "
+                f"{sorted(ALLOWLIST_KINDS)}")
+        if not isinstance(slide, int) or slide < 1:
+            raise AllowlistError(
+                f"{path.name}: entry {i} needs a positive integer 'slide'")
+        if not content or not isinstance(content, str):
+            raise AllowlistError(
+                f"{path.name}: entry {i} needs a non-empty 'content' string")
+        if not reason:
+            raise AllowlistError(
+                f"{path.name}: entry {i} needs a non-empty 'reason' -- an "
+                f"acknowledgement with no reason is a way to ignore the check")
+        out.setdefault(kind, {}).setdefault(slide, {})[content] = reason
+    return out
+
+
+def _acknowledged(allowlist, kind, slide, content):
+    """The reason if ``allowlist`` covers this finding, else ``None``."""
+    return allowlist.get(kind, {}).get(slide, {}).get(content)
+
+
+def stale_acknowledgements(allowlist, findings):
+    """``[message]`` for allowlist entries that match nothing in the deck.
+
+    ``findings`` is the list of :class:`Finding`-shaped ``(kind, slide,
+    content)`` tuples actually produced.  An entry that matches none of them
+    means the finding it was written for no longer exists (good -- it was
+    fixed) or was never there (the author guessed).  Either way it should be
+    removed, so it is reported rather than silently left to accumulate.
+    """
+    present = {(kind, slide, content)
+               for kind, slide, content in findings}
+    out = []
+    for kind, by_slide in allowlist.items():
+        for slide, by_content in by_slide.items():
+            for content in by_content:
+                if (kind, slide, content) not in present:
+                    out.append(
+                        f"allowlist {kind!r} slide {slide} {content!r} matches "
+                        f"nothing in this deck -- it was fixed, or never "
+                        f"there. Remove it from the allowlist")
+    return out
+
 PLACEHOLDER = re.compile(
     r"\b(lorem|ipsum|todo|tbd|fixme|platzhalter|blindtext)\b"
     r"|\bx{3,}\b"
@@ -1063,6 +1184,29 @@ def _widest_empty_band(bands, top, bottom):
     return widest, at
 
 
+def _paint_metrics(doc, page):
+    """``(area, band, at, height)`` for one slide, or ``None``.
+
+    ``area`` is the painted share (0..1, double-counting overlaps),
+    ``band``/``at`` the widest empty vertical band and where it starts, both in
+    the page's height units.  Shared by ``sparse_slides`` and
+    ``balance_findings`` so the two never disagree about a slide's numbers.
+    """
+    try:
+        width, height = page.Width, page.Height
+    except Exception:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    boxes = _painted_boxes(doc, page)
+    if not boxes:
+        return (0.0, height, 0, height)
+    area = sum(w * h for _, _, w, h in boxes) / (width * height)
+    bands = [(y, y + h) for _, y, _, h in boxes]
+    band, at = _widest_empty_band(bands, min(t for t, _ in bands), height)
+    return area, band, at, height
+
+
 def sparse_slides(doc, wanted=None):
     """``[(number, reason)]`` for slides that may have nothing on them.
 
@@ -1082,31 +1226,77 @@ def sparse_slides(doc, wanted=None):
     for number, page in enumerate(slides(doc), start=1):
         if wanted and number not in wanted:
             continue
-        try:
-            width, height = page.Width, page.Height
-        except Exception:
+        metrics = _paint_metrics(doc, page)
+        if metrics is None:
             continue
-        if width <= 0 or height <= 0:
-            continue
-
-        boxes = _painted_boxes(doc, page)
-        if not boxes:
+        area, band, at, height = metrics
+        if area <= 0.0:
             out.append((number, "nothing on it at all"))
             continue
-
-        # Overlapping shapes are counted twice, so this runs over 100% on a
-        # busy slide.  That is harmless and deliberately not corrected: the
-        # question is only ever "is this under a quarter", and double-counting
-        # can push a slide *out* of that, never into it.
-        area = sum(w * h for _, _, w, h in boxes) / (width * height)
-        bands = [(y, y + h) for _, y, _, h in boxes]
-        band, at = _widest_empty_band(bands, min(t for t, _ in bands), height)
-
         if area < SPARSE_AREA:
             out.append((number, f"paints {area:.0%} of the slide"))
         elif band >= SPARSE_BAND * height:
             out.append((number, f"{band / height:.0%} of its height is one "
                                 f"empty band, from {at / height:.0%} down"))
+    return out
+
+
+#: A slide is *top-heavy*, and fails the build, when it paints enough that it
+#: is clearly a content slide (not a bare one-sentence statement) yet leaves at
+#: least a third of its height as one empty band starting in the lower half.
+#: That combination -- real content crammed against the title with the bottom
+#: of the slide bare -- is the signature of hardcoded offsets, and unlike a
+#: genuinely sparse statement slide it is never a deliberate choice.  The
+#: measurements this came from: the phase-canvas slides this check was written
+#: for painted 24-34 % with a 33-38 % empty band from 54-58 % down, and every
+#: one had been marked "sparse by design" and shipped.
+BALANCE_AREA = 0.18
+BALANCE_BAND = 0.30
+BALANCE_START = 0.35
+
+
+def _is_top_heavy(area, band, at, height):
+    """``True`` if a slide with these paint metrics is a top-heavy finding.
+
+    Pure so the thresholds are testable without a document: real content packed
+    above a bare bottom.  ``area`` is the painted share, ``band`` the widest
+    empty vertical band and ``at`` where it starts, ``height`` the page height.
+    """
+    return (area >= BALANCE_AREA
+            and band >= BALANCE_BAND * height
+            and at >= BALANCE_START * height)
+
+
+def balance_findings(doc, wanted=None):
+    """``[(slide, reason)]`` -- content slides that are top-heavy.
+
+    A hard finding, unlike ``sparse_slides``: a slide with real content packed
+    into its top that leaves its bottom half bare is not a deliberate choice,
+    and it is invisible to every other check in this file -- nothing overflows,
+    nothing collides, nothing is off the slide, the slide is just badly placed.
+    It fails the build unless acknowledged in the deck's allowlist.
+
+    ``sparse_slides`` still exists alongside it for the genuine statements: a
+    slide that paints under a quarter may be a one-liner on purpose, and that
+    stays a "look at it" rather than a finding.
+    """
+    out = []
+    for number, page in enumerate(slides(doc), start=1):
+        if wanted and number not in wanted:
+            continue
+        metrics = _paint_metrics(doc, page)
+        if metrics is None:
+            continue
+        area, band, at, height = metrics
+        if _is_top_heavy(area, band, at, height):
+            out.append(
+                (number, f"top-heavy: paints {area:.0%}, then {band / height:.0%} "
+                         f"of the slide's height is one empty band from "
+                         f"{at / height:.0%} down. Content is packed against "
+                         f"the title with the bottom bare -- lay it out from "
+                         f"the `Box` `D.canvas` returns so it fills the slide "
+                         f"(`references/drawing.md` §Composition)")
+            )
     return out
 
 
@@ -1166,13 +1356,16 @@ def design_note(designs, catalog_size=None):
 
 
 def stray_template_images(deck, template, wanted=None):
-    """Pictures still on a slide that came from the template, with their size.
+    """``[(text, (kind, slide, content))]`` -- template pictures still on slides.
 
     ``.pptx`` only, and read straight from the zip: a graphic is identified by
     the checksum of its bytes, which is the one property that survives a build.
     Retexting a designed slide replaces its words and leaves its pictures, so a
     deck reports clean on text while a stock photo and a German process diagram
     are still sitting on slide 7.
+
+    The second element is the structured key an allowlist matches on:
+    ``("stray-image", slide, media_filename)``.
     """
     import xml.etree.ElementTree as ET
     import zipfile
@@ -1250,12 +1443,14 @@ def stray_template_images(deck, template, wanted=None):
                 if media in seen:
                     continue
                 seen.add(media)
+                media_name = media.rsplit('/', 1)[1]
                 out.append(
-                    f"slide {number}: a picture from the template is still on "
-                    f"the slide ({media.rsplit('/', 1)[1]}, "
-                    f"{100 * area / slide_area:.1f}% of it) -- retext replaces "
-                    f"words, never pictures; remove it or use a design "
-                    f"without one"
+                    (f"slide {number}: a picture from the template is still on "
+                     f"the slide ({media_name}, "
+                     f"{100 * area / slide_area:.1f}% of it) -- retext replaces "
+                     f"words, never pictures; remove it or use a design "
+                     f"without one",
+                     ("stray-image", number, media_name))
                 )
     return out
 
@@ -1269,20 +1464,41 @@ def check(path, template=None, wanted=None):
     it on these.
 
     ``prose`` is ``(findings, titles)``; ``titles`` is the ghost deck.
+
+    Findings are gated by the deck's allowlist (``<deck>-allowlist.json``): an
+    acknowledged finding is dropped from ``issues`` and counted in the
+    ``acknowledged`` return, and a stale acknowledgement is itself reported.
     """
     issues = []
     leftovers = {}
     footers = {}
     deck_texts = []
+    keyed = []
     # Every check that reads a template fact -- the readable floor, the
     # palette a contrast check compares against -- has to read *this* deck's,
     # not whichever pack happens to be installed.
     with active(template):
-        return _check(path, template, wanted, issues, leftovers, footers,
-                      deck_texts)
+        issues, checked, sparse, notes, prose, keyed = _check(
+            path, template, wanted, issues, leftovers, footers, deck_texts,
+            keyed)
+
+    allow = load_allowlist(path)
+    acknowledged = []
+    if allow:
+        kept, acked = [], []
+        for issue, key in zip(issues, keyed):
+            if key is not None and _acknowledged(allow, *key):
+                acked.append(issue)
+            else:
+                kept.append(issue)
+        issues = kept
+        acknowledged = acked + stale_acknowledgements(
+            allow, [k for k in keyed if k is not None])
+    return issues, checked, sparse, notes, prose, acknowledged
 
 
-def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
+def _check(path, template, wanted, issues, leftovers, footers, deck_texts,
+           keyed):
     # Whatever the template already does -- its wording, the decorations it
     # bleeds past the trim on purpose, its brand colour pairings, the shapes it
     # stacks -- is duplicated into the deck unchanged, and is not a defect this
@@ -1291,6 +1507,7 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
     tpl_strings, tpl_bleeds = base.strings, base.bleeds
 
     doc = load_document(path, read_only=True)
+    designs = []
     try:
         pages = slides(doc)
         checked = 0
@@ -1301,6 +1518,7 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
 
             for address, reason in overflowing(doc, page):
                 issues.append(f"slide {number} shape [{address}]: {reason}")
+                keyed.append(None)
 
             # One block of text laid over a row of table cells collides with
             # each cell separately, and the pair of texts is the same every
@@ -1320,6 +1538,7 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
                         f"way -- one thing drawn over another)"
                         if count > 1 else "")
                 issues.append(f"slide {number} shape [{address}]: {reason}{more}")
+                keyed.append(None)
 
             # One table drawn too wide is 11 shapes over the edge by the
             # same amount.  Report the defect once, with a count -- eleven
@@ -1338,6 +1557,7 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
                 more = (f" (and {len(group) - 1} more shape(s) by the same amount"
                         f" -- one object drawn too wide)" if len(group) > 1 else "")
                 issues.append(f"slide {number} shape [{address}]: {reason}{more}")
+                keyed.append(None)
 
             for address, text in _page_texts(page):
                 deck_texts.append((number, text))
@@ -1347,6 +1567,7 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
                         f"slide {number} shape [{address}]: placeholder text "
                         f"{hit.group(0)!r} in {text[:60]!r}"
                     )
+                    keyed.append(None)
                 elif text in tpl_strings:
                     leftovers.setdefault(text, []).append((number, address))
 
@@ -1356,16 +1577,27 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
             if foot and foot in base.footers:
                 footers.setdefault(foot, []).append(number)
 
-            issues.extend(markdown_issues(page, number))
-            issues.extend(emoji_issues(page, number, tpl_strings))
-            issues.extend(tiny_type_issues(page, number, tpl_strings))
-            issues.extend(contrast_issues(page, number, base.contrast))
-            issues.extend(occlusion_issues(page, number, base.occlusion))
+            md = markdown_issues(page, number)
+            em = emoji_issues(page, number, tpl_strings)
+            tt = tiny_type_issues(page, number, tpl_strings)
+            ct = contrast_issues(page, number, base.contrast)
+            oc = occlusion_issues(page, number, base.occlusion)
+            issues.extend(md)
+            issues.extend(em)
+            issues.extend(tt)
+            issues.extend(ct)
+            issues.extend(oc)
+            keyed.extend([None] * (len(md) + len(em) + len(tt) + len(ct)
+                                   + len(oc)))
 
         sparse = sparse_slides(doc, wanted)
+        for number, reason in balance_findings(doc, wanted):
+            issues.append(f"slide {number}: {reason}")
+            keyed.append(("balance", number, "top-heavy"))
         notes = [note for note in (design_note(recorded_designs(doc),
                                                _catalog_size(template)),)
                  if note]
+        designs = recorded_designs(doc) if not wanted else []
         prose = prose_findings(doc, wanted, tpl_strings)
         # Whole decks only.  A title the user approved is absent from a
         # three-slide check exactly the way it is absent from a deck that threw
@@ -1373,45 +1605,57 @@ def _check(path, template, wanted, issues, leftovers, footers, deck_texts):
         if not wanted:
             lost, reworded = lost_plan_titles(path, deck_texts)
             issues.extend(lost)
+            keyed.extend([None] * len(lost))
             prose = (prose[0] + reworded, prose[1])
     finally:
         doc.close(False)
 
-    # One label nobody replaced, on thirteen slides, is one thing to fix.  It
-    # is also the single most repeated defect these runs produce, so it is
-    # reported with every slide it is on: the fix is one retext key, and the
-    # list is what makes that obvious rather than thirteen near-identical
-    # lines that read as thirteen separate mistakes.
+    # One label nobody replaced, on thirteen slides, is one thing to fix, and
+    # the fix is one retext key.  It is still reported **per slide**, one line
+    # each, because a grouped "slides 16, 27, 33 shape [6.5]" made the runs
+    # that shipped these decks burn a transcript working out which slide each
+    # finding was actually on -- three of them shared a design, one did not,
+    # and the shape index meant something different on each.  A per-slide
+    # line names exactly the slide, the shape and the text, and the design
+    # each one sits on is in the same sentence.
     for text, places in sorted(leftovers.items(), key=lambda kv: -len(kv[1])):
-        numbers = sorted({number for number, _ in places})
-        where = (f"slide {numbers[0]}" if len(numbers) == 1
-                 else f"slides {', '.join(str(n) for n in numbers)}")
-        issues.append(
-            f"{where} shape [{places[0][1]}]: still the template's own wording "
-            f"-- {text[:60]!r}. Replace it with `retext`, or draw over the "
-            f"design that carries it"
-        )
+        for number, address in places:
+            design = designs[number - 1] if number <= len(designs) else None
+            where = f"slide {number}"
+            if design is not None:
+                where += f" (design {design})"
+            issues.append(
+                f"{where} shape [{address}]: still the template's own wording "
+                f"-- {text[:60]!r}. Replace it with `retext`, or draw over "
+                f"the design that carries it"
+            )
+            keyed.append(("leftover-wording", number, text))
 
     # Reported after the wording it looks like, and worded to say where it is
     # not: the shape hunt is what a run does next, and there is no shape.
+    # Also per slide -- same reason as above: the footer is a page property
+    # and its "shape" is the page, so a grouped line names no address at all.
     for text, numbers in sorted(footers.items(), key=lambda kv: -len(kv[1])):
-        where = (f"slide {numbers[0]}" if len(numbers) == 1
-                 else f"slides {', '.join(str(n) for n in sorted(numbers))}")
-        issues.append(
-            f"{where} footer: still the template's own footer -- {text[:60]!r}. "
-            f"It is a page property, not a shape: `retext`, `find_shapes` and "
-            f"every other check here walk shapes and cannot see it. Fix it with "
-            f"`office.template.set_footer(page, ...)` in `fill`, or "
-            f"`build_deck(..., footer='...')` for the whole deck; "
-            f"`footer=None` hides it"
-        )
+        for number in sorted(numbers):
+            issues.append(
+                f"slide {number} footer: still the template's own footer -- "
+                f"{text[:60]!r}. It is a page property, not a shape: `retext`, "
+                f"`find_shapes` and every other check here walk shapes and "
+                f"cannot see it. Fix it with "
+                f"`office.template.set_footer(page, ...)` in `fill`, or "
+                f"`build_deck(..., footer='...')` for the whole deck; "
+                f"`footer=None` hides it"
+            )
+            keyed.append(("footer", number, text))
 
     # Read from the zip, so it runs after the document is closed.
     if template and Path(path).suffix.lower() in PPTX_EXTS \
             and Path(template).suffix.lower() in PPTX_EXTS:
-        issues.extend(stray_template_images(path, template, wanted))
+        for f in stray_template_images(path, template, wanted):
+            issues.append(f[0])
+            keyed.append(f[1])
 
-    return issues, checked, sparse, notes, prose
+    return issues, checked, sparse, notes, prose, keyed
 
 
 def validate_pptx(path, template=None):
@@ -1475,7 +1719,7 @@ def main():
             return 2
 
     try:
-        issues, checked, sparse, notes, prose = check(
+        issues, checked, sparse, notes, prose, acknowledged = check(
             path, args.template, wanted)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -1485,6 +1729,12 @@ def main():
     print(f"\n{checked} slide(s) checked.\n")
     for note in notes:
         print(f"{note}\n")
+
+    if acknowledged:
+        print(f"## {len(acknowledged)} acknowledged (allowlist)\n")
+        for ack in acknowledged:
+            print(f"- {ack}")
+        print()
 
     if issues:
         print(f"## {len(issues)} issue(s)\n")

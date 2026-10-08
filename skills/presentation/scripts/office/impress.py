@@ -363,9 +363,24 @@ def load_document(path, read_only: bool = False, timeout: float = 60.0):
         options["ReadOnly"] = True
 
     desktop = _SERVER.desktop(timeout=timeout)
-    doc = desktop.loadComponentFromURL(
-        uno.systemPathToFileUrl(str(path)), "_blank", 0, _props(**options)
-    )
+    # A file that was just written is not always immediately reopenable: on a
+    # slow or mounted filesystem (a virtualbox shared folder, a network drive)
+    # the bytes can be there for ``Path.exists`` yet not yet visible to a fresh
+    # LibreOffice process, which reports the useless "could not open ... as a
+    # document".  Retrying across a short wait is what stops a build that just
+    # stored its deck from dying on its own output -- the single biggest
+    # time-sink this skill has seen on a shared mount.  Reached only when the
+    # *file* exists and is readable, so it never masks a genuinely absent deck.
+    delay = 0.5
+    doc = None
+    for attempt in range(6):
+        doc = desktop.loadComponentFromURL(
+            uno.systemPathToFileUrl(str(path)), "_blank", 0, _props(**options)
+        )
+        if doc is not None:
+            break
+        time.sleep(delay)
+        delay *= 2
     if doc is None:
         raise SofficeError(f"LibreOffice could not open {path} as a document")
     if not doc.supportsService(PRESENTATION_SERVICE):

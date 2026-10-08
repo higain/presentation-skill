@@ -292,9 +292,12 @@ Then:
   0.5", 0.3–0.5" between blocks.
 - **Fill the area you were given.** Content in the top two-thirds with an empty
   band underneath is the signature of hardcoded offsets, and it is invisible to
-  `qa.py` — nothing overflows, nothing collides, the slide is just badly placed.
-  Lay out from the `Box` `D.canvas` returns; if a band is genuinely meant to be
-  empty, it should be at least as wide as the content, not a leftover.
+  most of `qa.py` — nothing overflows, nothing collides, the slide is just badly
+  placed. It is no longer invisible to all of it: **`qa.balance_findings`
+  fails a build on a content slide that paints real ink and then leaves its
+  bottom half bare** (see `references/qa.md` §Top-heavy). Lay out from the
+  `Box` `D.canvas` returns; if a band is genuinely meant to be empty, it should
+  be at least as wide as the content, not a leftover.
 - **Contrast on everything**, icons as well as text. A card flipped to a dark
   fill needs `set_char_color(shape, 0xFFFFFF)` on its label.
 - **Never ship text that overflows its shape** — shrink it, split it, or make

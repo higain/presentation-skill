@@ -88,6 +88,16 @@ Never reopen the finished file to add more: that is a second `.pptx` save, it
 grows the masters, and it is how shapes end up layered over template text
 nobody replaced.
 
+**Read Composition in `references/drawing.md` first, before writing `fill`.**
+It is where this skill says how to fill a slide, and it is the difference
+between a deck that looks designed and one that reads as a form someone filled
+in.  The specific rule the automated gate now enforces: **a content slide must
+not leave its bottom half bare.**  If your `fill` packs everything into the
+top third of a `Box` and ships the rest empty, `make_deck.py` fails the build
+with a *top-heavy* finding.  Lay out from the `Box` `D.canvas` returns so the
+content fills the slide; a genuinely-empty band is for statement slides, which
+are sparse on purpose.  (See the QA section for the one escape hatch.)
+
 **Branch on `slot`, the position in your deck — not on `design`, and never on
 both.** `if design == 8 and slot == 1` is false whenever slot 1 holds a
 different design, and a branch that never fires leaves that slide exactly as the
@@ -142,6 +152,27 @@ the renders are — which is how a deck gets called finished having never been
 looked at. It writes `<deck>-report.md` and `render/` beside the deck either
 way, and names both in its first line, so a run that did get cut off is
 recovered by reading those rather than by building again.
+
+**When the build itself is failing, do not pay for the full gate on every
+iteration.** A full run checks, schema-validates and renders, and on a
+fifteen-slide deck that is a minute or two per retry — which is how a build
+error turns into twenty minutes of waiting. Iterate on the error with the
+tight loop, then run the full command once:
+
+```bash
+# Fixing a build error: build only, no QA, no render. Instant.
+scripts/make_deck.py build.py out.pptx --build-only
+
+# A little more: build and render so you can see the layout, skip the checks.
+scripts/make_deck.py build.py out.pptx --template acme --skip-qa
+
+# The gate — run this when the build is clean, and only this. It must pass.
+scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx
+```
+
+`--build-only` and `--skip-qa` write **no report** on purpose: a deck that was
+not checked must not leave a clean-looking report behind. The gate is the last
+command, run only once the tight loop is clean.
 
 **5. Fix every finding it reports, then run it again.** Exit 1 means findings,
 and they are also left on disk in `<deck>-report.md` beside the deck. Leftover
@@ -331,6 +362,40 @@ measurements, not findings — they do not fail the run, because a one-sentence
 statement slide measures the same as a slide nobody finished. Have the
 vision-agent look at these first.
 
+**Top-heavy slides are a finding, not a suggestion.** A slide that paints real
+content against its title and leaves the bottom half bare is measured and
+**fails the build**: unlike a sparse statement slide, that combination is never
+a deliberate choice — it is hardcoded offsets, and it is exactly how a deck
+ends up "not really pretty". The fix is to lay out from the `Box` `D.canvas`
+returns so the content fills the slide. The one legitimate way past it is the
+allowlist below, with a reason.
+
+**A finding that is genuinely intentional — correct content that happens to
+match the template — is recorded in an allowlist, not hacked.** A deck with no
+template of its own words to change (an SDLC phase name that *is* the content,
+a divider's background graphic) otherwise faces a choice between shipping a
+permanently red report and corrupting the content. Write `<deck>-allowlist.json`
+beside the deck, one entry per finding with `kind`, `slide`, `content` and a
+`reason`:
+
+```json
+{"acknowledgements": [
+  {"slide": 16, "kind": "leftover-wording", "content": "Testen",
+   "reason": "SDLC phase label on the lifecycle circle"},
+  {"slide": 5,  "kind": "stray-image", "content": "image5.png",
+   "reason": "divider background graphic"}
+]}
+```
+
+An acknowledgement counts only when it matches a real finding by
+kind + slide + content **and** carries a non-empty reason — there is no
+wildcard. A malformed allowlist is an error, not a silent pass, and an entry
+that matches nothing (the finding was fixed, or never there) is itself
+reported so the list cannot quietly grow into a blanket "ignore everything".
+`kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`.
+The automated half of `make_deck.py` can then exit clean, with the
+acknowledged findings listed separately in the report.
+
 **You cannot see the renders yourself — the build model has no image
 processing — so delegate every render in `render/` to the vision-agent (the
 `vision` subagent) and write its per-slide verdicts into the report's table.**
@@ -340,6 +405,11 @@ verdict is still a slide nobody has looked at. `make_deck.py` names `render/`
 for you. If the vision-agent is unavailable, `scripts/wireframe.py render/`
 shows each slide as an ink grid, and you must say which slides nothing with
 eyes has seen.
+
+**Run `--require-verdicts` when the deck must actually gate on having been
+looked at** (a client deliverable, a review): it exits 1 unless every slide
+has a verdict written in the report's table, turning the visual half of QA
+into an enforced stop rather than a reminder.
 
 **A visual finding is dismissed only by a measurement you show.** Reasoning
 about why the reviewer must be wrong is not a measurement, and it is how a deck
@@ -371,3 +441,9 @@ is what the renders are for. Details, and what each finding means:
 - Each script starts its own headless LibreOffice with a private profile and
   port, so parallel runs never collide. If `/tmp` is not writable, set
   `PRESENTATION_TMPDIR` — see `references/authoring.md`.
+- **Building onto a slow or mounted filesystem** (a virtualbox shared folder, a
+  network drive): a deck that was just written is sometimes not reopenable for
+  a second or two, and `load_document` now retries across that wait, so a build
+  no longer dies on its own freshly-saved output. If you still see
+  `LibreOffice could not open ... as a document` on a shared mount, build into a
+  local directory and copy the finished deck across.

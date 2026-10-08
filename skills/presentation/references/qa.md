@@ -137,6 +137,68 @@ minor and shipped; the other never opened an image.
 If a listed slide is sparse on purpose, it is fine. Say so and move on — in the
 verdict column, where saying so is recorded.
 
+### Top-heavy slides are a finding
+
+The bare band above has a specific and fixable shape, and it is pulled out as a
+**hard finding** on its own: a content slide that paints real ink against its
+title and then leaves at least a third of its height as one empty band starting
+in the lower half. That is not a statement slide (a statement paints little
+overall); it is content crammed against the title by hardcoded offsets, and it
+is how a deck ships looking "not really pretty" while passing every other check
+— nothing overflows, nothing collides, nothing is off the slide.
+
+`balance_findings` measures it and `make_deck.py` fails the build on it. The
+fix is to lay out from the `Box` `D.canvas` returns so the content fills the
+slide (`references/drawing.md` §Composition). The only legitimate way past it
+is the allowlist, with a reason — see below.
+
+### The allowlist: how correct content gets a clean report
+
+A finding is a defect this build introduced. **Correct content that merely
+matches the template is not a defect** — an SDLC phase name that is the point
+of the slide, a divider's full-bleed background graphic, a brand's own footer
+URL. Before the allowlist, a deck carrying such content faced a choice between
+shipping a permanently red report and corrupting the content, and runs burned
+whole transcripts re-litigating it.
+
+`<deck>-allowlist.json`, beside the deck, records such findings as intentional:
+
+```json
+{"acknowledgements": [
+  {"slide": 16, "kind": "leftover-wording", "content": "Testen",
+   "reason": "SDLC phase label on the lifecycle circle"},
+  {"slide": 5,  "kind": "stray-image", "content": "image5.png",
+   "reason": "divider background graphic"}
+]}
+```
+
+- `kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`.
+- Matching is **exact** on kind + slide + content. There is no wildcard, so an
+  entry cannot cover a finding the author had not seen — which is what an entry
+  *should* cover, slide by slide, content by content.
+- An entry with no `reason` is an error, not an acknowledgement: ignoring a
+  check with no justification is a way to ignore the check.
+- A malformed allowlist is an **error** (exit 2), never a silent pass or a
+  silent gate.
+- An acknowledgement that matches **nothing** in the deck — the finding was
+  fixed, or never existed — is itself reported as a stale entry, so the file
+  cannot quietly grow into a blanket "pass everything" list. A clean deck with a
+  stale allowlist is not clean.
+
+An acknowledged finding is dropped from the findings and listed separately as
+*acknowledged*; a deck whose only remaining findings are acknowledged exits
+clean. This is the escape hatch that keeps the gate honest: you can get a clean
+report, but only by naming each finding you are keeping and saying why.
+
+### `--require-verdicts`: gate on having been looked at
+
+The report's verdict column is the record that something with eyes saw each
+slide, and "the deck is not finished while a verdict is blank" was prose. 
+`make_deck.py --require-verdicts` makes it an exit code: if any slide's verdict
+cell is blank the run exits 1. Use it for a deliverable that must actually be
+reviewed before it ships — it turns the visual half of QA into the same kind of
+gate the automated half already is.
+
 ## The ghost deck, and the lines to look at
 
 Every report prints **the titles of every slide, in order, and nothing else.**

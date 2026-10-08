@@ -491,13 +491,18 @@ def _report_qa(out: Path, template: Path):
         except ImportError:
             return
     try:
-        issues, checked, sparse, notes, prose = check(out, template=template)
+        issues, checked, sparse, notes, prose, acknowledged = check(
+            out, template=template)
     except Exception as e:                    # QA must never lose you the deck
         print(f"[build_deck] QA could not run: {e}")
         return
     print(f"\n[build_deck] {out.name}: {checked} slide(s) built.")
     for note in notes:
         print(f"[build_deck] {note}")
+    if acknowledged:
+        print(f"[build_deck] {len(acknowledged)} acknowledged (allowlist):")
+        for ack in acknowledged:
+            print(f"  - {ack}")
     if issues:
         print(f"[build_deck] {len(issues)} QA issue(s) -- fix these before shipping:")
         for issue in issues:

@@ -3,14 +3,17 @@
 Build, check and render a deck in one command -- the last thing you run.
 
     python3 scripts/make_deck.py build.py deck.pptx --template company-template.pptx
-    python3 scripts/make_deck.py deck.pptx --template company-template.pptx
+    python3 scripts/make_deck.py build.py deck.pptx --build-only        # tight loop
+    python3 scripts/make_deck.py deck.pptx --skip-qa --no-render        # no gate
+    python3 scripts/make_deck.py deck.pptx --require-verdicts           # visual gate
     python3 scripts/make_deck.py deck.pptx --no-render
 
 Give it your build script and the deck that script writes, and it will:
 
 1. run the build script,
 2. QA the result -- overflow, off-slide shapes, leftover template wording and
-   pictures, placeholders, markdown, contrast, occlusion,
+   pictures, placeholders, markdown, contrast, occlusion, and top-heavy
+   content slides,
 3. schema-check the ``.pptx``,
 4. write the findings to ``<deck>-report.md`` beside the deck,
 5. render every slide to a PNG in ``render/`` beside the deck, and print paths,
@@ -24,6 +27,15 @@ blind to a title colliding with its underline, a diagram drawn off-centre, or a
 slide that is simply empty.  Every deck that shipped broken had passed a check
 like this one and had never been looked at — and a build model with no eyes
 must delegate that looking to the vision-agent rather than skip it.
+
+**Iteration flags.** While the build itself is failing, ``--build-only`` skips
+QA and rendering entirely and ``--skip-qa`` skips just the checks; neither
+writes a report, so a deck that was not checked never leaves a clean-looking
+one behind.  The full command is the gate and is run once, when the tight loop
+is clean.
+
+**The visual gate.** ``--require-verdicts`` makes the "every slide needs a
+verdict" rule an exit code: a blank verdict cell fails the run.
 
 Exit codes: 0 clean, 1 the build failed or the checks found something, 2 bad
 usage.
@@ -124,6 +136,43 @@ def _verdict_table(checked: int, sparse=()) -> list:
     return rows
 
 
+def missing_verdicts(report: Path, checked: int) -> list:
+    """``[slide_number]`` whose verdict cell in ``report`` is blank.
+
+    ``--require-verdicts`` turns the report's "the deck is not finished while a
+    verdict is blank" into an exit code, so the visual half of QA gates the
+    same way the automated half does.  The verdict column is the whole record
+    that something with eyes looked at the slide; a blank cell means nobody
+    has, and the deck does not ship.
+    """
+    if not report.is_file():
+        return list(range(1, checked + 1))
+    missing = []
+    found_rows = False
+    try:
+        lines = report.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return list(range(1, checked + 1))
+    for line in lines:
+        # | 7 | paints 22% of the slide | |
+        if not line.startswith("| "):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 3:
+            continue
+        slide, _measured, verdict = cells
+        if not slide.isdigit():
+            continue
+        found_rows = True
+        if not verdict:
+            missing.append(int(slide))
+    # A report with no verdict rows at all means nobody has started -- every
+    # slide is unlooked-at, not just the ones an empty table implies.
+    if not found_rows:
+        return list(range(1, checked + 1))
+    return missing
+
+
 def _wireframes(outdir: Path, numbers) -> list:
     """Text ink-maps for ``numbers``, or ``[]`` if none can be drawn.
 
@@ -155,7 +204,8 @@ def _wireframes(outdir: Path, numbers) -> list:
 
 
 def _write_report(deck: Path, issues: list, checked: int, outdir=None,
-                  sheet=None, sparse=(), notes=(), prose=None) -> Path:
+                  sheet=None, sparse=(), notes=(), prose=None,
+                  acknowledged=()) -> Path:
     """Leave the findings on disk, next to the deck, as ``<deck>-report.md``.
 
     A build that ends between "here is what is wrong" and "fixed it" otherwise
@@ -187,6 +237,12 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     ]
     for note in notes:
         lines += [note, ""]
+    if acknowledged:
+        lines += [f"## {len(acknowledged)} acknowledged (from the allowlist)", "",
+                  "These were reported as findings and are recorded as "
+                  "intentional, each with a reason -- see "
+                  "`<deck>-allowlist.json`.", ""]
+        lines += [f"- {ack}" for ack in acknowledged]
     if issues:
         lines += [f"## {len(issues)} unfixed issue(s)", "",
                   "**This deck is not finished.** Every line below is a defect "
@@ -280,7 +336,22 @@ def main():
     parser.add_argument("--slides", help="Only QA these slides, e.g. 4,7-9")
     parser.add_argument("--no-render", action="store_true",
                         help="Skip the renders (you will not be able to review it)")
+    parser.add_argument("--skip-qa", action="store_true",
+                        help="Build without the automated QA pass. For fast "
+                             "build-error iteration only; the deck is not "
+                             "checked and nothing is written to the report. "
+                             "Run the full command (no --skip-qa) to gate.")
     parser.add_argument("--skip-validate", action="store_true")
+    parser.add_argument("--build-only", action="store_true",
+                        help="Build only: no QA and no renders. The tightest "
+                             "loop for fixing a build error. Always follow "
+                             "with a full run (no flags) before calling the "
+                             "deck done.")
+    parser.add_argument("--require-verdicts", action="store_true",
+                        help="After building, exit 1 unless every slide has a "
+                             "verdict written in the report's table. Turns the "
+                             "visual half of QA into a gate: a slide nobody "
+                             "has looked at fails the run.")
     args = parser.parse_args()
 
     script, deck = None, None
@@ -310,6 +381,11 @@ def main():
         except FileNotFoundError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 2
+
+    # --build-only is shorthand for the tightest loop: no QA, no renders.
+    if args.build_only:
+        args.skip_qa = True
+        args.no_render = True
 
     outdir = (Path(args.outdir) if args.outdir
               else deck.resolve().parent / "render")
@@ -347,68 +423,84 @@ def main():
 
     print(f"# Checking — {deck.name}\n")
     wanted = None
-    if args.slides:
-        try:
-            wanted = qa._parse_slides(args.slides)
-        except ValueError as e:
-            print(f"Error: --slides {e}", file=sys.stderr)
-            if render_proc is not None:
-                render_proc.kill()
-            return 2
-    try:
-        issues, checked, sparse, notes, prose = check(
-            deck, args.template, wanted)
-    except (SofficeError, FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}", file=sys.stderr)
-        if render_proc is not None:
-            # Started before the checks; nobody will read its pipes now.
-            render_proc.kill()
-            render_proc.communicate()
-        return 2
-
-    print(f"{checked} slide(s) checked.\n")
-    for note in notes:
-        print(f"{note}\n")
-    if issues:
-        failed = True
-        print(f"## {len(issues)} issue(s) — fix every one\n")
-        for issue in issues:
-            print(f"- {issue}")
+    if args.skip_qa:
+        # No QA: this is the tight loop for fixing a build error. The deck is
+        # built (or a script just wrote it); nothing is checked and the deck
+        # is not gated. The full run -- no --skip-qa -- is the gate.
+        issues, checked, sparse, notes, prose, acknowledged = [], 0, [], (), ((), ()), []
+        print("Skipping QA (--skip-qa). This deck is NOT checked and NOT "
+              "finished -- re-run without --skip-qa before it ships.")
     else:
-        print("No overflow, collisions, leftovers, markdown, contrast or "
-              "occlusion defects.")
+        if args.slides:
+            try:
+                wanted = qa._parse_slides(args.slides)
+            except ValueError as e:
+                print(f"Error: --slides {e}", file=sys.stderr)
+                if render_proc is not None:
+                    render_proc.kill()
+                return 2
+        try:
+            issues, checked, sparse, notes, prose, acknowledged = check(
+                deck, args.template, wanted)
+        except (SofficeError, FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            if render_proc is not None:
+                # Started before the checks; nobody will read its pipes now.
+                render_proc.kill()
+                render_proc.communicate()
+            return 2
 
-    # Deliberately not `failed`: see qa.sparse_slides.  A statement slide is
-    # sparse on purpose, and a check that cannot be satisfied is a check that
-    # gets ignored -- along with the ones above it that can.
-    if sparse:
-        print(f"\n## {len(sparse)} slide(s) to look at\n")
-        for number, reason in sparse:
-            print(f"- slide {number}: {reason}")
-
-    prose_issues, titles = prose
-    if titles:
-        print("\n## The ghost deck\n")
-        for number, title in titles:
-            print(f"{number:>3}. {title if title else '(no title found)'}")
-        print("\nRead these in order. They should tell the whole argument on "
-              "their own.")
-    if prose_issues:
-        print(f"\n## {len(prose_issues)} line(s) to look at\n")
-        for finding in prose_issues:
-            print(f"- {finding}")
-
-    _write_report(deck, issues, checked, None if args.no_render else outdir,
-                  sparse=sparse, notes=notes, prose=prose)
-
-    if deck.suffix.lower() in PPTX_EXTS and not args.skip_validate:
-        code, output = validate_pptx(deck, args.template)
-        print("\n## File integrity\n")
-        if code == 0:
-            print("validate.py: passed")
-        else:
+    if not args.skip_qa:
+        print(f"{checked} slide(s) checked.\n")
+        for note in notes:
+            print(f"{note}\n")
+        if acknowledged:
+            print(f"## {len(acknowledged)} acknowledged (allowed by the "
+                  f"allowlist)\n")
+            for ack in acknowledged:
+                print(f"- {ack}")
+            print()
+        if issues:
             failed = True
-            print(f"validate.py: FAILED (exit {code})")
+            print(f"## {len(issues)} issue(s) — fix every one\n")
+            for issue in issues:
+                print(f"- {issue}")
+        else:
+            print("No overflow, collisions, leftovers, markdown, contrast or "
+                  "occlusion defects.")
+
+        # Deliberately not `failed`: see qa.sparse_slides.  A statement slide is
+        # sparse on purpose, and a check that cannot be satisfied is a check that
+        # gets ignored -- along with the ones above it that can.
+        if sparse:
+            print(f"\n## {len(sparse)} slide(s) to look at\n")
+            for number, reason in sparse:
+                print(f"- slide {number}: {reason}")
+
+        prose_issues, titles = prose
+        if titles:
+            print("\n## The ghost deck\n")
+            for number, title in titles:
+                print(f"{number:>3}. {title if title else '(no title found)'}")
+            print("\nRead these in order. They should tell the whole argument on "
+                  "their own.")
+        if prose_issues:
+            print(f"\n## {len(prose_issues)} line(s) to look at\n")
+            for finding in prose_issues:
+                print(f"- {finding}")
+
+        _write_report(deck, issues, checked, None if args.no_render else outdir,
+                      sparse=sparse, notes=notes, prose=prose,
+                      acknowledged=acknowledged)
+
+        if deck.suffix.lower() in PPTX_EXTS and not args.skip_validate:
+            code, output = validate_pptx(deck, args.template)
+            print("\n## File integrity\n")
+            if code == 0:
+                print("validate.py: passed")
+            else:
+                failed = True
+                print(f"validate.py: FAILED (exit {code})")
             print(output)
 
     if render_proc is not None:
@@ -422,9 +514,12 @@ def main():
 
         # Rewritten now that the sheet has a name -- the early write above had
         # to guess at one, and guessed wrong on every deck short enough to fit
-        # on a single sheet.
-        _write_report(deck, issues, checked, outdir,
-                      sheet.resolve() if sheet else None, sparse, notes, prose)
+        # on a single sheet.  Skipped under --skip-qa: that run must not leave
+        # a clean-looking report behind.
+        if not args.skip_qa:
+            _write_report(deck, issues, checked, outdir,
+                          sheet.resolve() if sheet else None, sparse, notes,
+                          prose, acknowledged=acknowledged)
         if images:
             print(
                 "\n**Give the renders to the vision-agent and write a verdict "
@@ -449,8 +544,18 @@ def main():
             )
 
     report = deck.resolve().with_name(deck.stem + "-report.md")
-    if report.exists():
+    if not args.skip_qa and report.exists():
         print(f"\nfindings: {report}")
+
+    if args.require_verdicts and not args.skip_qa:
+        missing = missing_verdicts(report, checked)
+        if missing:
+            failed = True
+            shown = ", ".join(str(n) for n in sorted(missing))
+            print(f"\nMissing verdicts for slide(s): {shown}. A slide nobody "
+                  f"has looked at cannot be finished -- give the renders to "
+                  f"the vision-agent and write its verdict into the report's "
+                  f"table, then re-run with --require-verdicts.")
 
     shutdown()
     return 1 if failed else 0
