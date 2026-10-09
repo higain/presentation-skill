@@ -12,13 +12,14 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from make_deck import missing_verdicts
+from make_deck import (DECK_HASH_MARK, _gate_on_verdicts, deck_hash,
+                       missing_verdicts)
 
 
 class MissingVerdictsTest(unittest.TestCase):
     def _report(self, lines):
         d = tempfile.TemporaryDirectory()
-        self._tmp = d
+        self.addCleanup(d.cleanup)
         p = Path(d.name) / "deck-report.md"
         p.write_text("\n".join(lines) + "\n")
         return p
@@ -51,6 +52,44 @@ class MissingVerdictsTest(unittest.TestCase):
     def test_no_table_rows(self):
         p = self._report(["# just a heading", ""])
         self.assertEqual(missing_verdicts(p, 2), [1, 2])
+
+
+class GateOnVerdictsTest(unittest.TestCase):
+    """The gate reads the report and never rewrites it.
+
+    It used to rebuild first, which rewrote the report with blank verdicts and
+    then found them blank: a gate nothing could pass.
+    """
+
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.deck = Path(d.name) / "deck.pptx"
+        self.deck.write_bytes(b"not really a deck")
+        self.report = Path(d.name) / "deck-report.md"
+
+    def _write(self, digest, verdicts):
+        rows = [f"| {n} |  | {v} |" for n, v in enumerate(verdicts, 1)]
+        self.report.write_text("\n".join(
+            ["# deck.pptx", f"{DECK_HASH_MARK}{digest} -->", "",
+             "| Slide | Measured | Verdict |", "|---|---|---|", *rows]) + "\n")
+
+    def test_filled_verdicts_pass_and_survive(self):
+        self._write(deck_hash(self.deck), ["ok", "ok — cover"])
+        before = self.report.read_text()
+        self.assertEqual(_gate_on_verdicts(self.deck, None), 0)
+        self.assertEqual(self.report.read_text(), before)
+
+    def test_blank_verdict_fails(self):
+        self._write(deck_hash(self.deck), ["ok", ""])
+        self.assertEqual(_gate_on_verdicts(self.deck, None), 1)
+
+    def test_report_for_another_build_fails(self):
+        self._write("0" * 64, ["ok", "ok"])
+        self.assertEqual(_gate_on_verdicts(self.deck, None), 1)
+
+    def test_build_script_is_refused(self):
+        self.assertEqual(_gate_on_verdicts(self.deck, Path("build.py")), 2)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ Build, check and render a deck in one command -- the last thing you run.
     python3 scripts/make_deck.py build.py deck.pptx --template company-template.pptx
     python3 scripts/make_deck.py build.py deck.pptx --build-only        # tight loop
     python3 scripts/make_deck.py deck.pptx --skip-qa --no-render        # no gate
-    python3 scripts/make_deck.py deck.pptx --require-verdicts           # visual gate
+    python3 scripts/make_deck.py deck.pptx --require-verdicts           # visual gate, no rebuild
     python3 scripts/make_deck.py deck.pptx --no-render
 
 Give it your build script and the deck that script writes, and it will:
@@ -35,13 +35,18 @@ one behind.  The full command is the gate and is run once, when the tight loop
 is clean.
 
 **The visual gate.** ``--require-verdicts`` makes the "every slide needs a
-verdict" rule an exit code: a blank verdict cell fails the run.
+verdict" rule an exit code: a blank verdict cell fails the run.  It only reads
+the report -- it builds, checks and renders nothing, because any of those
+rewrites the report and blanks the verdicts it is meant to check.  The report
+carries the deck's SHA-256, so verdicts written for an earlier build of the
+deck are refused rather than counted.
 
 Exit codes: 0 clean, 1 the build failed or the checks found something, 2 bad
 usage.
 """
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -51,7 +56,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from office.deckbuild import SKIP_QA_ENV, find_template  # noqa: E402
-from office.impress import PRESENTATION_EXTS, SofficeError, shutdown  # noqa: E402
+from office.impress import (PRESENTATION_EXTS, SofficeError,  # noqa: E402
+                            parse_slide_spec, shutdown)
 from qa import check, validate_pptx  # noqa: E402
 
 PPTX_EXTS = {".pptx", ".potx"}
@@ -134,6 +140,41 @@ def _verdict_table(checked: int, sparse=()) -> list:
     for number in range(1, checked + 1):
         rows.append(f"| {number} | {measured.get(number, '')} | |")
     return rows
+
+
+DECK_HASH_MARK = "<!-- deck-sha256: "
+
+
+def deck_hash(deck: Path) -> str:
+    return hashlib.sha256(deck.read_bytes()).hexdigest()
+
+
+def report_deck_hash(report: Path):
+    """The deck hash a report was written for, or ``None``."""
+    try:
+        for line in report.read_text(encoding="utf-8").splitlines()[:6]:
+            if line.startswith(DECK_HASH_MARK):
+                return line[len(DECK_HASH_MARK):].split()[0]
+    except OSError:
+        pass
+    return None
+
+
+def open_fix_verdicts(report: Path) -> list:
+    """``[slide_number]`` whose verdict still says ``fix``.
+
+    ``vision_brief.py collect`` writes the vision-agent's findings as
+    ``fix — ...``.  A verdict is a decision, and "here is what is wrong" is
+    not one: the gate passes only once the slide is fixed and re-checked, or
+    the finding is overruled in the cell with a measurement.
+    """
+    out = []
+    for line in report.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if (line.startswith("|") and len(cells) == 3 and cells[0].isdigit()
+                and cells[2].lower().startswith("fix")):
+            out.append(int(cells[0]))
+    return out
 
 
 def missing_verdicts(report: Path, checked: int) -> list:
@@ -231,7 +272,8 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     # footnote by every run that shipped a deck nobody had opened.
     eyes = "nothing — no render has been looked at yet"
     lines = [
-        f"# {deck.name}", "",
+        f"# {deck.name}",
+        f"{DECK_HASH_MARK}{deck_hash(deck)} -->", "",
         f"**Eyes:** {eyes}", "",
         f"{checked} slide(s) checked.", "",
     ]
@@ -316,6 +358,53 @@ def _contact_sheet(deck: Path, outdir: Path):
     return sheets[0] if sheets else None
 
 
+def _gate_on_verdicts(deck: Path, script) -> int:
+    """``--require-verdicts``: read the report, never rewrite it.
+
+    Every other mode rewrites ``<deck>-report.md`` and so blanks the verdict
+    column; checking the verdicts after that could never pass.  So this mode
+    builds nothing and only reads -- and refuses a report written for a
+    different build of the deck, whose verdicts describe other slides.
+    """
+    if script is not None:
+        print("Error: --require-verdicts only reads the report. Run it on the "
+              "deck alone, after the full run and after writing the verdicts: "
+              f"make_deck.py {deck} --require-verdicts", file=sys.stderr)
+        return 2
+    if not deck.exists():
+        print(f"Error: {deck} does not exist", file=sys.stderr)
+        return 2
+    report = deck.resolve().with_name(deck.stem + "-report.md")
+    if not report.is_file():
+        print(f"No report at {report}. Run make_deck.py on the deck first.")
+        return 1
+    if report_deck_hash(report) != deck_hash(deck):
+        print(f"{report.name} was written for a different build of "
+              f"{deck.name}. Its verdicts describe other slides: re-run the "
+              f"full make_deck.py, review the new renders, write the verdicts "
+              f"again.")
+        return 1
+    rows = sum(1 for line in report.read_text(encoding="utf-8").splitlines()
+               if line.startswith("| ") and line[2:].split("|")[0].strip().isdigit())
+    missing = missing_verdicts(report, rows)
+    if missing:
+        shown = ", ".join(str(n) for n in sorted(missing))
+        print(f"Missing verdicts for slide(s): {shown}. A slide nobody has "
+              f"looked at cannot be finished -- give the renders to the "
+              f"vision-agent and write its verdict into the report's table.")
+        return 1
+    open_fixes = open_fix_verdicts(report)
+    if open_fixes:
+        shown = ", ".join(str(n) for n in open_fixes)
+        print(f"Open `fix` verdicts on slide(s): {shown}. Fix them in the "
+              f"build script and re-run make_deck.py -- or, if a measurement "
+              f"shows the finding is wrong, replace the cell with `ok — "
+              f"<the measurement>` (references/qa.md).")
+        return 1
+    print(f"All {rows} slide(s) have a verdict.")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Build a deck, check it, and render it for review",
@@ -348,10 +437,10 @@ def main():
                              "with a full run (no flags) before calling the "
                              "deck done.")
     parser.add_argument("--require-verdicts", action="store_true",
-                        help="After building, exit 1 unless every slide has a "
-                             "verdict written in the report's table. Turns the "
-                             "visual half of QA into a gate: a slide nobody "
-                             "has looked at fails the run.")
+                        help="Read the report only (no build, no QA, no "
+                             "render) and exit 1 unless every slide has a "
+                             "verdict and the report matches this deck. Run "
+                             "it after writing the verdicts.")
     args = parser.parse_args()
 
     script, deck = None, None
@@ -372,6 +461,9 @@ def main():
     if script is not None and not script.exists():
         print(f"Error: {script} does not exist", file=sys.stderr)
         return 2
+    if args.require_verdicts:
+        return _gate_on_verdicts(deck, script)
+
     # Through the same resolver ``build_deck`` uses, so the one path string the
     # documentation prints for both -- "assets/company-template.pptx" -- means
     # the same file here as it does in the build script.
@@ -428,12 +520,13 @@ def main():
         # built (or a script just wrote it); nothing is checked and the deck
         # is not gated. The full run -- no --skip-qa -- is the gate.
         issues, checked, sparse, notes, prose, acknowledged = [], 0, [], (), ((), ()), []
-        print("Skipping QA (--skip-qa). This deck is NOT checked and NOT "
-              "finished -- re-run without --skip-qa before it ships.")
+        flag = "--build-only" if args.build_only else "--skip-qa"
+        print(f"Skipping QA ({flag}). This deck is NOT checked and NOT "
+              f"finished -- re-run without {flag} before it ships.")
     else:
         if args.slides:
             try:
-                wanted = qa._parse_slides(args.slides)
+                wanted = set(parse_slide_spec(args.slides))
             except ValueError as e:
                 print(f"Error: --slides {e}", file=sys.stderr)
                 if render_proc is not None:
@@ -522,14 +615,12 @@ def main():
                           prose, acknowledged=acknowledged)
         if images:
             print(
-                "\n**Give the renders to the vision-agent and write a verdict "
-                "per slide in the report's Verdicts table.** "
-                "The checks above cannot see a slide: they will not tell you "
-                "that a diagram is off-centre, that two shapes collide, or "
-                "that one is still in the template's language. Delegate every "
-                "render to the vision-agent — it reads images, and it is how "
-                "a build model with no eyes does the visual half of this "
-                "check."
+                "\n**Next: the vision-agent, one slide per call.** The checks "
+                "above cannot see a slide. Run "
+                f"`vision_brief.py slides {deck}` -- it writes the tested "
+                "brief beside every render and prints the one-line "
+                "delegation -- then `vision_brief.py collect` fills the "
+                "verdict table."
                 + (" Start with slide%s %s — measured above as possibly empty."
                    % ("" if len(sparse) == 1 else "s",
                       ", ".join(str(n) for n, _ in sparse)) if sparse else "")
@@ -546,16 +637,6 @@ def main():
     report = deck.resolve().with_name(deck.stem + "-report.md")
     if not args.skip_qa and report.exists():
         print(f"\nfindings: {report}")
-
-    if args.require_verdicts and not args.skip_qa:
-        missing = missing_verdicts(report, checked)
-        if missing:
-            failed = True
-            shown = ", ".join(str(n) for n in sorted(missing))
-            print(f"\nMissing verdicts for slide(s): {shown}. A slide nobody "
-                  f"has looked at cannot be finished -- give the renders to "
-                  f"the vision-agent and write its verdict into the report's "
-                  f"table, then re-run with --require-verdicts.")
 
     shutdown()
     return 1 if failed else 0

@@ -42,7 +42,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from probe import probe_data  # noqa: E402
-from office.impress import PRESENTATION_EXTS  # noqa: E402
+from office.impress import PRESENTATION_EXTS, SofficeError  # noqa: E402
 from office.rasterize import rasterize  # noqa: E402
 from office.draw import advance_em  # noqa: E402
 

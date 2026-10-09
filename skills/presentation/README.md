@@ -152,17 +152,22 @@ wrong (stage E shows you).
 
 ### Method 2: the vision-agent
 
-The same worksheet, but the blanks are filled by **delegating each design's
-`render.png` to the vision-agent** (the `vision` subagent) — it reads the
-image, and you put its judgement into `purpose` / `use_when` / `avoid_when`.
-This is the deck-pipeline's "no-hosted-model" rule applied to the catalog too:
-the vision-agent runs on your own infrastructure and the renders never leave
-the machine.
+The same worksheet, prefilled by the vision-agent (the `vision` subagent),
+one design per call, from a generated brief:
 
-Ask the vision-agent only for what needs eyes — what the layout is *for*, what
-its pictures depict — never for retext keys, indices or budgets, which are
-measured. Keep the user in the loop: the vision-agent proposes, the user
-approves. Then the same import as Method 1:
+```bash
+python3 scripts/vision_brief.py designs templates/acme/catalog
+# per design:  Read the brief at <catalog>/slide-NN/brief.md and follow it exactly.
+# save reply:  <catalog>/slide-NN/answer.md
+python3 $SETUP/name_designs.py templates/acme/catalog     # worksheet, prefilled
+```
+
+The brief asks only for what needs eyes — name, purpose, content shape, item
+limit, when to use and avoid it, what its pictures depict — never for retext
+keys, indices, budgets or colours, which are measured. The vision-agent runs
+on your own infrastructure and the renders never leave the machine. Review the
+prefilled worksheet with the user — the vision-agent proposes, the user
+approves — then the same import as Method 1:
 
 ```bash
 python3 $SETUP/name_designs.py templates/acme/catalog --import
@@ -328,6 +333,7 @@ machine.
 | `scripts/catalog_import.py` | Recovery: a hand-written catalog to the entries it never kept | once, if needed |
 | `../presentation-setup/scripts/probe_deck.py` | Stage E: three real slides on the new pack | build-time |
 | `scripts/review_renders.py` — *removed* | The per-deck visual reviewer used to send renders to a hosted model; that job is now the vision-agent, which the build agent delegates to. |
+| `scripts/vision_brief.py` | Writes the tested vision-agent brief beside every render or design, and collects the saved answers into the report or the worksheet | runtime + build-time |
 | `scripts/wireframe.py` | A render as a text ink-map, no model; the fallback when the vision-agent is unavailable | runtime |
 | `references/catalog.example.md` | The generated format, annotated | reference |
 | `templates/README.md` | What a pack is and how one is chosen | reference |

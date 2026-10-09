@@ -275,38 +275,45 @@ sitting where sixteen different claims should be.
 ## Visual QA through the vision-agent
 
 **You cannot see the renders yourself** — a build model has no image processing —
-so the eyes of this skill are the **vision-agent** (the `vision` subagent).
-After `make_deck.py` writes `render/` (or `scripts/render.py deck.odp` prints
-its PNG paths), **delegate every PNG to the vision-agent** and write its
-per-slide verdicts into the report's Verdicts table. That delegation is the
-required visual half of QA, with the same standing as the automated half: **a
-deck is not finished while a verdict is blank**, and a build model must never
-describe a slide it has not seen.
+so the eyes of this skill are the **vision-agent** (the `vision` subagent). A
+build model must never describe a slide it has not seen, and must never write
+the vision-agent's brief itself:
 
-Give the vision-agent the same brief the scripted reviewer used to get: report
-what measurement cannot reach — figures off-centre, peers styled
-inconsistently, cards at different heights, a Venn whose circles do not
-overlap, a region that reads as unfinished, text left in another language —
-and do not re-report overflow, off-slide geometry, contrast or collisions,
-which `qa.py` already measures. Forbid it from reporting spelling, typos,
-grammar or punctuation: the deck's exact text is read from the file by `qa.py`,
-and a model guessing letters out of pixels is strictly worse. Language and
-leftover placeholder wording are still fair game.
+```bash
+scripts/vision_brief.py slides deck.pptx --language German   # after make_deck.py
+# for each slide N, one call:  Read the brief at <render>/slide-N.brief.md and follow it exactly.
+# save each reply, unedited:   <render>/slide-N.answer.md
+scripts/vision_brief.py collect deck.pptx                   # fills the verdict table
+```
 
-What to check, most common first:
+**Why the brief is generated, not written** — measured on gemma-4-31b against
+slides with planted defects, on a German and an English template:
 
-- **Text overflow, or text cut off at a box or slide edge.**
-- Overlapping elements (text through shapes, lines through words)
-- Footers or citations colliding with the content above
-- Elements closer than 0.3", or margins under 0.5"
-- Uneven gaps — cramped in one place, empty in another. **Start with the
-  slides the run listed under "slides to look at"**, the ones already measured
-  as painting almost nothing
-- Columns or repeated cards not aligned consistently
-- Low-contrast text or icons (light on light, dark on dark)
-- Template decoration left behind after text replacement — e.g. a title
-  underline positioned for one line when the new title wraps to two
-- Leftover placeholder text
+| | a brief written by the build model | `vision_brief.py` |
+|---|---|---|
+| images per call | all of them | one |
+| leftover template label on every slide | found on 2 of 18 runs | 18 of 18 |
+| off-centre diagram | missed | found (English deck) |
+| tiny, crammed text | missed | found |
+| hollow cards, a diagram tiny for its space | passed as `ok` | found |
+| invented defects ("cards at different heights") | on four slides, every run | none |
+| a real deepseek deck a designer would reject | "all 9 ok" | 6 of 9 sent back, with the reason |
+
+The brief describes the slide on a 3×3 grid before judging it, asks ten closed
+questions (headline, focal point, empty band, off-centre, overlap, peers,
+hollow boxes, broken word, language, unfinished) with *unsure* allowed and a
+location required for every *yes*, and ends in a JSON verdict with a concrete
+fix per finding. It carries what `qa.py` measured for that slide, and tells the
+vision-agent what is already measured — spelling, leftover template wording,
+overflow, contrast, sizes — so it does not re-report or guess them. **Never ask
+the vision-agent about colours**: one named a brand's cyan "yellow-orange", and
+the run that believed it picked the wrong accent.
+
+**A `fix` verdict is work, not a record.** Change the build script, re-run
+`make_deck.py`, brief the new renders. `make_deck.py deck.pptx
+--require-verdicts` reads the report without rebuilding and exits 1 while any
+verdict is blank or still says `fix`, or when the report belongs to an earlier
+build of the deck.
 
 **Treat what the vision-agent reports as a reason to look, never as a fact.**
 A vision model's false-positive rate on slide layout is unknown and its findings

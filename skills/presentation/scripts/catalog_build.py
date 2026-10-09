@@ -59,7 +59,7 @@ EXPECTED_RULES = [
     ("a cover or deck opener", ("opener", "cover", "title slide", "front")),
     ("an agenda", ("agenda", "contents", "overview")),
     ("a section divider", ("section", "divider", "chapter")),
-    ("a single headline idea", ("headline", "one big", "single idea", "statement")),
+    ("a single headline idea", ("headline", "one big", "one idea", "single idea", "statement")),
     ("bulleted content", ("bullet", "prose", "body text", "standard content")),
     ("a comparison", ("compar", "versus", "vs", "two things", "before/after")),
     ("a process or timeline", ("process", "timeline", "roadmap", "phase", "step")),
@@ -69,8 +69,9 @@ EXPECTED_RULES = [
     ("a chart", ("chart", "graph", "plot")),
     ("a quote", ("quote", "testimonial")),
     # "person" would match "personal"; the words a real rule uses are these.
-    ("people", ("people", "team", "org chart", "personnel", "headshot")),
-    ("a closing slide", ("closing", "close", "final", "thank", "end")),
+    ("people", ("people", "team", "org chart", "personnel", "headshot",
+                "who is involved")),
+    ("a closing slide", ("closing", "close", "final", "thank", "end", "last slide")),
 ]
 
 
@@ -92,7 +93,9 @@ def _capacity(cap):
         return "_(not catalogued)_"
     tick = "✓" if cap.get("headline") else "✗"
     chart = "✓" if cap.get("supports_chart") else "✗"
-    return (f"headline {tick} · body slots {cap.get('body_slots', '?')} · "
+    items = (f" · holds {cap['max_items']} item(s)"
+             if cap.get("max_items") else "")
+    return (f"headline {tick} · body slots {cap.get('body_slots', '?')}{items} · "
             f"max bullets {cap.get('max_bullets_per_body', '?')} · "
             f"images {cap.get('images', '?')} · chart {chart}")
 
@@ -157,6 +160,8 @@ def _entry_block(number, entry, structure, extra=None):
     types = entry.get("content_types") or []
     out.append("- **Content types:** "
                + (", ".join(f"`{t}`" for t in types) or "_(none)_"))
+    if entry.get("content_shape"):
+        out.append(f"- **Content shape:** {entry['content_shape']}")
     out.append(f"- **Capacity:** {_capacity(entry.get('capacity'))}")
 
     keys = structure.get("retext_keys") or []
@@ -191,6 +196,8 @@ def _entry_block(number, entry, structure, extra=None):
 
     out.append(f"- **Use when:** {entry.get('use_when', '_(not catalogued)_')}")
     out.append(f"- **Avoid when:** {entry.get('avoid_when', '_(not catalogued)_')}")
+    if entry.get("looks_best"):
+        out.append(f"- **Looks best:** {entry['looks_best']}")
     out.append(f"- **Imagery:** {_imagery(entry, structure)}")
     if entry.get("notes"):
         out.append(f"- **Notes:** {entry['notes']}")

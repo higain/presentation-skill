@@ -34,6 +34,38 @@ from _skill import engine  # noqa: E402
 
 engine()
 
+from office.vision import CONTENT_TYPES, last_json  # noqa: E402
+
+#: What a vision-agent answer may fill, beyond the three blanks a person fills.
+#: ``content_shape``, ``max_items`` and ``looks_best`` are the fields a
+#: text-only builder can act on: "3 numbers, each with a short label" matches
+#: content, "a KPI dashboard" does not.
+JUDGED = ("name", "content_types", "purpose", "use_when", "avoid_when",
+          "content_shape", "max_items", "looks_best")
+
+
+def read_answer(folder: Path) -> dict:
+    """The vision-agent's JSON answer for one design, or ``{}``.
+
+    ``vision_brief.py designs`` writes ``brief.md`` beside each render; the
+    build model saves the vision-agent's reply beside it as ``answer.md``.
+    """
+    path = folder / "answer.md"
+    if not path.is_file():
+        return {}
+    answer = last_json(path.read_text(encoding="utf-8")) or {}
+    out = {}
+    for key in JUDGED:
+        value = answer.get(key)
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value)
+        if value not in (None, ""):
+            out[key] = str(value).replace("\n", " ").strip()
+    imagery = answer.get("imagery")
+    if isinstance(imagery, list):
+        out["imagery"] = [i for i in imagery if isinstance(i, dict)]
+    return out
+
 #: What a design is for, as far as a measurement can tell.  Deliberately few:
 #: these are the ones that follow from shape counts alone, and everything finer
 #: -- "an effort estimate", "a customer reference" -- is what the person adds.
@@ -96,13 +128,14 @@ def worksheet(catalog: Path):
     lines = [
         f"# Designs — {manifest['file']}", "",
         "One block per design. **The measured lines are already right — do not "
-        "edit them.** Fill the three blank fields from the render beside each "
-        "block; `purpose` in one sentence is enough, and `use_when` is what "
-        "actually gets read later.", "",
+        "edit them.** Blocks marked *proposed by the vision-agent* were filled "
+        "from its answer: review them with the user and correct what is "
+        "wrong. Fill any blank field from the render beside the block; "
+        "`content_shape` and `use_when` are what a builder actually matches "
+        "content against.", "",
         "`name` is what the decision table will call it. `content_types` is a "
-        "comma-separated list from: section-divider, bulleted-content, "
-        "comparison, cards, table, matrix, image, timeline, kpis, quote, "
-        "one-big-idea. Anything else is fine; the table just repeats it.", "",
+        "comma-separated list from: " + ", ".join(CONTENT_TYPES) + ". "
+        "Anything else is fine; the table just repeats it.", "",
         "Then: `name_designs.py " + str(catalog) + " --import`", "",
         "## Canvas", "",
         "The design a diagram or a chart is drawn on, stripped back to its "
@@ -120,17 +153,19 @@ def worksheet(catalog: Path):
             (catalog / f"slide-{number:02d}" / "structure.json").read_text())
         name, kinds = _guess(structure)
         capacity = _capacity(structure)
+        answer = read_answer(catalog / f"slide-{number:02d}")
         render = catalog / f"slide-{number:02d}" / "render.png"
         keys = structure.get("retext_keys") or []
         budgets = structure.get("title_budgets") or []
         lines += [
             f"## Design {number}", "",
             f"![render]({render.relative_to(catalog)})", "",
-            f"- **name**: {name}",
-            f"- **content_types**: {', '.join(kinds)}",
-            "- **purpose**: ",
-            "- **use_when**: ",
-            "- **avoid_when**: ",
+            *(["*Proposed by the vision-agent — review.*", ""] if answer
+              else []),
+            f"- **name**: {answer.get('name') or name}",
+            f"- **content_types**: "
+            f"{answer.get('content_types') or ', '.join(kinds)}",
+            *(f"- **{key}**: {answer.get(key, '')}" for key in JUDGED[2:]),
             "",
             f"*Measured — master `{row['master']}`, {structure.get('shape_count', 0)} "
             f"shapes, {capacity['body_slots']} body slot(s), "
@@ -194,6 +229,7 @@ def write_entries(catalog: Path, filled):
             (catalog / f"slide-{number:02d}" / "structure.json").read_text())
         guess_name, guess_kinds = _guess(structure)
         fields = filled.get(number, {})
+        answer = read_answer(catalog / f"slide-{number:02d}")
         kinds = [kind.strip() for kind
                  in (fields.get("content_types") or "").split(",") if kind.strip()]
         entry = {
@@ -205,10 +241,16 @@ def write_entries(catalog: Path, filled):
             "purpose": fields.get("purpose") or "",
             "use_when": fields.get("use_when") or "",
             "avoid_when": fields.get("avoid_when") or "",
+            "content_shape": fields.get("content_shape") or "",
+            "looks_best": fields.get("looks_best") or "",
             "notes": "",
             "content_types": kinds or guess_kinds,
             "capacity": _capacity(structure),
+            "imagery": answer.get("imagery") or [],
         }
+        items = re.findall(r"\d+", fields.get("max_items") or "")
+        if items:
+            entry["capacity"]["max_items"] = int(items[0])
         if not entry["purpose"] or not entry["use_when"]:
             blank.append(number)
         (entries_dir / f"slide-{number:02d}.json").write_text(
@@ -223,18 +265,24 @@ def write_entries(catalog: Path, filled):
 #: content type and the question it answers; the first design claiming that
 #: type wins, and the canvas row is appended by `catalog_build.py` itself.
 TABLE_ORDER = [
-    ("deck opener", "section-divider"),
-    ("section start", "section-divider"),
-    ("agenda", "bulleted-content"),
-    ("a comparison, two things side by side", "comparison"),
-    ("parallel items of equal weight", "cards"),
-    ("a sequence or a plan with phases", "timeline"),
-    ("numbers that carry the point", "kpis"),
-    ("a table of real rows and columns", "table"),
-    ("a picture doing the arguing", "image"),
-    ("a quotation or a customer voice", "quote"),
-    ("one idea, stated large", "one-big-idea"),
-    ("body text and bullets", "bulleted-content"),
+    ("deck opener", ("cover", "section-divider")),
+    ("section start", ("section-divider",)),
+    ("agenda", ("agenda", "bulleted-content")),
+    ("a comparison, two things side by side", ("comparison",)),
+    ("parallel items of equal weight", ("cards",)),
+    ("a sequence of steps", ("process",)),
+    ("a plan over time, with dates or phases", ("timeline", "process")),
+    ("a repeating cycle", ("cycle",)),
+    ("numbers that carry the point", ("kpis",)),
+    ("a chart of real data", ("chart",)),
+    ("a table of real rows and columns", ("table",)),
+    ("a 2x2 or a grid of positions", ("matrix",)),
+    ("who is involved, and who reports to whom", ("org-chart", "team")),
+    ("a picture doing the arguing", ("image",)),
+    ("a quotation or a customer voice", ("quote",)),
+    ("one idea, stated large", ("one-big-idea",)),
+    ("body text and bullets", ("bulleted-content",)),
+    ("the last slide", ("closing",)),
 ]
 
 
@@ -246,7 +294,8 @@ def write_decision_table(catalog: Path, rows, canvas=None):
             by_kind.setdefault(kind, []).append((number, entry["name"]))
 
     table, used = [], set()
-    for when, kind in TABLE_ORDER:
+    for when, kinds in TABLE_ORDER:
+        kind = next((k for k in kinds if by_kind.get(k)), kinds[0])
         options = by_kind.get(kind) or []
         pick = next((opt for opt in options if opt[0] not in used), None)
         if pick is None:
@@ -293,9 +342,17 @@ def main():
     if not args.do_import:
         out = worksheet(args.catalog)
         print(f"Wrote {out}")
-        print("\nDelegate each design's `render.png` to the vision-agent and "
-              "fill `purpose`, `use_when` and `avoid_when` from what it "
-              "reports. The measured lines are already right.\n")
+        answered = sum(1 for folder in args.catalog.glob("slide-*")
+                       if (folder / "answer.md").is_file())
+        if answered:
+            print(f"\n{answered} design(s) prefilled from the vision-agent's "
+                  f"answers. Review them with the user; the measured lines "
+                  f"are already right.\n")
+        else:
+            print("\nNo answers yet. Write the briefs first -- "
+                  "`vision_brief.py designs <catalog>` in the presentation "
+                  "skill -- and give each to the vision-agent, one design per "
+                  "call. Or fill the blanks by hand with the user.\n")
         print(f"Then: python3 {sys.argv[0]} {args.catalog} --import")
         return 0
 

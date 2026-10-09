@@ -181,19 +181,29 @@ black-on-navy text are defects, not noise. **Editing the build script is not
 fixing them** — nothing has changed until the build has re-run and the report
 comes back clean.
 
-**6. Give the PNGs to the vision-agent and write a verdict per slide.** The
-report ends in a table with one row per slide and the verdict column blank.
-**The deck is not finished while a cell is empty** — that is the visual half of
-the check, and it has the same standing as the automated half. **You cannot see
-the renders yourself: the build model has no image processing, so delegate every
-render in `render/` to the vision-agent** (the `vision` subagent), which reads
-each PNG and returns what it sees — emptiness, off-centre diagrams, colliding
-shapes, text still in the template's language. Fill each verdict from what it
-reports, and say plainly which slides it could not see. If the vision-agent is
-unavailable, run `scripts/wireframe.py render/` — it prints each slide as an ink
-grid, which shows emptiness, banding and content that is not centred — and name
-the slides you could not verify. Never claim a slide is checked when nothing
-with eyes has looked at it.
+**6. Have the vision-agent look at every slide — one slide per call, with the
+tested brief.** You cannot see the renders. Do not write the vision-agent's
+brief yourself, and never send it several images at once: a hand-written
+brief about nine slides comes back "all ok" for a deck a designer would
+reject.
+
+```bash
+scripts/vision_brief.py slides out.pptx --language English   # one brief per slide
+```
+
+For **each** slide N, send the vision-agent (the `vision` subagent) exactly:
+`Read the brief at <render>/slide-N.brief.md and follow it exactly.` Save its
+whole reply, unedited, as `<render>/slide-N.answer.md`. Then:
+
+```bash
+scripts/vision_brief.py collect out.pptx          # fills the verdict table
+```
+
+A `fix` verdict is work: change the build script, re-run step 4, brief the new
+renders. `make_deck.py out.pptx --require-verdicts` passes only when every slide
+has a verdict and none still says `fix`. If the vision-agent is unavailable,
+run `scripts/wireframe.py render/` and name the slides nothing with eyes has
+seen.
 
 Where it prints **slides to look at**, start there: those are the ones measured
 as painting almost nothing, and they are either deliberate statement slides or
@@ -224,7 +234,7 @@ scripts/dump.py deck.odp` does the same thing if the executable bit was lost.
 | `scripts/dump.py deck.odp [-o out.md]` | Deck to markdown: per slide the layout, master, text, tables, speaker notes, empty placeholder slots and a hidden flag |
 | `scripts/render.py deck.odp [-o dir] [--dpi N] [--slides 3,7-9]` | One PNG per slide; prints their absolute paths. **This is visual QA** |
 | `scripts/qa.py deck.pptx [--template brand.pptx]` | The checks alone, without the renders: overflow, mid-word breaks, off-slide shapes, leftover template wording and pictures, placeholders, markdown, contrast, occlusion — plus `validate.py` on a `.pptx` |
-| **the vision-agent** (`vision` subagent) on `render/` | **The check with eyes.** You cannot see images, so delegate every render to the vision-agent; it reads each PNG and reports what it saw. This is the required visual half of QA. Advisory in the sense that it cannot fail a build, but a blank verdict is a slide nobody has looked at |
+| `scripts/vision_brief.py slides deck.pptx` · `collect deck.pptx` | **The check with eyes.** Writes the tested vision-agent brief beside every render, one per slide; `collect` reads the saved answers into the report's verdict table. `designs <catalog>` does the same for a template's designs during setup |
 | `scripts/wireframe.py render/slide-03.png` | A render as text: an ink grid, the centroid, the widest blank band, the margins. **What to run when the vision-agent is unavailable** — it shows emptiness, banding and things that are not centred without eyes. `make_deck.py` prints one for every slide it flags |
 | `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** |
@@ -396,20 +406,12 @@ reported so the list cannot quietly grow into a blanket "ignore everything".
 The automated half of `make_deck.py` can then exit clean, with the
 acknowledged findings listed separately in the report.
 
-**You cannot see the renders yourself — the build model has no image
-processing — so delegate every render in `render/` to the vision-agent (the
-`vision` subagent) and write its per-slide verdicts into the report's table.**
-That is the required visual half of QA and it has the same standing as the
-automated half. It is advisory only in that it never fails a build; a blank
-verdict is still a slide nobody has looked at. `make_deck.py` names `render/`
-for you. If the vision-agent is unavailable, `scripts/wireframe.py render/`
-shows each slide as an ink grid, and you must say which slides nothing with
-eyes has seen.
-
-**Run `--require-verdicts` when the deck must actually gate on having been
-looked at** (a client deliverable, a review): it exits 1 unless every slide
-has a verdict written in the report's table, turning the visual half of QA
-into an enforced stop rather than a reminder.
+**The visual half is step 6 of the recipe**: `vision_brief.py slides`, one
+vision-agent call per slide, `vision_brief.py collect`. It has the same standing
+as the automated half. **Run `make_deck.py deck.pptx --require-verdicts`** last
+when the deck must gate on having been looked at (a client deliverable, a
+review): it only reads the report, and exits 1 while any verdict is blank or
+still says `fix`, or when the report belongs to an earlier build.
 
 **A visual finding is dismissed only by a measurement you show.** Reasoning
 about why the reviewer must be wrong is not a measurement, and it is how a deck

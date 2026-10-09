@@ -68,7 +68,9 @@ python3 scripts/count_style.py brand.pptx           # the colours and sizes it u
 ```
 
 Open the contact sheet — delegate it to the vision-agent if you cannot see
-images — and **count**. Does the design count match what you
+images, asking **only** how many distinct designs it shows and whether any
+repeat; never ask it about colours, which `count_style.py` counts and a vision
+model guesses wrong — and **count**. Does the design count match what you
 see? Is it one slide per design, or does the file repeat a layout with
 different content? If it repeats, say so now: the catalog will have twelve
 rows meaning the same thing, and no later stage recovers from that.
@@ -164,26 +166,34 @@ python3 $SKILL/scripts/catalog_extract.py brand.pptx -o $SKILL/templates/acme/ca
 
 Thirty seconds, no model. One folder per design with its render and a
 `structure.json` of everything measurable: retext keys, empty slots, title
-budgets, the canvas hint. Then judge what each design is for:
+budgets, the canvas hint. Then have the vision-agent judge what each design is
+for — **one design per call, with the generated brief**:
 
-Write the judged half into the worksheet:
+```bash
+python3 $SKILL/scripts/vision_brief.py designs $SKILL/templates/acme/catalog
+```
+
+It writes `brief.md` beside each `render.png`. For **each** design, send the
+vision-agent exactly `Read the brief at <catalog>/slide-NN/brief.md and follow
+it exactly.` and save its whole reply, unedited, as `slide-NN/answer.md`.
+Never batch designs: fifteen renders in one call come back as fifteen generic
+answers, and the decision table built from them picks designs by accident.
+No vision-agent? Skip this; you will fill the blanks by hand.
+
+Then write the worksheet:
 
 ```bash
 python3 scripts/name_designs.py $SKILL/templates/acme/catalog
 ```
 
-That writes `designs.md` beside the renders, with every measured field already
-filled and three blanks per design: `purpose`, `use_when`, `avoid_when`. Fill
-the blanks one of two ways:
-
-- **Delegate each design's `render.png` to the vision-agent** and fill the
-  blanks from what it reports. Ask it only for what needs eyes — what the
-  layout is *for*, what its pictures depict — never for retext keys, indices
-  or budgets, which are measured. Keep the user in the loop: the vision-agent
-  proposes, the user approves.
-- **By hand with the user.** Open the contact sheet, go design by design,
-  propose one sentence for each blank from what you see, and let the user
-  correct it. Twenty designs is about five minutes.
+That writes `designs.md` beside the renders: every measured field filled, and
+every judged field — `name`, `content_types`, `purpose`, `use_when`,
+`avoid_when`, `content_shape`, `max_items`, `looks_best` — prefilled from the
+vision-agent's answers. **Review it with the user, design by design**; the
+vision-agent proposes, the user approves. Without answers the judged fields
+are blank: go through the contact sheet with the user and propose one sentence
+each. `content_shape` and `use_when` matter most — they are what a text-only
+builder matches content against.
 
 The measured lines are already right and must not be edited. Then import:
 
@@ -210,12 +220,14 @@ python3 $SKILL/scripts/render.py probe.pptx   # writes render/slide-1.png ...
 
 Three real slides: a divider, a content slide retexted through the catalog's
 own keys, and a drawn slide on the pack's canvas design in the pack's own
-colours. **Delegate the three PNGs to the vision-agent** (you cannot see images
-yourself) and ask, in order:
+colours. **Delegate the three PNGs to the vision-agent, one per call** (you
+cannot see images yourself), and ask it questions 1, 2 and 4. **Question 3 is
+for the user**, never the vision-agent: it cannot know which colours a brand
+owns, and given the hex codes it simply agrees.
 
 1. Does the divider title fit on one line, clear of the master's decoration?
-2. Is any word on slide 2 still the template's own?
-3. Are the colours on slide 3 the ones the brand actually uses?
+2. Is any word on slide 2 still the template's own sample text?
+3. Are the colours on slide 3 the ones the brand actually uses? *(the user)*
 4. On slide 3, is anything of the template's own furniture showing through
    the drawing, or is the drawing sitting where the design's own title was?
 
