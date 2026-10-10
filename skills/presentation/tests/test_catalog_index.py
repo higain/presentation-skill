@@ -46,9 +46,9 @@ class CanvasLeftoverTest(unittest.TestCase):
     def test_kept_label_with_sample_text_is_reported(self):
         s = {"canvas": {"keep": [0, 1, 2]},
              "slots": [_slot(0, placeholder="title", empty=True),
-                       _slot(1, "Double Diamond"), _slot(2, ""),
+                       _slot(1, "Sample topic"), _slot(2, ""),
                        _slot(3, "removed anyway")]}
-        self.assertEqual(_canvas_leftovers(s), [(1, "Double Diamond")])
+        self.assertEqual(_canvas_leftovers(s), [(1, "Sample topic")])
 
 
 class FoldTest(unittest.TestCase):
