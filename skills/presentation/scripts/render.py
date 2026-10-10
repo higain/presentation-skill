@@ -23,7 +23,6 @@ changes where text wraps.  See the Typography section of SKILL.md.
 """
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
@@ -31,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from office.impress import PRESENTATION_EXTS, SofficeError, parse_slide_spec  # noqa: E402
 from office.rasterize import rasterize  # noqa: E402
+from office.soffice import soffice_path  # noqa: E402
 
 _parse_slides = parse_slide_spec
 
@@ -46,7 +46,8 @@ def main():
     parser = argparse.ArgumentParser(description="Render a deck to one PNG per slide")
     parser.add_argument("input", help="Presentation to render")
     parser.add_argument(
-        "-o", "--outdir", default="render", help="Output directory (default: render/)"
+        "-o", "--outdir", default=None,
+        help="Output directory (default: render/ beside the deck)"
     )
     parser.add_argument(
         "--dpi", type=int, default=150, help="Resolution (default: 150)"
@@ -70,12 +71,10 @@ def main():
     if args.dpi < 1:
         print("Error: --dpi must be positive", file=sys.stderr)
         return 2
-    if shutil.which("soffice") is None and shutil.which("libreoffice") is None:
-        print(
-            "Error: soffice not found on PATH; install LibreOffice "
-            "(apt install libreoffice-impress)",
-            file=sys.stderr,
-        )
+    try:
+        soffice_path()
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
         return 2
 
     wanted = None
@@ -87,7 +86,11 @@ def main():
             return 2
 
     try:
-        images = render(source, Path(args.outdir), args.dpi, wanted)
+        # Beside the deck, not the working directory: run from the skill
+        # folder, a relative default wrote a company's slides into the skill.
+        outdir = (Path(args.outdir) if args.outdir
+                  else source.resolve().parent / "render")
+        images = render(source, outdir, args.dpi, wanted)
     except SofficeError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

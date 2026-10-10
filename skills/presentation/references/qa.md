@@ -311,9 +311,13 @@ the run that believed it picked the wrong accent.
 
 **A `fix` verdict is work, not a record.** Change the build script, re-run
 `make_deck.py`, brief the new renders. `make_deck.py deck.pptx
---require-verdicts` reads the report without rebuilding and exits 1 while any
-verdict is blank or still says `fix`, or when the report belongs to an earlier
-build of the deck.
+--require-verdicts` reads the report and the saved answers without rebuilding,
+and exits 1 while any verdict is blank or says `fix`, any answer still holds a
+medium or high finding, or the report belongs to an earlier build. Editing a
+verdict cell clears nothing; a finding a measurement disproves is a `vision`
+entry in `<deck>-allowlist.json`, where the user can see it. A run that
+rewrote seven "cards mostly empty" verdicts as "cards fill the area
+proportionally" is why.
 
 **Treat what the vision-agent reports as a reason to look, never as a fact.**
 A vision model's false-positive rate on slide layout is unknown and its findings

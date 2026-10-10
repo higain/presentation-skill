@@ -24,6 +24,7 @@ templates/acme/
   template.pptx        the master itself; build_deck duplicates slides out of it
   profile.json         palette, type scale, authoring notes   (make_pack.py)
   catalog.md           which design carries which content    (generated)
+  designs/             one file per design: keys, slots      (generated)
   overrides.md         the prose no script can measure        (hand-written)
   catalog/
     manifest.json      one row per design                     (catalog_extract.py)
@@ -195,7 +196,7 @@ catalogued)*, an override anchor that does not land is listed at the foot.
 **Then review it against the renders.** Every capacity figure and every
 decision-table row. Capacity is what a model overstates most.
 
-### Review notes go in `overrides.md`, never in `catalog.md`
+### Review notes go in `overrides.md`, never in `catalog.md` or `designs/`
 
 The catalog is regenerated from `catalog/` every time; edits to it are lost
 on the next run. Everything you want to keep goes in `templates/acme/overrides.md`
@@ -329,7 +330,7 @@ machine.
 | `scripts/catalog_extract.py` | Stage B: template to `catalog/` dossiers | build-time |
 | `../presentation-setup/scripts/name_designs.py` | Stage C without a hosted model: worksheet in, entries out | build-time |
 | `scripts/catalog_gemma.py` — *removed* | Used to judge dossiers with a hosted vision model; that job is now the vision-agent filling the `name_designs.py` worksheet | build-time |
-| `scripts/catalog_build.py` | Stage D: both halves plus overrides to `catalog.md`; `--check` for drift | build-time |
+| `scripts/catalog_build.py` | Stage D: both halves plus overrides to `catalog.md` (the index) and `designs/design-N.md` (one per design); `--check` for drift | build-time |
 | `scripts/catalog_import.py` | Recovery: a hand-written catalog to the entries it never kept | once, if needed |
 | `../presentation-setup/scripts/probe_deck.py` | Stage E: three real slides on the new pack | build-time |
 | `scripts/review_renders.py` — *removed* | The per-deck visual reviewer used to send renders to a hosted model; that job is now the vision-agent, which the build agent delegates to. |

@@ -275,7 +275,7 @@ is drawn for a set number of lines at a set size; a longer title does not clip,
 it flows on over whatever the *master* has behind it — and master decoration is
 not a shape on the page, so nothing in `qa.py` can see the result. On one
 template's dividers that decoration is a large triangle, and the second line
-comes out with a line struck through it. Budgets per design: the pack's `catalog.md`.
+comes out with a line struck through it. Budgets per design: the pack's `designs/design-N.md`.
 
 If the size it settles on looks wrong, the title is too long for that design
 rather than too big — shorten it, or build the slide on a canvas.

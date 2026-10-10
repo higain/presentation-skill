@@ -349,8 +349,9 @@ def main():
         description="Extract per-layout dossiers from a template for judging"
     )
     ap.add_argument("input", help="Template .pptx/.potx/.odp/.otp to survey")
-    ap.add_argument("-o", "--outdir", default="catalog",
-                    help="Output directory (default: catalog/)")
+    ap.add_argument("-o", "--outdir", default=None,
+                    help="Output directory (default: <template>-catalog/ "
+                         "beside the template)")
     ap.add_argument("--dpi", type=int, default=150, help="Render resolution")
     args = ap.parse_args()
 
@@ -360,6 +361,8 @@ def main():
     if source.suffix.lower() not in PRESENTATION_EXTS:
         ap.error(f"not a presentation: {source}")
 
+    if args.outdir is None:
+        args.outdir = str(source.resolve().with_name(source.stem + "-catalog"))
     try:
         manifest = extract(source, Path(args.outdir), args.dpi)
     except SofficeError as e:
@@ -369,9 +372,11 @@ def main():
     masters = sorted({s["master"] for s in manifest["slides"]})
     print(f"Wrote {n} layout dossiers to {args.outdir}/")
     print(f"Masters seen: {', '.join(masters)}")
-    print(f"Next: name_designs.py {args.outdir} to write the worksheet, fill "
-          f"its blanks with the vision-agent, then "
-          f"name_designs.py {args.outdir} --import")
+    print(f"Next: vision_brief.py designs {args.outdir} -- one brief per "
+          f"design for the vision-agent -- then name_designs.py "
+          f"{args.outdir} for the worksheet, then name_designs.py "
+          f"{args.outdir} --import")
+    return 0
 
 
 if __name__ == "__main__":

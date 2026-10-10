@@ -11,6 +11,7 @@ templates/
     template.pptx      the master itself; build_deck duplicates slides out of it
     profile.json       palette, type scale, and the template's authoring notes
     catalog.md         which design carries which content  (generated)
+    designs/           one file per design: keys, slots    (generated)
     overrides.md       the prose no script can measure     (hand-written)
     catalog/           extraction dossiers and the judged entries
 ```

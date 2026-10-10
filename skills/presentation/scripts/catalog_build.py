@@ -96,8 +96,9 @@ def _capacity(cap):
     items = (f" · holds {cap['max_items']} item(s)"
              if cap.get("max_items") else "")
     return (f"headline {tick} · body slots {cap.get('body_slots', '?')}{items} · "
-            f"max bullets {cap.get('max_bullets_per_body', '?')} · "
-            f"images {cap.get('images', '?')} · chart {chart}")
+            + (f"max bullets {cap['max_bullets_per_body']} · "
+               if cap.get("max_bullets_per_body") else "")
+            + f"images {cap.get('images', '?')} · chart {chart}")
 
 
 def _imagery(entry, structure):
@@ -155,7 +156,7 @@ def _load_overrides(path):
 
 def _entry_block(number, entry, structure, extra=None):
     name = entry.get("name") or f"Design {number}"
-    out = [f"### Slide {number} — {name}"]
+    out = [f"# Design {number} — {name}"]
     out.append(f"- **Purpose:** {entry.get('purpose', '_(not catalogued)_')}")
     types = entry.get("content_types") or []
     out.append("- **Content types:** "
@@ -163,6 +164,7 @@ def _entry_block(number, entry, structure, extra=None):
     if entry.get("content_shape"):
         out.append(f"- **Content shape:** {entry['content_shape']}")
     out.append(f"- **Capacity:** {_capacity(entry.get('capacity'))}")
+    out.append(f"- **Headline:** {_headline(structure)}")
 
     keys = structure.get("retext_keys") or []
     if keys:
@@ -387,7 +389,8 @@ def _palette_block(asset):
            "it types at. Take them from `office.draw` rather than writing hex "
            "in a build script:", "",
            "```python",
-           "D.color(\"cyan\")        D.color(\"accent\")     # by name, or by role",
+           f"D.color(\"{next(iter(colours), 'accent')}\")   "
+           "D.color(\"accent\")     # by name, or by role",
            "D.series(3)            # the first three, in order, for n things",
            "D.text(..., role=\"footnote\")                 # the size, by name",
            "```", ""]
@@ -504,7 +507,102 @@ def _roles_block(canvas, rules, entries):
     return out + [""]
 
 
-def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
+#: Where the per-design files go, beside ``catalog.md``.
+DESIGNS_DIR = "designs"
+
+
+def _key_at(structure, address):
+    """The retext key the shape at ``address`` carries, or ``None``."""
+    for key in structure.get("retext_keys") or []:
+        if str(key.get("address")) == str(address):
+            return key.get("key")
+    return None
+
+
+def _headline(structure):
+    """How a build writes this design's headline, in one cell.
+
+    Measured, never judged.  An empty title placeholder is the trap: ``retext``
+    cannot reach an empty shape, so a build writes its headline into whatever
+    small label does carry text, and the slide ships with no title.
+    """
+    slots = structure.get("slots") or []
+    title = next((s for s in slots if s.get("placeholder") == "title"), None)
+    if title is not None and title.get("empty"):
+        return "`set_title(page, …)` — the placeholder is empty"
+    if title is not None:
+        key = _key_at(structure, title.get("index"))
+        if key:
+            return f'retext `"{key[:30]}"`'
+    budgets = [b for b in structure.get("title_budgets") or []
+               if isinstance(b, dict) and b.get("pt", 0) >= DISPLAY_PT]
+    if budgets:
+        b = budgets[0]
+        key = _key_at(structure, b.get("address"))
+        where = f'retext `"{key[:30]}"`' if key else f"shape `[{b['address']}]`"
+        return f"{where}, one line of ≤{b['chars_per_line']} characters"
+    # No title placeholder: the headline is the largest text in the top third,
+    # which is what a designer's eye -- and the audience's -- reads first.
+    # A section number ("01") is large too, and is never the headline.
+    words = [s for s in slots
+             if len((s.get("sample_text") or "").strip()) >= 4
+             and re.search(r"[^\W\d_]", s.get("sample_text") or "")]
+    third = (structure.get("slide_height") or 0) / 3
+    # A divider centres its title, so the whole slide is the fallback.
+    tops = [s for s in words if s.get("y", 1 << 30) < third] or words
+    if tops:
+        biggest = max(tops, key=lambda s: max(
+            (f.get("size") or 0 for f in s.get("fonts") or [{}]), default=0))
+        key = _key_at(structure, biggest.get("index"))
+        if key:
+            return f'retext `"{key[:30]}"` (the largest text)'
+    return "—"
+
+
+def _canvas_leftovers(structure):
+    """Kept canvas shapes that still carry the template's sample text.
+
+    The canvas keeps the title and a topic label.  A topic label that carries
+    sample wording ships it on every drawn slide unless the build retexts it --
+    one pack's canvas put its own design name on nine slides of nine.
+    """
+    keep = set((structure.get("canvas") or {}).get("keep") or [])
+    out = []
+    for slot in structure.get("slots") or []:
+        if (slot.get("index") in keep and slot.get("sample_text")
+                and slot.get("placeholder") != "title"):
+            out.append((slot["index"], slot["sample_text"].strip()))
+    return out
+
+
+def _index_table(manifest, structures, entries, canvas_number):
+    """One row per design: what it holds and how its headline is written."""
+    rows = ["| Design | Name | Content shape | Headline |", "|---|---|---|---|"]
+    for row in manifest["slides"]:
+        n = row["number"]
+        entry, structure = entries[n], structures[n]
+        name = entry.get("name") or f"Design {n}"
+        if n == canvas_number:
+            name += " — **canvas**"
+        shape = entry.get("content_shape") or entry.get("use_when") or "—"
+        items = (entry.get("capacity") or {}).get("max_items")
+        if items and "item" not in shape:
+            shape += f" (holds {items})"
+        rows.append(f"| `{n}` | {name} | {shape} | {_headline(structure)} |")
+    return rows
+
+
+def build(catalog: Path, asset: str, title: str, overrides=None):
+    """``(catalog_md, {"design-N.md": text})`` for a pack.
+
+    ``catalog.md`` is what a build reads first and in full, so it carries
+    only what picks a design: the roles, the decision table, one index row per
+    design and the palette.  Everything needed to *fill* a design -- its retext
+    keys, empty slots, budgets -- is in ``designs/design-N.md``, read for the
+    designs the build actually uses.  One file of every key for sixty designs
+    ran to sixteen thousand tokens, and a small model reading it lost the
+    decision table it came for.
+    """
     blocks = _load_overrides(overrides)
     manifest = _load(catalog / "manifest.json")
     if manifest is None:
@@ -516,6 +614,7 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
     for row in manifest["slides"]:
         n = row["number"]
         structures[n] = _load(catalog / f"slide-{n:02d}" / "structure.json", {})
+        structures[n].setdefault("slide_height", manifest["slide_height"])
         entries[n] = _load(catalog / "entries" / f"slide-{n:02d}.json", {}) or {}
 
     aggregate = _load(catalog / "decision_table.json", {}) or {}
@@ -529,134 +628,109 @@ def build(catalog: Path, asset: str, title: str, overrides=None) -> str:
         canvas_number, canvas_ok = _canvas_design(
             structures, manifest["slide_width"] * manifest["slide_height"])
     masters = sorted({row["master"] for row in manifest["slides"]})
-    grouped = [row["number"] for row in manifest["slides"]
-               if row.get("grouped_text")]
-
-    # Who wrote the judged half is a fact about *this* catalog, not a fixed
-    # sentence: a pack built without a model says so, and a reader who
-    # thinks something with eyes looked at the renders when nobody did will
-    # trust the purpose lines further than they deserve.
     judged_by = next((entry.get("written_by") for entry in entries.values()
                       if entry.get("written_by")), None)
+
     out = [f"# {title}", "",
-           "The pack this skill builds from when the user names no template of",
-           "their own. Generated by `catalog_extract.py` + `catalog_build.py`",
-           "from the real deck, with the judgement fields written by "
-           + (judged_by or "the vision-agent") + ",",
-           "then reviewed against the renders.", "",
            f"**Asset:** `{asset}` — {len(manifest['slides'])} designs, "
-           f"**{manifest['slide_width']} × {manifest['slide_height']}** in "
-           f"1/100 mm (read `slide_size(doc)`; do not assume the LibreOffice "
-           f"default 28000 × 15750). Masters "
-           + ", ".join(f"`{m}`" for m in masters) + ".", "",
-           "**Build with `build_deck`** — it duplicates rather than rebuilds, so "
-           "bullets, inline colour and any OLE objects survive; `clone_slide` "
-           "loses all three here. Check every build with `make_deck.py build.py "
-           f"out.pptx --template {asset}`, and open the renders it prints.", "",
-           "**Designs are named by their slide number in that asset.** Design "
-           "`N` is `slides(doc)[N - 1]`, and `N` is what you put in "
-           "`build_deck`'s design list. Do *not* key on the autolayout number "
-           "`probe.py` reports as `layout` — on a designed template it is the "
-           "same on every slide and distinguishes nothing.", ""]
+           f"{manifest['slide_width']} × {manifest['slide_height']} (1/100 mm), "
+           "masters " + ", ".join(f"`{m}`" for m in masters) + ".", "",
+           "**How to use this file.**", "",
+           "1. Pick a design per slide: the decision table first, then the "
+           "index below by *content shape*. Vary them — a deck on one design "
+           "is a form someone filled in.",
+           "2. A design number is a slide number in the asset; it is what "
+           "`build_deck`'s list takes.",
+           f"3. **Before writing `fill` for design N, read "
+           f"`{DESIGNS_DIR}/design-N.md`** — its retext keys, its empty "
+           "slots, its budgets. Never reuse one design's keys on another.",
+           "4. Write every headline the way the index's *Headline* column says.",
+           "5. Anything no design fits goes on the canvas design, stripped "
+           "back.", ""]
 
     out += _roles_block(canvas_number, rules, entries)
-
     if "header" in blocks:
         out += [blocks.pop("header"), ""]
 
-    if grouped:
-        out += [f"**Text inside groups.** Designs {', '.join(str(g) for g in grouped)} "
-                f"carry text in grouped shapes, which `shapes(page)` cannot "
-                f"reach. `retext`, `find_shapes` and `qa.py` all walk groups, "
-                f"and `probe.py` lists them indented as `[6.2]`. Each entry "
-                f"below notes its count. **Retext by wording, never by index.**",
-                ""]
-
-    out += ["## Decision table — content → template slide", "",
-            "Apply top to bottom; first match wins. **Read to the bottom "
-            "before you pick** — the canvas row is last, and it means what it "
-            "says: nothing above fits.", ""]
+    out += ["## Decision table", "",
+            "Top to bottom, first match wins. The canvas row is last on "
+            "purpose: it is for content nothing above fits.", ""]
     out.append(_decision_table(rules, structures, canvas_number, entries,
                                qualified=canvas_ok)
                if rules else
                "_No decision table: fill the worksheet and import it "
                "(`name_designs.py catalog/ --import`) and rebuild._")
     out.append("")
+    leftovers = _canvas_leftovers(structures[canvas_number]) if canvas_number else []
+    if leftovers:
+        out += ["**The canvas keeps sample text.** Retext it on every canvas "
+                "slide, or it ships: "
+                + ", ".join(f'`[{i}]` "{t[:40]}"' for i, t in leftovers), ""]
     if variety:
-        out += [f"**Variety rule:** {variety}", ""]
-
+        out += [f"**Variety:** {variety}", ""]
     gaps = _gaps(rules) if rules else []
     if gaps:
         out += ["**No design for:** " + ", ".join(gaps)
-                + ". Build these on the canvas row rather than forcing "
-                "them into the nearest design — and say so here once you have "
-                "checked the renders.", ""]
-
+                + " — use the canvas design.", ""]
     if "after-decision-table" in blocks:
         out += [blocks.pop("after-decision-table"), ""]
 
-    budgets = [(n, b) for n in sorted(structures)
-               for b in (structures[n].get("title_budgets") or [])
-               if b["pt"] >= DISPLAY_PT]
-    if budgets:
-        out += ["**Display titles hold one line.** These slots set their title "
-                "large, in a gap the master's decoration leaves. A second line "
-                "crosses that decoration, and nothing on the page collides — "
-                "`qa.py` cannot see it. Measured budgets:", "",
-                "| Design | Title box width | pt | One line holds |",
-                "|---|---|---|---|"]
-        out += [f"| `{n}` | {b['width']} | {b['pt']:g} | "
-                f"~{b['chars_per_line']} characters |" for n, b in budgets]
-        out += ["", "Over budget, in order of preference: **shorten the "
-                "title**; or `shrink_to_fit(doc, page, shape, max_lines=1)`. Do "
-                "not add a second text box beside the placeholder.", ""]
-
-    out += _palette_block(asset)
-
+    out += ["## Design index", ""]
     if "before-design-entries" in blocks:
         out += [blocks.pop("before-design-entries"), ""]
+    out += _index_table(manifest, structures, entries, canvas_number) + [""]
 
-    out += ["## Design entries", "",
-            "Each entry's **Retext keys** are the strings the design actually "
-            "carries, in `retext`/`find_shapes` form, transcribed from the file "
-            "— copy one from here rather than guessing. Any distinctive "
-            "substring of a listed string works. `[3.1]` addresses a shape "
-            "*inside* the group at `[3]`.", ""]
-    if "design-entries-intro" in blocks:
-        out += [blocks.pop("design-entries-intro"), ""]
-    for row in manifest["slides"]:
-        n = row["number"]
-        out += [_entry_block(n, entries[n], structures[n],
-                             blocks.pop(f"design-{n}", None)), ""]
-
+    out += _palette_block(asset)
     if "footer" in blocks:
         out += [blocks.pop("footer"), ""]
-
     out += ["---", "",
-            "**Provenance.** Structure, retext keys, canvas indices and title "
-            "budgets are measured by `catalog_extract.py`; purpose, capacity, "
-            "imagery and the decision table are judged by the vision-agent "
-            "from each slide's render and reviewed by hand; the prose blocks "
-            "come from the overrides file. The asset, the renders and this file "
-            "are brand-internal: `templates/` is gitignored, keep it so."]
-
+            "Generated by `catalog_build.py`: structure, keys, budgets and the "
+            "canvas are measured; names, content shapes and the decision table "
+            "were judged by " + (judged_by or "the vision-agent")
+            + " and reviewed. Edit `overrides.md`, never this file."]
     if missing_entries:
         out += ["", f"> **Incomplete:** no entry for design(s) "
-                f"{', '.join(str(n) for n in missing_entries)} — their "
-                f"judgement fields read _(not catalogued)_. Judge those slides "
-                f"in the worksheet and rebuild."]
+                f"{', '.join(str(n) for n in missing_entries)}. Judge them in "
+                f"the worksheet and rebuild."]
 
-    # An override that no longer lands is prose someone wrote and nobody will
-    # ever read again -- the same silent loss this mechanism exists to stop.
+    details = {}
+    intro = blocks.pop("design-entries-intro", None)
+    for row in manifest["slides"]:
+        n = row["number"]
+        structure = structures[n]
+        lines = [_entry_block(n, entries[n], structure,
+                              blocks.pop(f"design-{n}", None)), ""]
+        if n == canvas_number:
+            box = structure["canvas"]["free_box"]
+            keep = ", ".join(str(k) for k in structure["canvas"]["keep"])
+            lines += ["**This is the canvas design.** "
+                      f"`area = D.canvas(page, keep=({keep}))` strips it back "
+                      f"and returns the free area ({box['x']}, {box['y']} to "
+                      f"{box['x'] + box['w']}, {box['y'] + box['h']}); draw "
+                      "inside it.", ""]
+            for i, t in _canvas_leftovers(structure):
+                lines.append(f'- Kept shape `[{i}]` still says "{t[:50]}" — '
+                             f"retext it.")
+            lines.append("")
+        lines.append(("`[3.1]` is a shape inside the group at `[3]`. "
+                      if (structure.get("text_counts") or {}).get("grouped")
+                      else "")
+                     + "Any distinctive substring of a key works; copy it "
+                       "from here, not from memory. Shapes with identical "
+                       "text: use the address as the key, e.g. `\"[3.1]\"`.")
+        if intro:
+            lines += ["", intro]
+        details[f"design-{n}.md"] = "\n".join(lines) + "\n"
+
     if blocks:
         for anchor in sorted(blocks):
             print(f"WARNING: override block '{anchor}' matched no anchor in "
                   f"this catalog", file=sys.stderr)
-        out += ["", f"> ⚠ **Unplaced overrides:** "
+        out += ["", "> ⚠ **Unplaced overrides:** "
                 + ", ".join(f"`{a}`" for a in sorted(blocks))
                 + f". Valid anchors are {', '.join(f'`{a}`' for a in ANCHORS)} "
                 + "and `design-N` for a design this template has."]
-    return "\n".join(out) + "\n"
+    return "\n".join(out) + "\n", details
 
 
 def _asset_beside(catalog: Path):
@@ -724,36 +798,54 @@ def main():
     if args.output is None and _asset_beside(catalog) is not None:
         args.output = str(in_pack / "catalog.md")
 
-    text = build(catalog, asset, args.title, args.overrides)
+    text, details = build(catalog, asset, args.title, args.overrides)
+    files = {}
+    if args.output:
+        out = Path(args.output)
+        files[out] = text
+        files.update({out.parent / DESIGNS_DIR / name: body
+                      for name, body in details.items()})
 
     if args.check:
         if not args.output:
             ap.error("--check needs --output: the catalog to compare against")
-        if not Path(args.output).is_file():
-            print(f"{args.output} does not exist yet; nothing to compare. "
-                  f"Run without --check to write it.", file=sys.stderr)
-            sys.exit(1)
-        current = Path(args.output).read_text(encoding="utf-8")
-        if current == text:
-            print(f"{args.output} is up to date with {args.catalog}")
-            return
         import difflib
-        sys.stdout.writelines(difflib.unified_diff(
-            current.splitlines(keepends=True), text.splitlines(keepends=True),
-            fromfile=f"{args.output} (shipped)", tofile="rebuilt", n=1))
-        print(f"\n{args.output} has drifted from the template. Rebuild it, or "
-              f"move whatever is only in the shipped file into --overrides.",
-              file=sys.stderr)
-        sys.exit(1)
+        drifted = False
+        for path, body in files.items():
+            current = path.read_text(encoding="utf-8") if path.is_file() else ""
+            if current != body:
+                drifted = True
+                sys.stdout.writelines(difflib.unified_diff(
+                    current.splitlines(keepends=True),
+                    body.splitlines(keepends=True),
+                    fromfile=f"{path} (shipped)", tofile="rebuilt", n=1))
+        if drifted:
+            print(f"\n{args.output} has drifted from the template. Rebuild it, "
+                  f"or move whatever is only in the shipped files into "
+                  f"--overrides.", file=sys.stderr)
+            return 1
+        print(f"{args.output} is up to date with {args.catalog}")
+        return 0
 
-    if args.output:
-        Path(args.output).write_text(text, encoding="utf-8")
-        print(f"Wrote {args.output} ({len(text.splitlines())} lines)")
-        print("Review every capacity figure and decision-table row against the "
-              "renders before shipping it.")
-    else:
+    if not args.output:
         sys.stdout.write(text)
+        for name, body in details.items():
+            sys.stdout.write(f"\n<!-- {DESIGNS_DIR}/{name} -->\n{body}")
+        return 0
+    stale = Path(args.output).parent / DESIGNS_DIR
+    if stale.is_dir():
+        for old in stale.glob("design-*.md"):
+            if old not in files:
+                old.unlink()            # a design the template no longer has
+    for path, body in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    print(f"Wrote {args.output} ({len(text.split())} words) and "
+          f"{len(details)} design file(s) in {stale}/")
+    print("Review every content shape and decision-table row against the "
+          "renders before shipping it.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

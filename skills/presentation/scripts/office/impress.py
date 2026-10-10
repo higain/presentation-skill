@@ -70,8 +70,10 @@ FILTERS = {
 # Extensions this skill will open.  .ppt is read-only in practice: convert it.
 PRESENTATION_EXTS = {".odp", ".otp", ".fodp", ".pptx", ".potx", ".ppt", ".pps", ".ppsx"}
 
-# OOXML packages -- the ones repair_pptx() knows how to mend after a save.
-_OOXML_EXTS = {".pptx", ".potx"}
+# OOXML packages -- the ones repair_pptx() knows how to mend after a save,
+# and the ones validate.py and the template-picture check can read.
+PPTX_EXTS = frozenset({".pptx", ".potx"})
+_OOXML_EXTS = PPTX_EXTS
 
 PRESENTATION_SERVICE = "com.sun.star.presentation.PresentationDocument"
 
@@ -288,13 +290,10 @@ def _install_signal_handlers():
     global _SIGNALS_INSTALLED
     if _SIGNALS_INSTALLED:
         return
+    import threading
+    if threading.current_thread() is not threading.main_thread():
+        return              # not marked installed: the main thread may still
     _SIGNALS_INSTALLED = True
-    try:
-        import threading
-        if threading.current_thread() is not threading.main_thread():
-            return
-    except Exception:
-        return
 
     def _handler(signum, frame):
         shutdown()

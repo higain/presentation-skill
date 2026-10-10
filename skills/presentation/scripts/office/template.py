@@ -31,8 +31,11 @@ know which ``s[i]`` to write to.
 """
 
 import re
+import unicodedata
 
-from office.impress import add_slide, notes_text, set_notes, shapes
+from office.colors import parse_hex as _hex
+from office.impress import (add_slide, notes_text, placeholder, set_notes,
+                            shapes)
 from office.pack import active_profile
 
 # Properties clone_shape must not copy: identity, or geometry it sets itself.
@@ -190,6 +193,11 @@ def set_text(shape, *lines):
     its body in different colours have to be **separate shapes** in a .pptx;
     ``office.draw.text`` makes that cheap.
     """
+    if any(line is None for line in lines):
+        raise TypeError(
+            "set_text(): None is not text. To delete a shape use "
+            "retext(page, {key: None}); to empty it keep the box with "
+            "set_text(shape, \"\").")
     paras = read_text(shape)
     if not paras:
         shape.setString("\n".join(lines))
@@ -937,11 +945,43 @@ def shape_by_text(page, prefix):
     raise LookupError(f"no shape on {page.Name!r} starts with {prefix!r}")
 
 
+def set_title(page, *paragraphs):
+    """Write the slide's title placeholder, empty or not.
+
+    ``retext`` matches the words a shape already carries, so it cannot reach a
+    title placeholder the template left empty -- and on many designed
+    templates the content designs leave it empty.  A build then writes its
+    headline into the nearest small label that *does* carry text, and every
+    slide ships with no title at all.  This writes the placeholder itself.
+
+    Raises ``LookupError`` when the slide has no title placeholder; then the
+    catalog's retext keys say which shape carries the headline.
+    """
+    shape = placeholder(page, "Title")
+    if shape is None:
+        raise LookupError(
+            f"set_title: {page.Name!r} has no title placeholder. Use the "
+            f"retext key the catalog lists for this design's headline.")
+    set_text(shape, *paragraphs)
+    return shape
+
+
 # ------------------------------------------------------- retexting by text
 
 def _norm(text):
     """Collapse whitespace, so a match does not hinge on line breaks."""
     return " ".join(text.split())
+
+
+def _fold(text):
+    """Case- and accent-blind form of ``text``: ``"Verfügbar"`` -> ``"verfugbar"``.
+
+    The last matching tier of ``retext``.  A build model copying a key often
+    drops the umlaut -- ``"Kennzahlen, Schlagworter"`` for "Schlagwörter" --
+    and the key then matches nothing on a slide that visibly carries it.
+    """
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
 def _untruncate(text):
@@ -1006,7 +1046,7 @@ def find_shapes(page, pattern, regex=False):
         if not text:
             continue
         hit = (re.search(pattern, text, re.I) if regex
-               else _norm(pattern).lower() in text.lower())
+               else _fold(_norm(pattern)) in _fold(text))
         if hit:
             out.append((address, shape))
     return out
@@ -1030,7 +1070,8 @@ def retext(page, mapping, **kw):
     Matching on the words you can actually see in ``probe.py`` output removes
     the arithmetic.
 
-    A key is matched against exact text first, then a prefix, then a substring
+    A key is matched against exact text first, then a prefix, then a substring,
+    then a substring ignoring accents (``"Schlagworter"`` finds "Schlagwörter")
     -- the most specific tier that hits anything wins.  Matching nothing, or
     more than one shape, raises ``LookupError`` **before** anything is written,
     with the slide's own indexed text in the message.
@@ -1040,7 +1081,9 @@ def retext(page, mapping, **kw):
     from the slide -- which is what a leftover template paragraph usually wants.
 
     Keys reach **inside groups**, where designed templates keep a good half of
-    their text; a shape there is addressed ``'3.1'`` rather than ``3``.
+    their text; a shape there is addressed ``'3.1'`` rather than ``3``.  A key
+    written as an address -- ``"[3.1]"`` -- names that shape directly, for the
+    shapes a template gave identical sample text.
 
     A key ending in ``...`` or ``…`` has it stripped before matching, so a
     string pasted straight out of ``probe.py``'s truncated listing still finds
@@ -1072,6 +1115,23 @@ def retext(page, mapping, **kw):
 
     claimed = {}
     for key in mapping:
+        # "[3.1]" -- a shape by its address, for the shapes a template gives
+        # identical sample text (three KPI captions all reading "Lorem ipsum")
+        # that no excerpt can tell apart.
+        address = re.fullmatch(r"\[\s*(\d+(?:\.\d+)*)\s*\]", str(key).strip())
+        if address:
+            found = next((a for a in entries
+                          if str(a) == address.group(1)), None)
+            if found is None:
+                raise LookupError(
+                    f"retext: no shape at {key} on {page.Name!r}.\n"
+                    + _inventory(texts))
+            if found in claimed:
+                raise LookupError(
+                    f"retext: {key!r} and {claimed[found]!r} both name shape "
+                    f"[{found}] on {page.Name!r}.")
+            claimed[found] = key
+            continue
         want = _untruncate(_norm(key))
         if not want:
             raise ValueError("retext: keys must be a non-empty piece of the template's text")
@@ -1079,6 +1139,7 @@ def retext(page, mapping, **kw):
             [i for i, t in texts.items() if t == want],
             [i for i, t in texts.items() if t.startswith(want)],
             [i for i, t in texts.items() if want.lower() in t.lower()],
+            [i for i, t in texts.items() if _fold(want) in _fold(t)],
         ):
             if hits:
                 break
@@ -1090,7 +1151,9 @@ def retext(page, mapping, **kw):
         if len(hits) > 1:
             raise LookupError(
                 f"retext: {key!r} matches {len(hits)} shapes on {page.Name!r} "
-                f"(at {hits}). Use a longer, more specific excerpt.\n"
+                f"(at {hits}). Use a longer, more specific excerpt -- or, when "
+                f"the template gave them identical text, their addresses as "
+                f"keys: {', '.join(repr(f'[{h}]') for h in hits)}.\n"
                 + _inventory(texts)
             )
         address = hits[0]
@@ -1140,16 +1203,6 @@ def template_profile(template=None):
     nothing to indicate it.
     """
     return active_profile(template)
-
-
-def _hex(value):
-    """``"#2A7DE1"`` or ``9494240`` to an int, or ``None``."""
-    if isinstance(value, int):
-        return value
-    try:
-        return int(str(value).lstrip("#"), 16)
-    except (TypeError, ValueError):
-        return None
 
 
 def palette(profile=None, template=None):

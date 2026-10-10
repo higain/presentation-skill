@@ -1,113 +1,72 @@
-# Company template — layout catalog (EXAMPLE / annotated)
+# The catalog a pack carries (EXAMPLE / annotated)
 
-**This file is a specimen of what `catalog_build.py` writes, annotated with
-where each field comes from.** You do not fill a catalog in by hand any more —
-you run the pipeline in `README.md` and review the result against the renders.
-Keep this file as the answer to "is my generated catalog missing something?".
+**A specimen of what `catalog_build.py` writes**, from the public demo template
+in `tests/fixtures/`, annotated with where each part comes from. Nobody writes
+a catalog by hand: run the pipeline in `README.md` and review the result.
 
-Two sources feed every entry:
+A pack's catalog is two kinds of file:
+
+| File | Read | Holds |
+|---|---|---|
+| `catalog.md` | first, in full, for every deck | how to use it, the roles, the decision table, the design index, the palette |
+| `designs/design-N.md` | for each design a deck uses | its retext keys, empty slots, budgets, use / avoid |
+
+The split exists because a single file with every key of a sixty-design
+template runs to sixteen thousand tokens, and a small model reading it loses
+the decision table it opened the file for.
+
+Every field is one of two kinds:
 
 | Marked | Comes from | Trust |
 |---|---|---|
 | **[measured]** | `catalog_extract.py`, read out of the template file | exact |
-| **[judged]** | the vision-agent, from each slide's render | review it |
-
-The measured fields are the ones a build script cannot work without, and exactly
-the ones a model gets wrong when asked to invent them: the retext keys, the
-empty slots, the group counts, the canvas indices, the title budgets.
+| **[judged]** | the vision-agent (`vision_brief.py designs`), reviewed by a person | review it |
 
 ---
 
-## Header  **[measured]**
+## `catalog.md`
 
-Asset path, design count, slide size in 1/100 mm, master names, and the reminder
-that a design is identified by its **slide number** — never by the autolayout
-number `probe.py` prints as `layout`, which is the same on every slide of a
-designed template and so distinguishes nothing.
+**Design index** — one row per design. *Name* and *Content shape* are
+**[judged]**; *Headline* is **[measured]**: `set_title` when the design's title
+placeholder is empty, otherwise the retext key of the title placeholder or of
+the largest text on the slide.
 
-Plus a line naming the designs that carry text **inside groups**, because
-`shapes(page)[i]` cannot reach any of it and a build that indexes by hand will
-leave the template's own wording on the slide.
-
-## Designs by role  **[measured]**
-
-A three-row table naming the **canvas** design, the **divider** designs and the
-**cover** design (or "none — build one"), so that the generic documentation can
-say "the canvas design" and this pack says which number that is.
-
-## Decision table — content → template slide
-
-Applied top to bottom, first match wins.
-
-The rows are **[judged]**: the model's aggregation pass, or the worksheet a
-person filled. A row citing a slide the template does not have is written out
-with a ⚠ rather than silently dropped, so a model that fell back to layout ids
-is visible on the page.
-
-The **last row is always the canvas row** **[measured]**: the design with the
-largest free area that still keeps its own chrome, the `keep=` tuple that strips
-it back, and the exact free `Box`. Everything the rows above have no design for
-goes here rather than into the nearest bullet list. It is last on purpose: first,
-"a diagram, a comparison, a matrix" was the first match for almost anything. A
-`canvas` block in `decision_table.json` (written by hand, or from the worksheet's
-`## Canvas` section) overrides the measured pick and survives every rebuild.
-
-| When the content is… | Use slide | Design | Because |
+| Design | Name | Content shape | Headline |
 |---|---|---|---|
-| deck opener | `7` | Section divider dark | high-impact start |
-| standard bulleted content | `8` | Content slide | headline plus one body |
-| … | | | |
-| **a diagram, chart, matrix — anything no row above fits** | `8` | **Canvas** | Strip design 8 with `draw.canvas(page, keep=(0, 1, 2, 3))`; free area **2031, 3545 to 30003, 15702** |
+| `1` | Title slide | Slide 1 of any deck, with a title of roughly 20-25 characters so it stays on one line at 99pt and a subtitle that reads as a single sentence. | retext `"Kite"` (the largest text) |
+| `2` | Brand reference — **canvas** | Onboarding, brand or handover decks where the audience has to leave with the palette, the type pairing and the logo rules. | retext `"One clear, friendly style"` (the largest text) |
+| `3` | Agenda list | Straight after the cover to show the running order, or for any short ordered sequence - three to five entries, each a phrase of up to about 40 characters. | retext `"Agenda"` (the largest text) |
+| `4` | Section divider | Between chapters of a deck, with numbered sections and a title of up to about 30 characters so it holds one line at 72pt. | retext `"Getting started"` (the largest text) |
+| `5` | Three-column narrative | A topic that needs argument rather than labels - background / finding / implication, or any three-beat structure - at roughly 150-250 characters per column, split into one or two short paragraphs. | retext `"Room for the full story"` (the largest text) |
 
-**Variety rule** **[judged]** — one sentence on which designs to interleave so
-the deck does not read as one design repeated.
+**Decision table** — **[judged]** rows mapping a content situation to a
+design, then a **[measured]** canvas row last: the design with the largest
+free area, its `keep` tuple and the area `D.canvas` hands back. When the canvas
+keeps a shape that still carries sample text, the catalog says so under the
+table — a build must retext it on every canvas slide.
 
-**No design for: …** **[measured, from the table]** — content situations the
-decision table never covers. "There is no cover design and no closing design" is
-exactly the sort of thing a deck-builder has to be told once, loudly.
+**Palette and type scale** — **[measured]** by `count_style.py`, named by a
+person in `presentation-setup` stage 2.
 
-**Display titles hold one line** **[measured]** — every title slot set at 32pt or
-more: box width, size, and how many characters fit on one line. A display title
-that wraps runs into the master's own decoration; nothing on the page collides,
-and no automated check can see it.
+## `designs/design-7.md`
 
-## Palette and type scale  **[measured]**
+```markdown
+# Design 7 — Tagged card grid
+- **Purpose:** A 2x2 grid of rounded cards, each with a coloured pill kicker, a short heading and two lines of body; the cards come in white, ink and blush so one can be flipped dark for emphasis.
+- **Content types:** `cards`, `comparison`
+- **Capacity:** headline ✗ · body slots 0 · images 0 · chart ✗
+- **Headline:** retext `"Tagged cards for quick points"` (the largest text)
+- **Retext keys:** `[0]` "KICKER BOXES" · `[1]` "Tagged cards for quick points" · `[4]` "SPEED" · `[5]` "Fast to assemble" · `[6]` "Duplicate a card, swap the kicker, done. The" · `[9]` "CLARITY" · `[10]` "Easy to scan" · `[11]` "The colored tag tells the audience what kind" · `[14]` "CONTRAST" · `[15]` "Emphasis on demand" · `[16]` "Flip a card to ink to make the single most i" · `[19]` "RANGE" · `[20]` "Two, three, or four" · `[21]` "The same card works in any count. Use four f"
+- **Use when:** Two to four parallel points that read better with a label on them - themes, risks, options, principles - or a two-card comparison side by side.
+- **Avoid when:** More than four points, or body copy longer than two lines - the card is a fixed box and text overflows rather than shrinking. Flip only one card to ink, or the emphasis stops meaning anything.
+- **Imagery:** none
 
-Read from the pack's `profile.json`: every colour by name and role with its
-contrast on white, and the seven type roles with their sizes. This is what
-`D.color("accent")` and `role="body"` resolve to.
+Any distinctive substring of a key works; copy it from here, not from memory.
+```
 
-## Design entries
-
-One per design, in slide order.
-
-### Slide 5 — Section divider   *(name: [judged])*
-- **Purpose:** _[judged]_ what this slide is for, one sentence.
-- **Content types:** _[judged]_ from the fixed vocabulary in the prompt.
-- **Capacity:** _[judged]_ headline ✓ · body slots 0 · max bullets 0 · images 1 ·
-  chart ✗ — **the field the model most often overstates; check it against the
-  render.**
-- **Retext keys:** _[measured]_ `[0]` "Projektorganisation" · `[3.1]` "Phase 1" —
-  every string the design carries, with the address that carries it. Copy a key
-  from here rather than guessing one; any distinctive substring works. `[3.1]`
-  is a shape inside the group at `[3]`.
-- **Empty slots** _[measured]_ — shapes with no text, which `retext` can never
-  match. Write them with `set_text(shapes(page)[i], ...)` or draw your own.
-- **Text in groups** _[measured]_ — how many text shapes sit inside groups versus
-  at the top level.
-- **Title budget** _[measured]_ — characters on one line, for display slots only.
-- **Use when / Avoid when:** _[judged]_ the trigger to reach for this design, and
-  the content that does not belong on it.
-- **Imagery:** _[judged]_ what each picture actually depicts and its role
-  (decorative / photo-placeholder / icon / logo / background), cross-checked
-  against the number of picture shapes in the file _[measured]_.
-- **Notes:** _[judged]_ quirks a builder must respect — fixed decoration that
-  must not be deleted, a slot that holds one line.
-
----
-
-**Provenance** — a footer naming which half came from where, and the reminder
-that the asset, the renders and the catalog are brand-internal and gitignored.
-
-If a design's judged fields read _(not catalogued)_, the model pass did not
-cover it. Run the per-layout pass for those slides and rebuild.
+- *Retext keys* and *Empty slots* are **[measured]**: the exact strings the
+  design carries, which is what `retext` matches.
+- *Purpose*, *Content types*, *Use when*, *Avoid when*, *Content shape* and
+  *Looks best* are **[judged]**.
+- Notes nobody can measure — "this divider's budget is a hard limit" — go in
+  the pack's `overrides.md` under `## design-7` and are spliced in on rebuild.

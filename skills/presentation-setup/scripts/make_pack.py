@@ -39,6 +39,7 @@ from _skill import engine, presentation_skill, templates_dir  # noqa: E402
 
 engine()
 
+from office.colors import parse_hex  # noqa: E402
 from office.draw import contrast_ratio  # noqa: E402
 
 from count_style import survey  # noqa: E402
@@ -150,11 +151,7 @@ def build_profile(args, existing=None):
     old_palette = existing.get("palette") or {}
     old_roles = old_palette.get("_roles") or {}
 
-    def _parse(value):
-        try:
-            return int(str(value).lstrip("#"), 16)
-        except ValueError:
-            return None
+    _parse = parse_hex
 
     if args.colour or args.series:
         roles = dict(args.colour or ())
@@ -256,7 +253,7 @@ def warnings(profile):
 
     accent = palette.get(roles.get("accent", ""))
     if accent:
-        ratio = contrast_ratio(int(str(accent).lstrip("#"), 16), 0xFFFFFF)
+        ratio = contrast_ratio(parse_hex(accent), 0xFFFFFF)
         if ratio < 3.0:
             out.append(
                 f"the accent is {ratio:.1f}:1 on white — **fill only**, it can "

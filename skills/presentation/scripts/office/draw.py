@@ -40,7 +40,9 @@ from .impress import shapes
 # already on the slide, which is the other half of the same job.
 from .template import (  # noqa: F401
     move, palette, palette_roles, resize, set_text, text_width, type_scale,
+    walk_shapes,
 )
+from .template import _is_group, _walk as _template_walk
 
 # Enums and structs are resolved by name rather than imported: a
 # ``from com.sun.star...`` import only works once a UNO bridge exists, and this
@@ -1455,6 +1457,57 @@ def _card_height(item, w, title_size, size, note_size, pad, numbered):
     return total
 
 
+#: How much of its panel the tallest card's content may fill when ``cards``
+#: grows the type.  The rest is air under the text -- enough that the panel
+#: reads as a panel, not so much that it reads as empty.
+CARD_FILL = 0.6
+
+#: ``height="auto"``: the share of a card its text should fill, and the
+#: least share of the area the row should take.
+CARD_TEXT_SHARE = 0.75
+CARD_MIN_SHARE = 0.5
+
+#: ``(body, title)`` roles ``cards`` tries, smallest first.
+CARD_TYPE_LADDER = (("label", "subtitle"), ("body", "subtitle"),
+                    ("subtitle", "title"))
+
+
+def _longest_word_fits(items, inner, size, title_size):
+    for item in items:
+        for key, pt, weight in (("body", size, NORM),
+                                ("title", title_size, BOLD)):
+            for word in str(item.get(key) or "").split():
+                if text_width_est(word, pt, weight) > inner:
+                    return False
+    return True
+
+
+def _grow_card_type(items, cell_w, offered, size, title_size, note_size, pad,
+                    numbered):
+    """``(size, title_size)``: the largest rung of the scale that fits well.
+
+    A size the caller passed is kept; only the missing one is chosen.
+    """
+    chosen = None
+    for body_role, title_role in CARD_TYPE_LADDER:
+        try:
+            trial = (size if size is not None else size_for(body_role),
+                     title_size if title_size is not None
+                     else size_for(title_role))
+        except ValueError:                   # a scale without that role
+            continue
+        if chosen is None:
+            chosen = trial                   # the smallest is the floor
+            continue
+        needed = max(_card_height(item, cell_w, trial[1], trial[0],
+                                  note_size, pad, numbered) for item in items)
+        if (needed > offered * CARD_FILL
+                or not _longest_word_fits(items, cell_w - 2 * pad, *trial)):
+            break
+        chosen = trial
+    return chosen
+
+
 def _draw_card(doc, page, box, item, fill, accent, number, title_size, size,
                note_size, pad, radius, color, title_color, note_color, line):
     """One card: panel, optional number chip, title, body, and a pinned note."""
@@ -1507,7 +1560,7 @@ def _draw_card(doc, page, box, item, fill, accent, number, title_size, size,
 
 @takes_box("x", "y", "w", "h")
 def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
-          accent=None, numbered=False, height="equal", size=None,
+          accent=None, numbered=False, height="auto", size=None,
           title_size=None, note_size=None, pad=None, radius=None, color=None,
           title_color=None, note_color=GREY, line=None):
     """A row (or grid) of cards, all built the same way.  Returns their boxes.
@@ -1524,8 +1577,12 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
              "Board decision  ·  today"),
         ], numbered=True, accent=[0x2A7DE1, 0xE8730C, 0x6B3FA0])
 
-    ``height`` is the one that matters. ``"equal"`` fills the area, which is
-    what a row of cards with similar content wants. ``"content"`` gives every
+    ``height`` is the one that matters.  ``"auto"`` (the default) sizes the
+    row so the tallest card's text fills about three quarters of it, never
+    less than half the area, and centres the row: no panel of grey under two
+    lines of text, and no thin strip floating in a half-empty slide -- the two
+    things every vision review of generated cards reported.  ``"equal"`` fills
+    the area, which is right when the cards hold a lot.  ``"content"`` gives every
     card the height of the *longest* one's content and centres the row in the
     area -- use it when one card has three lines and another has ten, or the
     short ones ship with half a panel of nothing under the text, which is the
@@ -1536,22 +1593,28 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
     """
     if not items:
         raise ValueError("cards(): nothing to draw -- items is empty")
-    if height not in ("equal", "content"):
-        raise ValueError("cards(): height= is 'equal' (fill the area) or "
-                         "'content' (size to the text), got %r" % (height,))
+    if height not in ("auto", "equal", "content"):
+        raise ValueError("cards(): height= is 'auto', 'equal' (fill the area) "
+                         "or 'content' (size to the text), got %r" % (height,))
     items = [_as_item(item) for item in items]
     gap = CARD_GAP if gap is None else gap
     pad = CARD_PAD if pad is None else pad
-    # From the deck's own scale, so a card's body is the size the rest of the
-    # deck calls a body and not a number this function made up.
-    size = size_for("label") if size is None else size
-    title_size = size_for("subtitle") if title_size is None else title_size
     note_size = size_for("caption") if note_size is None else note_size
     cols = len(items) if cols is None else max(1, int(cols))
     rows_n = -(-len(items) // cols)
     area = Box(x, y, w, h)
 
     cell_w = (area.w - gap * (cols - 1)) / cols
+    offered = (area.h - gap * (rows_n - 1)) / rows_n
+    # From the deck's own scale, so a card's body is a size the rest of the
+    # deck uses.  Unless the caller chose, the cards grow up that scale while
+    # the tallest still fills under CARD_FILL of its panel and the longest
+    # word still fits a line: label-sized words in a half-slide panel are the
+    # "hollow cards" every vision review of a generated deck flags first.
+    if size is None or title_size is None:
+        size, title_size = _grow_card_type(
+            items, int(cell_w), offered, size, title_size, note_size,
+            pad, numbered)
     if cell_w < 2 * pad + 1000:               # 10 mm of usable card
         raise ValueError(
             "cards(): %d cards across %.0f mm leaves %.0f mm each, which is "
@@ -1562,7 +1625,6 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
     needed = max(_card_height(item, int(cell_w), title_size, size,
                               note_size, pad, numbered)
                  for item in items)
-    offered = (area.h - gap * (rows_n - 1)) / rows_n
     if needed > offered * 1.15:
         # Drawing anyway puts the body outside its own panel, which reads as
         # a card with a coloured hat on and is not something QA measures.
@@ -1570,8 +1632,11 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
             "cards(): the tallest card needs %.0f mm and the box gives each "
             "row %.0f mm. Give cards() a taller box, fewer words, or a "
             "smaller size=/title_size=." % (needed / 100, offered / 100))
-    if height == "content":
+    if height in ("content", "auto"):
         row_h = min(needed, offered)
+        if height == "auto":
+            row_h = min(offered, max(needed / CARD_TEXT_SHARE,
+                                     offered * CARD_MIN_SHARE))
         used = row_h * rows_n + gap * (rows_n - 1)
         area = Box(area.x, int(area.y + (area.h - used) / 2), area.w, int(used))
 
@@ -1641,8 +1706,6 @@ def steps(doc, page, x, y, w, h, items, captions=None, numbered=True,
     if not items:
         raise ValueError("steps(): nothing to draw -- items is empty")
     gap = CARD_GAP * 2 if gap is None else gap    # room for the arrowhead
-    size = size_for("label") if size is None else size
-    title_size = size_for("label") if title_size is None else title_size
     caption_size = size_for("caption") if caption_size is None else caption_size
     area = Box(x, y, w, h)
     if captions:
@@ -2110,25 +2173,23 @@ def pair_spots(cx, cy, r):
 # ------------------------------------------------- editing existing shapes
 
 def walk(shape):
-    """A shape and, recursively, every shape inside it.
+    """A shape and, recursively, every shape inside it if it is a group.
 
     Template slides put half their text inside groups, where ``shapes(page)``
     cannot see it.  ``office.template.retext`` and ``qa.py`` walk groups for
-    you; use this when you need the shapes themselves.
+    you; use this when you need the shapes themselves.  The same walk as
+    ``office.template.walk_shapes``: groups only, never into a table's cells.
     """
     yield shape
-    try:
-        count = shape.getCount()
-    except Exception:
-        return
-    for i in range(count):
-        yield from walk(shape.getByIndex(i))
+    if _is_group(shape):
+        for _path, inner, _parent in _template_walk(shape):
+            yield inner
 
 
 def walk_page(page):
     """Every shape on a slide, groups included, depth first."""
-    for top in shapes(page):
-        yield from walk(top)
+    for _address, shape in walk_shapes(page):
+        yield shape
 
 
 def canvas(page, keep=(), remove=()):

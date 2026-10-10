@@ -27,6 +27,10 @@ class LastJsonTest(unittest.TestCase):
     def test_last_of_several(self):
         self.assertEqual(last_json('{"a": 1} then {"b": 2}'), {"b": 2})
 
+    def test_cannot_see_is_no_answer(self):
+        # Even when the model then improvises a verdict from the brief's text.
+        self.assertIsNone(last_json('CANNOT SEE IMAGE\n{"verdict": "ok"}'))
+
     def test_fenced_and_none(self):
         self.assertEqual(last_json('```json\n{"verdict": "ok"}\n```'),
                          {"verdict": "ok"})

@@ -56,11 +56,17 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from office.deckbuild import SKIP_QA_ENV, find_template  # noqa: E402
-from office.impress import (PRESENTATION_EXTS, SofficeError,  # noqa: E402
-                            parse_slide_spec, shutdown)
-from qa import check, validate_pptx  # noqa: E402
+from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402
+                            SofficeError, parse_slide_spec, shutdown)
+from office.qa import QAResult, check, summary, validate_pptx  # noqa: E402
+from office.qa.allowlist import (AllowlistError, _acknowledged,  # noqa: E402
+                                 load_allowlist)
+from office.vision import last_json  # noqa: E402
 
-PPTX_EXTS = {".pptx", ".potx"}
+#: A vision finding at these severities holds the gate until the slide is
+#: rebuilt and reviewed again, or acknowledged in the allowlist.
+BLOCKING_SEVERITY = {"high", "medium"}
+
 
 
 def _build_env() -> dict:
@@ -104,6 +110,11 @@ def _start_render(deck: Path, outdir: Path, dpi: int):
     and a run that gets cut off before the renders exist is a run that ships
     without anyone looking.  Overlapped, they cost the longer of the two.
     """
+    # New renders mean every brief and answer beside them describes slides
+    # that no longer exist.
+    for stale in (list(outdir.glob("slide-*.brief.md"))
+                  + list(outdir.glob("slide-*.answer.md"))):
+        stale.unlink(missing_ok=True)
     return subprocess.Popen(
         [sys.executable, str(HERE / "render.py"), str(deck),
          "--outdir", str(outdir), "--dpi", str(dpi)],
@@ -158,6 +169,38 @@ def report_deck_hash(report: Path):
     except OSError:
         pass
     return None
+
+
+def open_vision_findings(deck: Path) -> list:
+    """``[slide]`` whose saved vision-agent answer still holds a real finding.
+
+    Read from the answers, not from the verdict table: the table is text the
+    build model edits, and a model that wants the gate to pass rewrites
+    "cards mostly empty" as "ok -- cards fill the area proportionally".  The
+    answers are deleted whenever ``make_deck.py`` renders again, so a slide
+    clears by being rebuilt and reviewed -- or by a ``vision`` entry in the
+    allowlist (``"content": "Q7"``), which a person can read and dispute.
+    """
+    outdir = deck.resolve().parent / "render"
+    try:
+        allow = load_allowlist(deck)
+    except AllowlistError:
+        allow = {}
+    out = []
+    for answer in sorted(outdir.glob("slide-*.answer.md")):
+        number = int(answer.name.split("-")[1].split(".")[0])
+        parsed = last_json(answer.read_text(encoding="utf-8")) or {}
+        for finding in parsed.get("findings") or []:
+            if not isinstance(finding, dict):
+                continue
+            if str(finding.get("severity", "")).lower() not in BLOCKING_SEVERITY:
+                continue
+            q = str(finding.get("q", "")).upper()
+            if allow and _acknowledged(allow, "vision", number, q):
+                continue
+            out.append(number)
+            break
+    return out
 
 
 def open_fix_verdicts(report: Path) -> list:
@@ -244,9 +287,8 @@ def _wireframes(outdir: Path, numbers) -> list:
             "one for any render.", ""] + blocks
 
 
-def _write_report(deck: Path, issues: list, checked: int, outdir=None,
-                  sheet=None, sparse=(), notes=(), prose=None,
-                  acknowledged=()) -> Path:
+def _write_report(deck: Path, result: QAResult, outdir=None,
+                  sheet=None) -> Path:
     """Leave the findings on disk, next to the deck, as ``<deck>-report.md``.
 
     A build that ends between "here is what is wrong" and "fixed it" otherwise
@@ -265,6 +307,9 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     deck needs more than one page; a ten-slide deck gets ``contact-sheet.jpg``,
     and the first instruction in its own report was a path that did not exist.
     """
+    issues, checked, sparse = result.issues, result.checked, result.sparse
+    notes, acknowledged = result.notes, result.acknowledged
+    prose_issues, titles = result.prose_issues, result.titles
     report = deck.resolve().with_name(deck.stem + "-report.md")
     # Line two, not line thirty: a reader who stops after the heading should
     # already know whether anything has looked at this deck.  It used to be the
@@ -307,7 +352,6 @@ def _write_report(deck: Path, issues: list, checked: int, outdir=None,
     # and it is the one part of this report that can still be acted on cheaply:
     # a storyline fixed here costs one edit to plan.md, and after the slides
     # are built it costs the deck.
-    prose_issues, titles = prose if prose else ((), ())
     if titles:
         lines += ["", "## The ghost deck", "",
                   "Read these, in order, and nothing else. They should tell "
@@ -393,13 +437,18 @@ def _gate_on_verdicts(deck: Path, script) -> int:
               f"looked at cannot be finished -- give the renders to the "
               f"vision-agent and write its verdict into the report's table.")
         return 1
-    open_fixes = open_fix_verdicts(report)
+    open_fixes = sorted(set(open_fix_verdicts(report))
+                        | set(open_vision_findings(deck)))
     if open_fixes:
         shown = ", ".join(str(n) for n in open_fixes)
-        print(f"Open `fix` verdicts on slide(s): {shown}. Fix them in the "
-              f"build script and re-run make_deck.py -- or, if a measurement "
-              f"shows the finding is wrong, replace the cell with `ok — "
-              f"<the measurement>` (references/qa.md).")
+        print(f"Open findings on slide(s): {shown} -- a `fix` verdict, or a "
+              f"medium/high finding in the vision-agent's saved answer. Fix "
+              f"the slide in the build script, re-run make_deck.py and brief "
+              f"the new renders. Editing the verdict cell does not clear it. "
+              f"A finding a measurement proves wrong goes in "
+              f"<deck>-allowlist.json as kind \"vision\", content \"Q7\" "
+              f"(the question), with the measurement as its reason -- the "
+              f"user reviews that file.")
         return 1
     print(f"All {rows} slide(s) have a verdict.")
     return 0
@@ -519,7 +568,7 @@ def main():
         # No QA: this is the tight loop for fixing a build error. The deck is
         # built (or a script just wrote it); nothing is checked and the deck
         # is not gated. The full run -- no --skip-qa -- is the gate.
-        issues, checked, sparse, notes, prose, acknowledged = [], 0, [], (), ((), ()), []
+        result = QAResult()
         flag = "--build-only" if args.build_only else "--skip-qa"
         print(f"Skipping QA ({flag}). This deck is NOT checked and NOT "
               f"finished -- re-run without {flag} before it ships.")
@@ -533,8 +582,7 @@ def main():
                     render_proc.kill()
                 return 2
         try:
-            issues, checked, sparse, notes, prose, acknowledged = check(
-                deck, args.template, wanted)
+            result = check(deck, args.template, wanted)
         except (SofficeError, FileNotFoundError, ValueError) as e:
             print(f"Error: {e}", file=sys.stderr)
             if render_proc is not None:
@@ -544,47 +592,13 @@ def main():
             return 2
 
     if not args.skip_qa:
-        print(f"{checked} slide(s) checked.\n")
-        for note in notes:
-            print(f"{note}\n")
-        if acknowledged:
-            print(f"## {len(acknowledged)} acknowledged (allowed by the "
-                  f"allowlist)\n")
-            for ack in acknowledged:
-                print(f"- {ack}")
-            print()
-        if issues:
-            failed = True
-            print(f"## {len(issues)} issue(s) — fix every one\n")
-            for issue in issues:
-                print(f"- {issue}")
-        else:
-            print("No overflow, collisions, leftovers, markdown, contrast or "
-                  "occlusion defects.")
+        print("\n".join(summary(result)))
+        # Sparse slides and prose lines are deliberately not `failed`: a
+        # statement slide is sparse on purpose, and a check that cannot be
+        # satisfied is a check that gets ignored -- along with the ones above.
+        failed = failed or bool(result.issues)
 
-        # Deliberately not `failed`: see qa.sparse_slides.  A statement slide is
-        # sparse on purpose, and a check that cannot be satisfied is a check that
-        # gets ignored -- along with the ones above it that can.
-        if sparse:
-            print(f"\n## {len(sparse)} slide(s) to look at\n")
-            for number, reason in sparse:
-                print(f"- slide {number}: {reason}")
-
-        prose_issues, titles = prose
-        if titles:
-            print("\n## The ghost deck\n")
-            for number, title in titles:
-                print(f"{number:>3}. {title if title else '(no title found)'}")
-            print("\nRead these in order. They should tell the whole argument on "
-                  "their own.")
-        if prose_issues:
-            print(f"\n## {len(prose_issues)} line(s) to look at\n")
-            for finding in prose_issues:
-                print(f"- {finding}")
-
-        _write_report(deck, issues, checked, None if args.no_render else outdir,
-                      sparse=sparse, notes=notes, prose=prose,
-                      acknowledged=acknowledged)
+        _write_report(deck, result, None if args.no_render else outdir)
 
         if deck.suffix.lower() in PPTX_EXTS and not args.skip_validate:
             code, output = validate_pptx(deck, args.template)
@@ -610,9 +624,8 @@ def main():
         # on a single sheet.  Skipped under --skip-qa: that run must not leave
         # a clean-looking report behind.
         if not args.skip_qa:
-            _write_report(deck, issues, checked, outdir,
-                          sheet.resolve() if sheet else None, sparse, notes,
-                          prose, acknowledged=acknowledged)
+            _write_report(deck, result, outdir,
+                          sheet.resolve() if sheet else None)
         if images:
             print(
                 "\n**Next: the vision-agent, one slide per call.** The checks "
@@ -622,8 +635,9 @@ def main():
                 "delegation -- then `vision_brief.py collect` fills the "
                 "verdict table."
                 + (" Start with slide%s %s — measured above as possibly empty."
-                   % ("" if len(sparse) == 1 else "s",
-                      ", ".join(str(n) for n, _ in sparse)) if sparse else "")
+                   % ("" if len(result.sparse) == 1 else "s",
+                      ", ".join(str(n) for n, _ in result.sparse))
+                   if result.sparse else "")
                 + " A blank verdict is a slide nobody has looked at."
             )
         else:

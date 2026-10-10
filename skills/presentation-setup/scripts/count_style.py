@@ -40,6 +40,7 @@ from _skill import engine  # noqa: E402
 engine()
 
 from office.impress import load_document, slides  # noqa: E402
+from office.colors import to_hex as _hex  # noqa: E402
 from office.draw import contrast_ratio  # noqa: E402
 from office.template import read_text, walk_shapes  # noqa: E402
 
@@ -59,10 +60,6 @@ MIN_USES = 2
 #: Text sizes below this are furniture -- think-cell stubs, corner marks,
 #: registration text -- not a role in anybody's type scale.
 MIN_SIZE_PT = 5.0
-
-
-def _hex(value):
-    return f"#{int(value) & 0xFFFFFF:06X}"
 
 
 def survey(path):

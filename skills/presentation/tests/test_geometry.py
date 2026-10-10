@@ -372,7 +372,7 @@ class EmptyBand(unittest.TestCase):
     """
 
     def setUp(self):
-        from qa import _widest_empty_band
+        from office.qa.layout import _widest_empty_band
         self.band = _widest_empty_band
 
     def test_a_gap_between_two_blocks_is_found(self):
@@ -447,7 +447,7 @@ class DesignVariety(unittest.TestCase):
     """
 
     def setUp(self):
-        from qa import design_note
+        from office.qa.layout import design_note
         self.note = design_note
 
     def test_nothing_recorded_says_nothing(self):
@@ -673,7 +673,7 @@ class ActionTitles(unittest.TestCase):
     """
 
     def setUp(self):
-        from qa import _title_findings
+        from office.qa.prose import _title_findings
         self.find = _title_findings
 
     def _reasons(self, text):
@@ -712,7 +712,7 @@ class BannedWords(unittest.TestCase):
     """The tells, matched literally so the list is the specification."""
 
     def setUp(self):
-        from qa import BANNED, CLOSING_WASTE
+        from office.qa.prose import BANNED, CLOSING_WASTE
         self.banned, self.closing = BANNED, CLOSING_WASTE
 
     def test_the_tells_are_caught_in_both_languages(self):
@@ -762,7 +762,7 @@ visual: area-compare
 
     def setUp(self):
         import tempfile
-        from qa import lost_plan_titles, plan_titles
+        from office.qa.prose import lost_plan_titles, plan_titles
         self.lost_plan_titles, self.plan_titles = lost_plan_titles, plan_titles
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -827,7 +827,7 @@ class RepeatedTitles(unittest.TestCase):
     """The ghost deck reading as four labels instead of sixteen claims."""
 
     def setUp(self):
-        from qa import repeated_titles
+        from office.qa.prose import repeated_titles
         self.repeated = repeated_titles
 
     def test_a_branch_name_used_as_four_titles_is_named_once(self):

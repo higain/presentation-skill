@@ -59,12 +59,9 @@ from office.impress import (  # noqa: E402
     slides,
 )
 from office.template import read_text, walk_shapes  # noqa: E402
+from office.colors import to_hex as _hex  # noqa: E402
 
 ADJUST = {0: "left", 1: "right", 2: "block", 3: "center", 4: "stretch"}
-
-
-def _hex(value):
-    return f"#{value & 0xFFFFFF:06X}"
 
 
 def _fill(shape):

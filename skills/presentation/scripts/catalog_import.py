@@ -42,8 +42,9 @@ from pathlib import Path
 
 CAPACITY = re.compile(
     r"headline\s*(?P<headline>[✓✗])\s*·\s*body slots\s*(?P<body>\d+)\s*·\s*"
-    r"max bullets\s*(?P<bullets>\d+)\s*·\s*images\s*(?P<images>\d+)\s*·\s*"
-    r"chart\s*(?P<chart>[✓✗])")
+    r"(?:holds\s*(?P<items>\d+)\s*item\(s\)\s*·\s*)?"
+    r"(?:max bullets\s*(?P<bullets>\d+|None)\s*·\s*)?"
+    r"images\s*(?P<images>\d+)\s*·\s*chart\s*(?P<chart>[✓✗])")
 
 #: ``- **Field:** value``, with any wrapped continuation lines.
 FIELD = re.compile(r"^- \*\*(?P<name>[^:*]+?):?\*\*[ :]*(?P<value>.*?)"
@@ -63,7 +64,11 @@ def _capacity(value):
         return None
     return {"headline": m.group("headline") == "✓",
             "body_slots": int(m.group("body")),
-            "max_bullets_per_body": int(m.group("bullets")),
+            "max_bullets_per_body": (int(m.group("bullets"))
+                                     if (m.group("bullets") or "").isdigit()
+                                     else None),
+            **({"max_items": int(m.group("items"))} if m.group("items")
+               else {}),
             "images": int(m.group("images")),
             "supports_chart": m.group("chart") == "✓"}
 
@@ -91,20 +96,26 @@ def _imagery(value):
 
 
 def parse_entries(text):
-    """``{slide: entry}`` for every ``### Slide N — Name`` block."""
+    """``{slide: entry}`` for every ``# Design N — Name`` block.
+
+    ``### Slide N — Name`` is the older single-file layout, still read.
+    """
     entries = {}
     # Stop at the next entry *or the next section*.  Without the ``^## ``
     # boundary the last entry's final field swallowed every appendix section
     # in the file -- 150 lines of prose collapsed into one design's Notes.
     for m in re.finditer(
-            r"^### Slide (\d+) — (.+?)$(.*?)(?=^### Slide |^## |\Z)",
+            r"^(?:### Slide|# Design) (\d+) — (.+?)$(.*?)"
+            r"(?=^### Slide |^# Design |^## |\Z)",
             text, re.M | re.S):
         n, name, body = int(m.group(1)), m.group(2).strip(), m.group(3)
         fields = {f.group("name").strip().lower(): f.group("value")
                   for f in FIELD.finditer(body)}
         entry = {"name": name}
         for key, field in (("purpose", "purpose"), ("use_when", "use when"),
-                           ("avoid_when", "avoid when"), ("notes", "notes")):
+                           ("avoid_when", "avoid when"), ("notes", "notes"),
+                           ("content_shape", "content shape"),
+                           ("looks_best", "looks best")):
             entry[key] = _clean(fields.get(field, ""))
         entry["content_types"] = re.findall(r"`([^`]+)`",
                                             fields.get("content types", ""))
@@ -118,7 +129,7 @@ def parse_entries(text):
 
 def parse_decision_table(text):
     """``([rule], variety_rule)`` from the decision-table section."""
-    section = re.search(r"^## Decision table.*?$(.*?)(?=^## )", text,
+    section = re.search(r"^## Decision table.*?$(.*?)(?=^## |^# )", text,
                         re.M | re.S)
     rules = []
     if section:
@@ -138,7 +149,7 @@ def parse_decision_table(text):
             rules.append({"when": re.sub(r"\*\*", "", when).strip(),
                           "use_slide": int(m.group(1)),
                           "because": because})
-    variety = re.search(r"\*\*Variety rule:\*\*\s*(.+)", text)
+    variety = re.search(r"\*\*Variety(?: rule)?:\*\*\s*(.+)", text)
     return rules, (variety.group(1).strip() if variety else None)
 
 
@@ -163,6 +174,12 @@ def main():
     rows = {row["number"]: row for row in manifest["slides"]}
 
     text = Path(args.markdown).read_text(encoding="utf-8")
+    # The per-design files beside it, when the catalog is the split layout.
+    designs = Path(args.markdown).parent / "designs"
+    if designs.is_dir():
+        text += "\n" + "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(designs.glob("design-*.md")))
     entries = parse_entries(text)
     rules, variety = parse_decision_table(text)
 
@@ -211,4 +228,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

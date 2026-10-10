@@ -66,7 +66,7 @@ def write_slide_briefs(deck: Path, outdir: Path, language: str) -> list:
     written = []
     for number, png in sorted(renders.items()):
         brief = outdir / f"slide-{number}.brief.md"
-        brief.write_text(slide_brief(str(png.resolve()),
+        brief.write_text(slide_brief(str(png.absolute()),
                                      measured.get(number, ""), language),
                          encoding="utf-8")
         # A stale answer belongs to an earlier build of this slide.
@@ -117,7 +117,7 @@ def write_design_briefs(catalog: Path) -> list:
         folder = catalog / f"slide-{row['number']:02d}"
         structure = json.loads((folder / "structure.json").read_text())
         brief = folder / "brief.md"
-        brief.write_text(design_brief(str((folder / "render.png").resolve()),
+        brief.write_text(design_brief(str((folder / "render.png").absolute()),
                                       structure), encoding="utf-8")
         written.append(brief)
     return written
@@ -129,7 +129,14 @@ def _delegation(briefs: list, answer_name) -> str:
             f"in one call. The whole delegation is:\n\n"
             f"    Read the brief at {first} and follow it exactly.\n\n"
             f"Save the vision-agent's whole reply, unedited, as "
-            f"{answer_name(first)}, and the same for every brief.")
+            f"{answer_name(first)}, and the same for every brief.\n"
+            f"Send every brief, not a sample. If a reply is CANNOT SEE "
+            f"IMAGE, send that same brief again -- up to three tries; the "
+            f"failure is often transient. Only then save CANNOT SEE IMAGE as "
+            f"its answer and tell the user which slides nothing has seen. "
+            f"**Never write an answer yourself**, and never for a brief you "
+            f"did not send: an answer nothing with eyes wrote is worse than "
+            f"none, and it is the one defect no later step can detect.")
 
 
 def main() -> int:
@@ -169,12 +176,14 @@ def main() -> int:
     filled, unanswered, unparsed = collect(args.deck, outdir)
     print(f"Filled {filled} verdict(s) in {_report(args.deck).name}.")
     if unanswered:
-        print("No answer yet for slide(s): "
+        print("No answer (or CANNOT SEE IMAGE) for slide(s): "
               + ", ".join(map(str, unanswered)))
     if unparsed:
-        print("No JSON object in the answer for slide(s): "
+        print("No usable answer for slide(s): "
               + ", ".join(map(str, unparsed))
-              + " -- ask the vision-agent again with the same brief.")
+              + " -- the vision-agent could not see the image or gave no "
+                "JSON. Ask again with the same brief; if it still cannot see "
+                "it, tell the user. Never fill the verdict yourself.")
     print("\nEvery `fix` verdict is work: change the build script, re-run "
           "make_deck.py, and brief the new renders. Overrule a finding only "
           "with a measurement (references/qa.md).")

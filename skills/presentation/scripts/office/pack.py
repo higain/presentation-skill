@@ -9,6 +9,7 @@ facts measured or decided about it::
         template.pptx      the asset itself; build_deck duplicates slides out of it
         profile.json       palette, type scale, authoring annotations
         catalog.md         which design carries which content (generated)
+        designs/           one file per design: retext keys, slots (generated)
         overrides.md       the prose no script can measure (hand-written)
         catalog/           the extraction dossiers and the judged entries
 

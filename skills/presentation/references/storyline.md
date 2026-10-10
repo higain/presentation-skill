@@ -118,7 +118,7 @@ a divider sets its title large, in a gap the master's decoration leaves — so t
 is often **under 25 characters on one line**. Over it the title wraps into the
 decoration and the words come out with a stroke through them, nothing collides, and
 `qa.py` reports clean. The budget has to be respected here, in the spine, where it is
-free. **The pack's `catalog.md` states the exact figure per design** under *Title
+free. **The pack's `designs/design-N.md` states the exact figure per design** under *Title
 budget*; take it from there rather than from this paragraph.
 
 **Slide budget: roughly one slide per *presented* minute**, minus the title and closing

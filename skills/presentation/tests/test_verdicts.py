@@ -5,6 +5,7 @@ every slide.  This checks that a blank verdict cell makes the run fail -- a
 slide nobody has opened cannot be finished, and the deck must not ship with it.
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -87,6 +88,32 @@ class GateOnVerdictsTest(unittest.TestCase):
     def test_report_for_another_build_fails(self):
         self._write("0" * 64, ["ok", "ok"])
         self.assertEqual(_gate_on_verdicts(self.deck, None), 1)
+
+    def _answer(self, number, severity="medium"):
+        render = self.deck.parent / "render"
+        render.mkdir(exist_ok=True)
+        (render / f"slide-{number}.answer.md").write_text(
+            '{"verdict": "fix", "findings": [{"q": "Q7", "what": "hollow", '
+            f'"severity": "{severity}"}}]}}')
+
+    def test_editing_the_cell_does_not_clear_a_saved_finding(self):
+        self._write(deck_hash(self.deck), ["ok", "ok — fills the area"])
+        self._answer(2)
+        self.assertEqual(_gate_on_verdicts(self.deck, None), 1)
+
+    def test_low_severity_does_not_block(self):
+        self._write(deck_hash(self.deck), ["ok", "ok"])
+        self._answer(2, severity="low")
+        self.assertEqual(_gate_on_verdicts(self.deck, None), 0)
+
+    def test_an_acknowledged_finding_clears(self):
+        self._write(deck_hash(self.deck), ["ok", "ok"])
+        self._answer(2)
+        (self.deck.parent / "deck-allowlist.json").write_text(json.dumps(
+            {"acknowledgements": [{"slide": 2, "kind": "vision",
+                                   "content": "Q7",
+                                   "reason": "probe.py: text fills 70%"}]}))
+        self.assertEqual(_gate_on_verdicts(self.deck, None), 0)
 
     def test_build_script_is_refused(self):
         self.assertEqual(_gate_on_verdicts(self.deck, Path("build.py")), 2)

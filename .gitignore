@@ -11,8 +11,9 @@ __pycache__/
 skills/*/templates/*
 !skills/*/templates/README.md
 
-# Contact sheets of a brand's own slides, wherever they land.
-skills/*/*-contact-sheet.jpg
+# Contact sheets and renders of a brand's own slides, wherever they land.
+skills/*/*.jpg
+skills/*/render/
 
 # Scratch space, when /tmp is not writable. Normally removed on exit; this
 # catches the runs that are killed before they get there.

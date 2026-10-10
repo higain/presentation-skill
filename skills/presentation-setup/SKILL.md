@@ -1,6 +1,6 @@
 ---
 name: presentation-setup
-description: "Teach the presentation skill a company template. Use when a deck should be built in a company's own design and no template pack is installed yet, when someone brings a .pptx/.potx/.odp/.otp master or corporate design to 'set up', 'onboard' or 'teach' the tooling, when D.color() raises because a deck has no palette, or when an existing pack needs updating after the template changed. Triggers on 'company template', 'corporate design', 'Firmentemplate', 'Folienmaster', 'brand template', 'set up the presentation skill', 'no pack installed'."
+description: "Teach the presentation skill a company template: turn a .pptx/.potx/.odp/.otp master into a template pack. Use when someone brings a master or corporate design to 'set up', 'onboard', 'install' or 'teach' the tooling, when no template pack is installed yet, when D.color() raises because a deck has no palette, or when an existing pack must be rebuilt after the template changed. Triggers on 'set up the presentation skill', 'Firmentemplate einrichten', 'Folienmaster einlesen', 'install a brand template', 'no pack installed'. Not for building or editing a deck on a template that is already installed -- that is the presentation skill alone, even when the request says 'im Firmentemplate' or 'in our corporate design'."
 license: Apache-2.0
 compatibility: "Needs the `presentation` skill installed beside this one (same skills/ directory or ~/.claude/skills/), and its dependencies: LibreOffice Impress 25.2+ with python3-uno, python3-lxml, python3-defusedxml, python3-pil, poppler-utils, Python 3.11+. All from apt, never pip or npm. Works offline. Judging each design's render is done by the vision-agent (or a person) and never sends a render anywhere."
 ---
@@ -32,15 +32,18 @@ runs on your own infrastructure.
 
 ## Before you start
 
-Work from this skill's own directory, so the commands below are exactly as
-written. `$SKILL` is the presentation skill; `presentation-setup` finds it
-beside itself or in `~/.claude/skills/`, and every script here stops with a
-message if it cannot.
+**Work in the user's folder, where the template file is** — never inside a
+skill directory. Contact sheets, the probe deck and its renders are written to
+the working directory, and they are the company's slides: they must not land in
+a skill that may be committed or shared. Set two variables once:
 
 ```bash
-cd <path to>/presentation-setup
-SKILL=../presentation          # or ~/.claude/skills/presentation
+SETUP=<path to>/presentation-setup     # this skill
+SKILL=<path to>/presentation           # the presentation skill, usually beside it
 ```
+
+Every script here finds the presentation skill by itself and stops with a
+message if it cannot.
 
 Ask for **the real master**, not a finished deck someone liked: a pattern
 collection with one slide per design is what the catalog is built from. A
@@ -64,7 +67,7 @@ Ask three things, and write the answers down:
 
 ```bash
 python3 $SKILL/scripts/thumbnail.py brand.pptx      # writes brand.jpg, a contact sheet
-python3 scripts/count_style.py brand.pptx           # the colours and sizes it uses
+python3 $SETUP/scripts/count_style.py brand.pptx           # the colours and sizes it uses
 ```
 
 Open the contact sheet — delegate it to the vision-agent if you cannot see
@@ -107,7 +110,7 @@ never make the list.
 Then write it:
 
 ```bash
-python3 scripts/make_pack.py --name acme --template brand.pptx \
+python3 $SETUP/scripts/make_pack.py --name acme --template brand.pptx \
     --colour accent=#RRGGBB --colour alert=#RRGGBB --colour ok=#RRGGBB \
     --colour muted=#RRGGBB --colour neutral=#RRGGBB \
     --series '#RRGGBB,#RRGGBB,#RRGGBB' \
@@ -134,7 +137,7 @@ names one.
 ## Stage 3 — Authoring notes  ·  **ask the user**
 
 ```bash
-python3 scripts/find_notes.py brand.pptx
+python3 $SETUP/scripts/find_notes.py brand.pptx
 ```
 
 A pattern collection talks to whoever builds from it: `EXAMPLE`, `Customer
@@ -147,7 +150,7 @@ deletes a column header. A person reading twelve short strings settles it in
 a minute.
 
 ```bash
-python3 scripts/make_pack.py --name acme --template brand.pptx \
+python3 $SETUP/scripts/make_pack.py --name acme --template brand.pptx \
     --note 'EXAMPLE' --note 'Customer logo here' \
     --note-prefix 'Instructions: 1.'
 ```
@@ -178,12 +181,15 @@ vision-agent exactly `Read the brief at <catalog>/slide-NN/brief.md and follow
 it exactly.` and save its whole reply, unedited, as `slide-NN/answer.md`.
 Never batch designs: fifteen renders in one call come back as fifteen generic
 answers, and the decision table built from them picks designs by accident.
+If it answers `CANNOT SEE IMAGE`, send the same brief again (up to three tries);
+only then save it and tell the user. **Never write an answer yourself** — that
+design stays blank for the user to fill.
 No vision-agent? Skip this; you will fill the blanks by hand.
 
 Then write the worksheet:
 
 ```bash
-python3 scripts/name_designs.py $SKILL/templates/acme/catalog
+python3 $SETUP/scripts/name_designs.py $SKILL/templates/acme/catalog
 ```
 
 That writes `designs.md` beside the renders: every measured field filled, and
@@ -198,7 +204,7 @@ builder matches content against.
 The measured lines are already right and must not be edited. Then import:
 
 ```bash
-python3 scripts/name_designs.py $SKILL/templates/acme/catalog --import
+python3 $SETUP/scripts/name_designs.py $SKILL/templates/acme/catalog --import
 ```
 
 A design left blank still builds; the decision table just never picks it for
@@ -208,13 +214,14 @@ the right reason, and the import says which ones. Assemble:
 python3 $SKILL/scripts/catalog_build.py $SKILL/templates/acme/catalog
 ```
 
-Inside a pack that needs no flags: it writes the pack's `catalog.md` and
+Inside a pack that needs no flags: it writes the pack's `catalog.md` (a
+compact index) and `designs/design-N.md` (one file per design), and
 splices in the pack's `overrides.md` if there is one.
 
 ## Stage 5 — Probe  ·  **ask the user**
 
 ```bash
-python3 scripts/probe_deck.py acme            # writes probe.pptx here
+python3 $SETUP/scripts/probe_deck.py acme     # writes probe.pptx here
 python3 $SKILL/scripts/render.py probe.pptx   # writes render/slide-1.png ...
 ```
 
@@ -269,7 +276,7 @@ limit) into `templates/acme/overrides.md` under a `## header` or
 python3 $SKILL/scripts/catalog_build.py $SKILL/templates/acme/catalog
 ```
 
-**Never edit `catalog.md`**: it is generated, and the next rebuild overwrites
+**Never edit `catalog.md` or `designs/`**: they are generated, and the next rebuild overwrites
 it. `catalog_build.py --check` fails when it has drifted, which is how that
 rule stays true.
 

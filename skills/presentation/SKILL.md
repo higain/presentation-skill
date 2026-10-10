@@ -7,445 +7,228 @@ license: Apache-2.0 (see LICENSE at the repository root; third-party notices in 
 
 # Presentations: .odp and .pptx
 
-**The engine is LibreOffice Impress, driven over UNO.** It opens the real
-document and saves it in its own format, so an `.odp` stays ODF and a `.pptx`
-stays OOXML. Nothing here rewrites a file format by hand.
+The engine is LibreOffice Impress, driven over UNO: it opens the real file and
+saves it in its own format. **Every path below is relative to this skill's
+directory** (the one holding this file); scripts run directly
+(`scripts/dump.py deck.pptx`) or with `python3` in front.
 
 | Task | How |
 |---|---|
-| **Read** a deck | `scripts/dump.py deck.odp` |
-| **Survey** a template's layouts | `scripts/thumbnail.py template.odp` |
-| **Inspect** shapes to edit them | `scripts/probe.py template.odp` |
-| **Build in the house style** | the recipe below — this is the common job |
-| **Adapt** a user's own template | `references/templates.md` |
-| **Create** a deck from nothing | `references/authoring.md` |
-| **Edit** an existing deck | `impress_document(path)` — saves in place, same format |
-| **Convert** formats | `scripts/convert.py in.odp out.pptx` |
-| **Check and render** a deck | `scripts/make_deck.py build.py deck.pptx --template brand.pptx` |
+| Read a deck | `scripts/dump.py deck.pptx` |
+| Inspect shapes before editing | `scripts/probe.py deck.pptx --slides 4,9` |
+| Edit an existing deck | `impress_document(path)` — saves in place, same format (`references/templates.md`) |
+| Convert | `scripts/convert.py in.odp out.pptx` |
+| **Build a deck** | the recipe below |
+| Teach the skill a company template | the `presentation-setup` skill |
 
-**Three rules that override anything below:**
+**Rules that override everything below**
 
-1. **Keep the format the deck arrived in.** Editing an `.odp` produces an
-   `.odp`. Convert only when the user asks for the other format.
-2. **A new deck defaults to `.pptx`** unless the user asks for `.odp` or names
-   an output path that says otherwise.
-3. **A deck with no template of the user's own is built from our house
-   template** — see [The company template](#the-company-template-default) — not from a
-   blank document and not from an invented look. Their template always wins if
-   they supply one.
+1. Keep the format a deck arrived in; a new deck is `.pptx` unless asked otherwise.
+2. Build on the company template pack — the user's own template if they bring
+   one. Never invent colours, fonts or a look (`D.color()` raises without a pack).
+3. Write in the user's language, titles included.
+4. You cannot see images. Every look at a slide goes to the **vision-agent**
+   (the `vision` subagent) through `scripts/vision_brief.py`. Never describe a
+   slide nothing with eyes has seen.
 
-## Step 0 — which job is this?
+## Step 0 — what to build
 
-**Answer this before running a single command.** The recipe below builds slides.
-It does not decide what the slides should say, and there is no check anywhere in
-this skill that notices when nobody did.
-
-| What you were handed | Start at |
+| You were handed | Start at |
 |---|---|
-| An outline, a document, a deck to edit, or the slide text itself | **The recipe**, below |
-| A **subject** — "a deck about X", a sentence or a paragraph of intent | **`references/storyline.md`**, first, and do not open the recipe until stage 3 of it is approved |
+| The content: an outline, a document, slide text, data to present | the recipe |
+| Only a subject ("a deck about X", a goal, an audience) | `references/storyline.md` — intake, storyline, a ghost deck the user approves; then the recipe |
 
-A one-line request for a deck on a topic is the second row, not the first. So is
-a paragraph. So is a brief that names an audience and a goal but no content:
-the giveaway is that **you would have to invent what the slides say**, and that
-is the work `references/storyline.md` governs — six intake questions, one
-scaffold, a ghost deck the user approves, an accent pack the user picks, and
-only then the recipe.
-
-**Do not substitute your own outline for that file.** Writing a plan of your own
-called `storyline.md`, or picking designs while sketching the sections, skips
-the two user gates and produces a deck that lists what is known about a topic
-instead of arguing something. That failure is invisible to `qa.py`, to
-`validate.py` and to the renders — a deck can pass every check in this skill and
-still have never made a point.
+If you would have to invent what the slides say, it is the second row.
 
 ## The recipe
 
-**This is the commonest job — a `.pptx` on the company template — and this is
-the whole of it.** Six steps in order, and **only once step 0 sent you here**.
+`acme` is the pack name: the one in `templates/default`, or the only directory
+in `templates/`. No pack installed → ask for the template and run
+`presentation-setup`.
 
-The template and everything known about it is a **pack**: `templates/<name>/`,
-holding the asset, its catalog and its palette. `acme` below is a pack name —
-substitute the one installed, and if none is, see
-[No pack installed](#no-pack-installed).
+**1. Read the pack's `templates/acme/catalog.md`.** It is short: which design
+for which content, a design index with each design's *content shape*, how each
+design's headline is written, the palette. Read `references/language.md` too
+if you write the slide text yourself.
 
-```bash
-# 1. See what the template offers.
-scripts/thumbnail.py templates/acme/template.pptx
-scripts/probe.py templates/acme/template.pptx --slides 4,9   # the ones you want
-```
+**2. Plan the deck as a table** before any code — one row per slide:
 
-**2. Pick a design per section** from the pack's `catalog.md` — a decision
-table, top to bottom, first match wins. Its numbers are the slide numbers you
-pass to `build_deck`, and each entry lists the **retext keys** that design
-actually carries. Content the table has no design for — a diagram, a chart, a
-comparison you want to draw — goes on the **canvas design stripped back**; the
-catalog's *Designs by role* table names it, and `references/drawing.md` says
-how.
+| slot | design | why it fits (content shape) | headline (a full-sentence claim) |
+|---|---|---|---|
 
-**3. Write one build script.** One `fill` per page, retexting *and* drawing.
-Never reopen the finished file to add more: that is a second `.pptx` save, it
-grows the masters, and it is how shapes end up layered over template text
-nobody replaced.
+Rules for the plan:
+- Match each slide's content to a design's *content shape*; respect its item
+  limit — split a slide rather than overfill it.
+- **Vary the designs.** QA fails a deck of six or more slides where one
+  design — the canvas included — carries more than half of them.
+- Content no design fits (a diagram, chart, comparison, timeline you draw)
+  goes on the **canvas design** (catalog, *Designs by role*), stripped back.
+- Every content slide needs one thing to look at — a diagram, chart, big
+  number, table, image — not only text (`references/drawing.md`, Composition).
+- A headline states the slide's conclusion as a sentence, not a topic label.
 
-**Read Composition in `references/drawing.md` first, before writing `fill`.**
-It is where this skill says how to fill a slide, and it is the difference
-between a deck that looks designed and one that reads as a form someone filled
-in.  The specific rule the automated gate now enforces: **a content slide must
-not leave its bottom half bare.**  If your `fill` packs everything into the
-top third of a `Box` and ships the rest empty, `make_deck.py` fails the build
-with a *top-heavy* finding.  Lay out from the `Box` `D.canvas` returns so the
-content fills the slide; a genuinely-empty band is for statement slides, which
-are sparse on purpose.  (See the QA section for the one escape hatch.)
+**3. Read `templates/acme/designs/design-N.md` for every design in the plan.**
+It lists the design's **retext keys** (the exact template wording to replace),
+its empty slots and its budgets. Keys differ per design: copy them from that
+file, never from memory or another design.
 
-**Branch on `slot`, the position in your deck — not on `design`, and never on
-both.** `if design == 8 and slot == 1` is false whenever slot 1 holds a
-different design, and a branch that never fires leaves that slide exactly as the
-template drew it: its own body text, in its own language, under whatever you
-drew on top. **Every slot needs a branch**; end `fill` with an `else` that
-raises if you want to be sure.
+**4. Write one `build.py`.** One `fill` call per slot does all retexting and
+drawing. Branch on `slot` (position in your deck), never on `design`, and end
+with an `else` that raises:
 
 ```python
 from office.deckbuild import build_deck
-from office.template import retext
+from office.template import retext, set_title
 from office.impress import mm
 from office import draw as D
 
-# Both from the catalog: the retext key of the design in that slot, and the
-# canvas design's keep tuple. Never from memory -- they differ per design.
-TITLE_KEY, KEEP = "Chapter title", (0, 1, 2, 3)
-
 def fill(doc, page, slot, design):
-    if slot == 0:
-        retext(page, {TITLE_KEY: "How we got here"})
-    if slot == 1:                                   # a drawn slide
-        area = D.canvas(page, keep=KEEP)            # what the body vacates
-        body, foot = area.cut_bottom(mm(14))        # a PAIR -- unpack it
-        D.venn(doc, page, body,                     # sizes itself to the box
-               D.series(3),                         # the template's own colours
-               labels=["Private data", "Untrusted content", "External comms"],
-               centre=D.color("alert"), centre_text="Exfiltration")
-        D.text(doc, page, foot, "Any two is safe by design",
-               role="caption", align="center")      # colour picked for the bg
+    if slot == 0:                                   # a designed slide
+        set_title(page, "Billing is blocked by one vendor key")   # if the index says set_title
+        retext(page, {"<key from design-N.md>": "New text",
+                      "<another key>": None})       # None deletes that shape
+    elif slot == 1:                                 # the canvas design
+        set_title(page, "Three levers secure the March launch")
+        area = D.canvas(page, keep=(0, 1, 2))       # keep tuple from its design file
+        D.cards(doc, page, area, [("Vendor keys", "Escalate by week 42."),
+                                  ("Interface", "Freeze the API contract."),
+                                  ("Test window", "Book the QA slot.")],
+                numbered=True)
+    else:
+        raise ValueError(f"no branch for slot {slot}")
 
-build_deck("acme", "out.pptx", [7, 8, 13], fill=fill,
-           footer="Q3 review · Board briefing · 2026")
+build_deck("acme", "out.pptx", [4, 2], fill=fill,
+           footer="Aurora · Steering committee · 2026")   # None hides it
 ```
 
-**Vary the designs, and set the footer.** Both are one argument of that last
-call, and four separate runs got both wrong: every one built `[8] * N`, drawing
-every slide from scratch on a template whose twenty other designs it never
-touched, and every one left the template's own footer — `subject | title |
-place | date`, in the template's language — along the bottom of a deck written
-in another. The footer is a page property, so no amount of `retext` reaches it;
-`footer=None` hides it instead.
+- **Headlines:** write each one the way the index's *Headline* column says —
+  `set_title(page, ...)` when the title placeholder is empty (`retext` cannot
+  reach an empty shape), otherwise the listed retext key.
+- **Every shape that still carries template text must be retexted or deleted**
+  — including labels the canvas keeps (the catalog warns about them).
+- **The footer** is a page property: set it with `footer=` in `build_deck`.
+- **Draw with the composition helpers**, laid out from the `Box` that
+  `D.canvas` returns: `D.cards`, `D.steps`, `D.kpis`, `D.statement`, `D.table`,
+  `D.venn`, `D.bullets`. Colours by name (`D.color("accent")`, `D.series(3)`),
+  sizes by role (`role="body"`). Never hardcode millimetre offsets or hex.
+  Details: `references/drawing.md`.
+- Never reopen the finished file to add more; everything happens in `fill`.
+
+**5. Build — fast loop first, then the gate.** Give each run a timeout of at
+least five minutes.
 
 ```bash
-# 4-6. Build, check, render — one command, and it prints the PNG paths.
-scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx
+scripts/make_deck.py build.py out.pptx --build-only               # fix build errors (instant)
+scripts/make_deck.py build.py out.pptx --template acme            # the gate: QA, schema, renders
 ```
 
-**Give this command a timeout of at least five minutes.** It opens LibreOffice
-several times and a fifteen-slide deck runs to a minute or two. A shell that
-gives up at the default kills it *after* the build and *before* it prints where
-the renders are — which is how a deck gets called finished having never been
-looked at. It writes `<deck>-report.md` and `render/` beside the deck either
-way, and names both in its first line, so a run that did get cut off is
-recovered by reading those rather than by building again.
+The gate writes `out-report.md` and `render/` beside the deck and exits 1 on
+any finding. **Fix every finding in `build.py` and run the gate again** until
+it is clean. Leftover template text, a missing title, text off the slide,
+low contrast and top-heavy slides are defects, not noise.
 
-**When the build itself is failing, do not pay for the full gate on every
-iteration.** A full run checks, schema-validates and renders, and on a
-fifteen-slide deck that is a minute or two per retry — which is how a build
-error turns into twenty minutes of waiting. Iterate on the error with the
-tight loop, then run the full command once:
+**6. The vision-agent looks at every slide — one slide per call.**
 
 ```bash
-# Fixing a build error: build only, no QA, no render. Instant.
-scripts/make_deck.py build.py out.pptx --build-only
-
-# A little more: build and render so you can see the layout, skip the checks.
-scripts/make_deck.py build.py out.pptx --template acme --skip-qa
-
-# The gate — run this when the build is clean, and only this. It must pass.
-scripts/make_deck.py build.py out.pptx --template templates/acme/template.pptx
+scripts/vision_brief.py slides out.pptx --language English
 ```
 
-`--build-only` and `--skip-qa` write **no report** on purpose: a deck that was
-not checked must not leave a clean-looking report behind. The gate is the last
-command, run only once the tight loop is clean.
-
-**5. Fix every finding it reports, then run it again.** Exit 1 means findings,
-and they are also left on disk in `<deck>-report.md` beside the deck. Leftover
-template wording, a stray template picture, text running off the slide and
-black-on-navy text are defects, not noise. **Editing the build script is not
-fixing them** — nothing has changed until the build has re-run and the report
-comes back clean.
-
-**6. Have the vision-agent look at every slide — one slide per call, with the
-tested brief.** You cannot see the renders. Do not write the vision-agent's
-brief yourself, and never send it several images at once: a hand-written
-brief about nine slides comes back "all ok" for a deck a designer would
-reject.
+For **each** slide N send the vision-agent exactly
+`Read the brief at <render>/slide-N.brief.md and follow it exactly.` and save
+its whole reply, unedited, as `<render>/slide-N.answer.md`. Never put several
+slides in one call and never write the brief yourself. If it answers
+`CANNOT SEE IMAGE`, send the same brief again (up to three tries — it is often
+transient); only then save it as the answer and tell the user. Send every
+slide's brief, and **never write an answer yourself**. Then:
 
 ```bash
-scripts/vision_brief.py slides out.pptx --language English   # one brief per slide
+scripts/vision_brief.py collect out.pptx       # fills the report's verdict table
 ```
 
-For **each** slide N, send the vision-agent (the `vision` subagent) exactly:
-`Read the brief at <render>/slide-N.brief.md and follow it exactly.` Save its
-whole reply, unedited, as `<render>/slide-N.answer.md`. Then:
+**7. Every `fix` verdict is work.** Change `build.py`, re-run step 5, brief the
+new renders (step 6). Rewriting the verdict cell clears nothing: the gate
+reads the vision-agent's saved answers. A finding a measurement proves wrong
+(`probe.py` for geometry, `qa.py` for wording and colour, `wireframe.py` for
+emptiness) goes in the allowlist below as kind `vision`, `content` the
+question (`"Q7"`), the measurement as the reason — the user reviews that file.
+"Hollow", "empty", "no focal point" and "unfinished" are not disproved by
+measurement; change the slide.
+
+**8. Finish.**
 
 ```bash
-scripts/vision_brief.py collect out.pptx          # fills the verdict table
+scripts/make_deck.py out.pptx --require-verdicts
 ```
 
-A `fix` verdict is work: change the build script, re-run step 4, brief the new
-renders. `make_deck.py out.pptx --require-verdicts` passes only when every slide
-has a verdict and none still says `fix`. If the vision-agent is unavailable,
-run `scripts/wireframe.py render/` and name the slides nothing with eyes has
-seen.
+It only reads the report and the saved answers, and exits 1 while any verdict
+is blank or says `fix`, an answer still holds a medium or high finding, or the
+report belongs to an earlier build. The deck is done when this passes.
+No vision-agent available? Run `scripts/wireframe.py render/` and tell the user
+which slides nothing with eyes has seen.
 
-Where it prints **slides to look at**, start there: those are the ones measured
-as painting almost nothing, and they are either deliberate statement slides or
-slides you left unfinished. Deciding which is a thing only eyes can do — and the
-vision-agent is the eyes.
+## When QA flags something intentional
 
-**Every slide needs something to look at.** A deck of twelve bullet lists is a
-failed deck even when every check passes — reach for a diagram, a comparison, a
-timeline, a table of real numbers. See Composition in `references/drawing.md`.
-
-## Scripts
-
-**Every path on this page is relative to this skill's own directory, not to
-where you are working.** Find it once — the directory holding the `SKILL.md`
-you are reading — and prefix it, or `cd` there. `references/`, `templates/`
-and `scripts/` are inside it. (`build_deck` resolves a template against it for you, so
-`build_deck("acme", ...)` works from anywhere.)
-
-**Run each script directly** — every one carries a shebang and the executable
-bit, so `scripts/dump.py deck.odp` is the whole invocation. `python3
-scripts/dump.py deck.odp` does the same thing if the executable bit was lost.
-
-| Script | What it does |
-|---|---|
-| `scripts/make_deck.py [build.py] deck.pptx --template brand.pptx` | **Run this last.** Runs the build script, QAs, schema-checks, renders every slide, and writes `render/` and `<deck>-report.md` beside the deck. Exit 1 on any finding |
-| `scripts/probe.py deck.odp [--slides 4,7-9]` | Every shape's **index**, position, size, fill, line and character formatting, plus a per-slide reading-order block. `dump.py` says what a slide *says*; this says what it *is*. Run it before editing any template slide |
-| `scripts/thumbnail.py deck.odp [prefix]` | One labelled contact sheet of all slides, for picking template layouts |
-| `scripts/dump.py deck.odp [-o out.md]` | Deck to markdown: per slide the layout, master, text, tables, speaker notes, empty placeholder slots and a hidden flag |
-| `scripts/render.py deck.odp [-o dir] [--dpi N] [--slides 3,7-9]` | One PNG per slide; prints their absolute paths. **This is visual QA** |
-| `scripts/qa.py deck.pptx [--template brand.pptx]` | The checks alone, without the renders: overflow, mid-word breaks, off-slide shapes, leftover template wording and pictures, placeholders, markdown, contrast, occlusion — plus `validate.py` on a `.pptx` |
-| `scripts/vision_brief.py slides deck.pptx` · `collect deck.pptx` | **The check with eyes.** Writes the tested vision-agent brief beside every render, one per slide; `collect` reads the saved answers into the report's verdict table. `designs <catalog>` does the same for a template's designs during setup |
-| `scripts/wireframe.py render/slide-03.png` | A render as text: an ink grid, the centroid, the widest blank band, the margins. **What to run when the vision-agent is unavailable** — it shows emptiness, banding and things that are not centred without eyes. `make_deck.py` prints one for every slide it flags |
-| `scripts/convert.py in.odp out.pptx` | Convert between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
-| `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks. **`.pptx` only** |
-| `scripts/catalog_extract.py` · `scripts/catalog_build.py` | **Build-time only, not per deck:** teach the skill a new company template. See `README.md` |
-| `tests/test_geometry.py` · `tests/test_theme_repair.py` · `tests/roundtrip_report.py` | Fast geometry and theme-repair checks; and the fidelity re-proof after a LibreOffice upgrade |
-
-The `office` modules a build script imports:
-
-| Module | What it gives you |
-|---|---|
-| `office.deckbuild` | `build_deck` — a whole deck from a template, in any order |
-| `office.draw` | `rect`, `ellipse`, `line`, `arrow`, `polygon`, `chevron`, `text`, `chip`, `bullets`, `table`, `venn`, `canvas`, `Box`, `page_box`, `restyle`, `contrast_ratio`, `readable_on`, `fit_size`, `fit_lines` — **putting new things on a slide**, and `Box` to lay it out |
-| `office.draw` — composition | `cards`, `steps`, `kpis`, `statement` — the four layouts every build draws by hand. One call each, with the padding, the equal heights, the arrows and the line breaks already right. See Composition in `references/drawing.md` |
-| `office.draw` — house style | `color`, `series`, `palette`, `size_for`, and `role=` on `text` — **the template's own colours and sizes, by name.** Four runs invented hex the template does not contain and picked a footnote size per slide; these are counted off the asset. The pack's `catalog.md` prints both tables |
-| `office.template` | `retext`, `set_text`, `find_shapes`, `shape_by_text`, `clone_slide`, `strip_annotations`, `fit_pill`, `shrink_to_fit`, `scale_bars`, `text_overflow`, `overflowing`, `colliding`, `set_footer` — editing what a template slide already has |
-| `office.impress` | `impress_document` / `load_document`, `save_as`, `slides`, `shapes`, `placeholder`, `notes_text` / `set_notes`, `slide_size`, `mm()`/`pt()` |
-| `office.rasterize` | `rasterize` — deck to images, with the hidden-slide policy as an argument |
-
-**Importing `office.*`:** `make_deck.py` puts this skill's `scripts/` directory
-on the build script's path for you, so `from office.draw import ...` just works
-under it. Running a build script yourself, add the path — the directory that
-*contains* `office/`, never `office/` itself:
-
-```python
-import sys; sys.path.insert(0, "/absolute/path/to/presentation/scripts")
-```
-
-## References — read the one the job calls for
-
-| File | When |
-|---|---|
-| the pack's `catalog.md` | **Always, for a house-style deck** — which design for which content, the retext keys, the capacities |
-| `references/drawing.md` | Drawing anything: `Box` layout, every primitive, the canvas pattern, composition |
-| `references/templates.md` | The user brought their own template: probe, `clone_slide`, `retext`, charts, pills, long titles |
-| `references/qa.md` | What each check means, visual QA, `validate.py`, what a round trip preserves |
-| `references/authoring.md` | No template at all: new documents, placeholders, typography, environment |
-| `references/design.md` | Inventing a look — palette and motif, for a deck with no template |
-| `references/language.md` | **Writing the words** — action titles, the banned list, the four rewrite tests |
-| `references/storyline.md` | **A deck from a brief, not from supplied text** — intake, scaffold, ghost deck, the two user gates |
-| `references/accents.md` | The look: accent packs, the hero-visual catalogue that `plan.md`'s `visual:` field names |
-| `references/pptx-xml.md` | Hand-editing OOXML |
-
-**Writing slide text rather than placing text the user supplied?** Read
-`references/language.md` first. Every title is a sentence stating the
-conclusion, not a label for the topic — it is the difference between a deck that
-argues and a deck that lists, and `qa.py` checks it.
-
-**Asked for a deck on a subject, rather than handed the content for one?** That
-is step 0 above, and `references/storyline.md` runs before anything on this
-page. If you have already written a build script, you are past the point where
-reading it helps.
-
-## The company template (default)
-
-**This skill ships no template.** A company installs one as a **pack** —
-`templates/<name>/` — and everything below is about building on it. `templates/README.md`
-says what a pack holds; the setup skill makes one.
-
-**When a deck is requested and the user names no template of their own, build
-from the default pack**: the one named in `templates/default`, or the only one
-installed. `build_deck("acme", ...)` and `--template acme` both take the pack
-name, so no path inside the skill is ever spelled out in a build script.
-
-1. **Choose designs from the pack's `catalog.md`.** It maps content to **design
-   numbers** — the slide numbers in the asset — as a decision table applied top
-   to bottom, first match wins. Read it first, pick a design per section, and
-   vary them per its variety rule. Do not eyeball the thumbnail and guess.
-
-   **A catalog design number is a slide number in that asset**, and it is what
-   goes in `build_deck`'s list. It is never an Impress autolayout number: the
-   autolayout `probe.py` prints is usually the same on every slide of a
-   designed template and identifies nothing.
-2. **Respect the catalog's capacities.** Each entry states how many bullets a
-   body holds, how many columns, how many images. When content exceeds that,
-   split the slide rather than overflow it.
-
-   **Take `retext` keys from the entry's *Retext keys* line, never from
-   memory.** They differ per design, and reusing one design's key on another is
-   the single commonest way a build script dies — the key matches nothing, the
-   call succeeds, and the template's own words ship. A slot that is **absent
-   from a design's key list** — or listed under *Empty slots* — holds no text at
-   all, and `retext` cannot match an empty shape: write it with
-   `set_text(shapes(page)[i], ...)` or draw your own.
-3. **Anything the table has no design for goes on the canvas design**, stripped
-   back — the catalog's *Designs by role* table names which one it is. Do not
-   force the content into the nearest design's bullet list, and do not start
-   from a blank slide.
-4. **Build with `build_deck`** against the pack, passing the design numbers in
-   final order and doing all retexting *and* drawing in its `fill` callback. It
-   duplicates rather than rebuilds, so a template's bullets, inline colour and
-   OLE objects (think-cell charts, embedded sheets) survive; `clone_slide`
-   loses all three.
-5. **Check and look:**
-   `scripts/make_deck.py build.py out.pptx --template acme`, then open every
-   PNG it prints.
-
-### No pack installed
-
-Then there is no house style to build in, and inventing one is the failure this
-skill exists to prevent — four runs drew corporate decks in colours their
-company does not own. In order:
-
-1. **Ask for the template.** Most companies have one, and one file makes every
-   deck after it right.
-2. **Point the `presentation-setup` skill at it.** Twenty minutes, and the pack
-   is permanent.
-3. Only if there is genuinely no template: `references/authoring.md` builds
-   from a blank document and `references/design.md` invents a look on purpose,
-   declaring it rather than pretending it is the company's.
-
-`D.color()` raises rather than guessing when no pack is in force, and
-`role=` falls back to a neutral type scale so a build still runs. Both are
-deliberate: drawing without a palette is handled, drawing in *another
-company's* palette is not.
-
-**Making or updating a pack** — extracting a catalog from a template — is the
-`presentation-setup` skill, with `README.md` as the same pipeline in manual
-form. It runs on your own infrastructure; never send company slides to a hosted
-model.
-
-## QA (required)
-
-**A deck is not finished until `make_deck.py` has run clean and every slide has
-a verdict written in the report's table.** Every deck that shipped broken had
-skipped one of the two — and the ones that skipped the second had all "looked
-at the renders" first.
-`make_deck.py` reports text that overruns its box or the slide, blocks of text
-printed over each other, leftover template wording and pictures, markdown,
-unreadable colour contrast and occluded shapes, then schema-checks the `.pptx`.
-It writes `<deck>-report.md` and `render/` beside the deck.
-
-It also prints **slides to look at**: the ones painting under a quarter of
-their own area, or leaving a third of their height in one bare band. Those are
-measurements, not findings — they do not fail the run, because a one-sentence
-statement slide measures the same as a slide nobody finished. Have the
-vision-agent look at these first.
-
-**Top-heavy slides are a finding, not a suggestion.** A slide that paints real
-content against its title and leaves the bottom half bare is measured and
-**fails the build**: unlike a sparse statement slide, that combination is never
-a deliberate choice — it is hardcoded offsets, and it is exactly how a deck
-ends up "not really pretty". The fix is to lay out from the `Box` `D.canvas`
-returns so the content fills the slide. The one legitimate way past it is the
-allowlist below, with a reason.
-
-**A finding that is genuinely intentional — correct content that happens to
-match the template — is recorded in an allowlist, not hacked.** A deck with no
-template of its own words to change (an SDLC phase name that *is* the content,
-a divider's background graphic) otherwise faces a choice between shipping a
-permanently red report and corrupting the content. Write `<deck>-allowlist.json`
-beside the deck, one entry per finding with `kind`, `slide`, `content` and a
-`reason`:
+Correct content can match the template (a phase name that *is* the content, a
+divider's background graphic). Record it in `<deck>-allowlist.json` beside the
+deck, never by distorting the content:
 
 ```json
 {"acknowledgements": [
-  {"slide": 16, "kind": "leftover-wording", "content": "Testen",
-   "reason": "SDLC phase label on the lifecycle circle"},
-  {"slide": 5,  "kind": "stray-image", "content": "image5.png",
-   "reason": "divider background graphic"}
+  {"slide": 16, "kind": "leftover-wording", "content": "Testing",
+   "reason": "phase label on the lifecycle circle"}
 ]}
 ```
 
-An acknowledgement counts only when it matches a real finding by
-kind + slide + content **and** carries a non-empty reason — there is no
-wildcard. A malformed allowlist is an error, not a silent pass, and an entry
-that matches nothing (the finding was fixed, or never there) is itself
-reported so the list cannot quietly grow into a blanket "ignore everything".
-`kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`.
-The automated half of `make_deck.py` can then exit clean, with the
-acknowledged findings listed separately in the report.
+`kind` is `leftover-wording`, `stray-image`, `footer`, `balance`, `no-title`,
+`variety` or `vision`; each entry must match a real finding and carry a
+reason. Tell the user about every entry you add.
 
-**The visual half is step 6 of the recipe**: `vision_brief.py slides`, one
-vision-agent call per slide, `vision_brief.py collect`. It has the same standing
-as the automated half. **Run `make_deck.py deck.pptx --require-verdicts`** last
-when the deck must gate on having been looked at (a client deliverable, a
-review): it only reads the report, and exits 1 while any verdict is blank or
-still says `fix`, or when the report belongs to an earlier build.
+## Scripts
 
-**A visual finding is dismissed only by a measurement you show.** Reasoning
-about why the reviewer must be wrong is not a measurement, and it is how a deck
-shipped with a German footer on all ten slides: the run searched the shapes for
-the string, found nothing, and wrote the finding off as a hallucination — the
-footer is a page property and no shape search could ever have reached it.
-`probe.py` settles geometry, `qa.py` settles wording and colour,
-`wireframe.py` settles emptiness and placement. If none of them can settle it,
-the finding stands, and fixing it is cheaper than arguing with it.
+| Script | What it does |
+|---|---|
+| `scripts/make_deck.py build.py deck.pptx --template acme` | Build, QA, schema-check, render; writes `<deck>-report.md` and `render/`. `--build-only` for the fast loop, `--require-verdicts` for the final gate |
+| `scripts/vision_brief.py slides\|collect deck.pptx` | One tested vision-agent brief per render; `collect` reads the answers into the report |
+| `scripts/probe.py deck.pptx [--slides 4,7-9]` | Every shape's index, position, size, colours and fonts |
+| `scripts/dump.py deck.pptx` | The deck as markdown: text, tables, notes, empty slots |
+| `scripts/thumbnail.py deck.pptx` | A contact sheet of all slides (for the vision-agent) |
+| `scripts/render.py deck.pptx` | One PNG per slide |
+| `scripts/qa.py deck.pptx --template acme` | The checks alone, without rendering |
+| `scripts/wireframe.py render/slide-3.png` | A render as a text ink grid — the fallback without a vision-agent |
+| `scripts/convert.py in out` | Between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
+| `scripts/office/validate.py deck.pptx` | OOXML schema and relationship checks |
 
-What it **cannot** see: alignment, crowding, a diagram off-centre, a chart
-whose bars are not proportional, a slide still in the template's language. That
-is what the renders are for. Details, and what each finding means:
-`references/qa.md`.
+`make_deck.py` puts `scripts/` on the build script's path. Running a build
+script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 
-## Notes on this environment
+| Module | Use it for |
+|---|---|
+| `office.deckbuild` | `build_deck` — the whole deck from a pack |
+| `office.template` | `set_title`, `retext`, `set_text`, `find_shapes`, `set_footer`, `shrink_to_fit` — changing what a design already has |
+| `office.draw` | `canvas`, `Box`, `cards`, `steps`, `kpis`, `statement`, `table`, `venn`, `text`, `color`, `series`, `size_for` — drawing new things |
+| `office.impress` | `impress_document`, `save_as`, `slides`, `shapes`, `mm()`, `pt()`, `slide_size` |
 
-- **apt only.** Never run `pip` or `npm`. Everything needed comes from apt
-  (the package list is in the frontmatter above and in the README); if
-  something is missing, name the package and stop.
-- **Geometry is 1/100 mm.** Use `mm()`/`pt()`; read `slide_size(doc)` rather
-  than assuming. A brand template is usually its own size: PowerPoint's 16:9
-  default is 33867 × 19050 against LibreOffice's 28000 × 15750, and every
-  offset computed against the wrong one lands a fifth too far left.
-- **`from com.sun.star... import ...` only works after `import uno`.**
-- **The deck's language is the user's, not the machine's.** Write in the
-  language of the brief, leave a template's own footer in its language only if
-  the deck is in that language, and expect content in any language to be normal.
-- Each script starts its own headless LibreOffice with a private profile and
-  port, so parallel runs never collide. If `/tmp` is not writable, set
-  `PRESENTATION_TMPDIR` — see `references/authoring.md`.
-- **Building onto a slow or mounted filesystem** (a virtualbox shared folder, a
-  network drive): a deck that was just written is sometimes not reopenable for
-  a second or two, and `load_document` now retries across that wait, so a build
-  no longer dies on its own freshly-saved output. If you still see
-  `LibreOffice could not open ... as a document` on a shared mount, build into a
-  local directory and copy the finished deck across.
+## References
+
+| File | Read it when |
+|---|---|
+| the pack's `catalog.md`, `designs/design-N.md` | every house-style deck |
+| `references/drawing.md` | drawing anything: `Box`, the helpers, composition |
+| `references/language.md` | writing slide text: headlines, banned words |
+| `references/storyline.md` | the deck is a subject, not supplied content |
+| `references/accents.md` | choosing a look and a hero visual |
+| `references/templates.md` | the user's own template or an existing deck to edit |
+| `references/qa.md` | what a finding means, the vision workflow in detail |
+| `references/authoring.md`, `references/design.md` | no template at all |
+| `references/pptx-xml.md` | hand-editing OOXML |
+
+## Environment
+
+- apt only — never `pip` or `npm`. If a package is missing, name it and stop.
+- Geometry is 1/100 mm: use `mm()`/`pt()`. Values read back (`area.y`,
+  `probe.py` output) are already 1/100 mm — never wrap them in `mm()`.
+- `from com.sun.star... import` works only after `import uno`.
+- Each script starts its own headless LibreOffice; parallel runs are safe. Set
+  `PRESENTATION_TMPDIR` if `/tmp` is not writable.
+- On a slow or shared mount, build into a local directory and copy the
+  finished deck across.

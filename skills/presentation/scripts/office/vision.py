@@ -51,6 +51,9 @@ SLIDE_QUESTIONS = {
 SLIDE_BRIEF = """\
 You are a strict presentation designer checking ONE rendered slide before it is \
 shown to senior management. Open the image with your read tool: {image}
+If you cannot open that image, reply with exactly CANNOT SEE IMAGE and \
+nothing else. Never answer from the text of this brief alone, and never hand \
+this task to another agent.
 
 A separate tool has already checked spelling, leftover template text, text \
 overflow, colour contrast and font sizes from the file itself. Do NOT report \
@@ -101,6 +104,9 @@ not invent problems.
 DESIGN_BRIEF = """\
 You are cataloguing ONE slide design from a company's presentation template. \
 Open the image with your read tool: {image}
+If you cannot open that image, reply with exactly CANNOT SEE IMAGE and \
+nothing else. Never answer from the text of this brief alone, and never hand \
+this task to another agent.
 
 A text-only assistant that cannot see images will later read your answer to \
 decide when to use this design, so describe it in words it can match against \
@@ -170,6 +176,11 @@ def design_brief(image: str, structure: dict) -> str:
         types=", ".join(f'"{kind}"' for kind in CONTENT_TYPES))
 
 
+#: What a vision-agent that could not open the image answers.  Its reply is
+#: no answer at all -- and a build model must not write one in its place.
+CANNOT_SEE = "CANNOT SEE IMAGE"
+
+
 def last_json(text: str):
     """The last JSON object in a model's reply, or ``None``.
 
@@ -177,6 +188,8 @@ def last_json(text: str):
     end, and a model that quotes the schema while thinking would otherwise be
     read as its own answer.
     """
+    if CANNOT_SEE in text:
+        return None
     decoder = json.JSONDecoder()
     found, pos = None, 0
     while (start := text.find("{", pos)) != -1:

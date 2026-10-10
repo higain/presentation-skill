@@ -481,48 +481,16 @@ def _report_qa(out: Path, template: Path):
     are the ones that never get round to running it.  ``build_deck(..., qa=False)``
     turns it off; ``scripts/qa.py`` is the same check with an exit code.
     """
+    from .qa import check, summary            # deferred: office.qa imports us
     try:
-        from qa import check                  # scripts/ is on sys.path already
-    except ImportError:                       # imported from outside scripts/
-        import sys
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        try:
-            from qa import check
-        except ImportError:
-            return
-    try:
-        issues, checked, sparse, notes, prose, acknowledged = check(
-            out, template=template)
+        result = check(out, template=template)
     except Exception as e:                    # QA must never lose you the deck
         print(f"[build_deck] QA could not run: {e}")
         return
-    print(f"\n[build_deck] {out.name}: {checked} slide(s) built.")
-    for note in notes:
-        print(f"[build_deck] {note}")
-    if acknowledged:
-        print(f"[build_deck] {len(acknowledged)} acknowledged (allowlist):")
-        for ack in acknowledged:
-            print(f"  - {ack}")
-    if issues:
-        print(f"[build_deck] {len(issues)} QA issue(s) -- fix these before shipping:")
-        for issue in issues:
-            print(f"  - {issue}")
-    else:
-        print("[build_deck] QA: no overflow, no collisions, no leftover "
-              "template text.")
-    if sparse:
-        print(f"[build_deck] {len(sparse)} slide(s) worth looking at -- "
-              f"{', '.join(str(n) for n, _ in sparse)}: may be half empty.")
-    # The ghost deck goes to `scripts/qa.py`, not here: a build prints as it
-    # goes and a list of every title would bury the findings above it.  What a
-    # build owes you is the count and where to see them.
-    prose_issues, _titles = prose
-    if prose_issues:
-        print(f"[build_deck] {len(prose_issues)} line(s) to look at -- titles "
-              f"and wording. `python3 scripts/qa.py {out.name}` prints them "
-              f"with the ghost deck.")
-    print("[build_deck] QA cannot see the slides. Render them "
-          "(python3 scripts/render.py) and look.\n")
+    print(f"\n[build_deck] {out.name} built.")
+    print("\n".join(summary(result, prefix="[build_deck] ", ghost=False)))
+    print("[build_deck] QA cannot see the slides: run make_deck.py, which "
+          "renders them for the vision-agent.\n")
 
 
 def _index_of(page, pages):

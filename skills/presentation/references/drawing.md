@@ -258,6 +258,10 @@ D.statement(doc, page, area, "One sentence, as large as it fits.")
   content and centres the row. Use it whenever the cards hold different amounts
   of text; `"equal"` (the default) fills the area and is right only when they
   hold about the same.
+- **The type grows to the space.** Without `size=`/`title_size=`, `D.cards`
+  and `D.steps` take the largest step on the deck's type scale at which the
+  tallest card still fills under 60% of its panel and every word still fits a
+  line. Pass sizes only to override that.
 - **`note` sits on the card's floor**, so a row of cards has its owner/date line
   on one baseline instead of three.
 - **The accent titles a card only when it can be read on it.** Brand colours are
@@ -293,7 +297,7 @@ Then:
 - **Fill the area you were given.** Content in the top two-thirds with an empty
   band underneath is the signature of hardcoded offsets, and it is invisible to
   most of `qa.py` — nothing overflows, nothing collides, the slide is just badly
-  placed. It is no longer invisible to all of it: **`qa.balance_findings`
+  placed. It is no longer invisible to all of it: **`office.qa.layout.balance_findings`
   fails a build on a content slide that paints real ink and then leaves its
   bottom half bare** (see `references/qa.md` §Top-heavy). Lay out from the
   `Box` `D.canvas` returns; if a band is genuinely meant to be empty, it should
