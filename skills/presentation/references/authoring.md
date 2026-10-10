@@ -178,4 +178,5 @@ rather than failing later inside LibreOffice.
   language is normal; write the deck in the language of the brief.
 - Macros are never used here; documents open with macro execution disabled.
 - Each script starts its own headless LibreOffice with a private profile and
-  port, so parallel runs — and a LibreOffice the user has open — never collide.
+  a private named pipe, so parallel runs — and a LibreOffice the user has
+  open — never collide. It runs without network (see SKILL.md, Environment).

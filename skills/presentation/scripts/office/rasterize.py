@@ -33,7 +33,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .impress import PRESENTATION_EXTS, SofficeError, load_document, save_as, slides
+from .impress import (PRESENTATION_EXTS, SofficeError, _check_external,
+                      load_document, save_as, slides)
 from .soffice import run_soffice
 
 #: pdftoppm names its output ``<prefix>-<n>.<ext>``, zero-padded to the page
@@ -108,6 +109,7 @@ def rasterize(source, outdir, dpi: int = 150, fmt: str = "png",
     without it you review a deck that no longer exists.
     """
     source, outdir = Path(source), Path(outdir)
+    _check_external(source.absolute())     # --convert-to bypasses load_document
     if source.suffix.lower() not in PRESENTATION_EXTS:
         raise ValueError(
             f"{source} is not a presentation; expected one of: "

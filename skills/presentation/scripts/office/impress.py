@@ -31,6 +31,7 @@ ends, so many documents in one script cost one startup.
 import atexit
 import contextlib
 import os
+import sys
 import re
 import shutil
 import signal
@@ -52,7 +53,10 @@ except ImportError as exc:                      # pragma: no cover
         "cannot see it."
     ) from exc
 
-from office.soffice import SOFFICE_MISSING, free_port, get_soffice_env, profile_arg, soffice_path
+from office.external import external_resources
+from office.soffice import (NETWORK_ENV, SOFFICE_MISSING, get_soffice_env,
+                            isolated, isolation_prefix, pipe_name, profile_arg,
+                            soffice_path, sweep_stale_profiles)
 
 #: A relationship target that climbs out of the package.
 _UPWARD_TARGET = 'Target="../'
@@ -181,7 +185,8 @@ class _Server:
             exe = soffice_path()
         except FileNotFoundError:
             raise SofficeError(SOFFICE_MISSING) from None
-        port = free_port()
+        sweep_stale_profiles()
+        pipe = pipe_name()
         self.profile = tempfile.mkdtemp(prefix="lo-uno-profile-")
         _install_signal_handlers()
 
@@ -189,7 +194,7 @@ class _Server:
         # oosplash, soffice.bin -- can be killed as a group.  Killing only the
         # child we spawned leaves soffice.bin running, reparented to init.
         self.proc = subprocess.Popen(
-            [
+            isolated([
                 exe,
                 "--headless",
                 "--invisible",
@@ -198,8 +203,8 @@ class _Server:
                 "--nodefault",
                 "--nologo",
                 profile_arg(self.profile),
-                f"--accept=socket,host=127.0.0.1,port={port};urp;",
-            ],
+                f"--accept=pipe,name={pipe};urp;",
+            ]),
             env=get_soffice_env(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -211,7 +216,7 @@ class _Server:
         resolver = local.ServiceManager.createInstanceWithContext(
             "com.sun.star.bridge.UnoUrlResolver", local
         )
-        url = f"uno:socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"
+        url = f"uno:pipe,name={pipe};urp;StarOffice.ComponentContext"
         deadline = time.monotonic() + timeout
         while True:
             if self.proc.poll() is not None:
@@ -330,6 +335,33 @@ def filter_for(path) -> str:
         ) from None
 
 
+def _check_external(path):
+    """Refuse a deck that would fetch from the network, unless it cannot.
+
+    With LibreOffice in a network namespace nothing can be fetched, so the
+    deck opens and the user is told what it links to.  Without one, opening
+    it *is* the request -- so it is refused, and ``PRESENTATION_NETWORK=allow``
+    is the explicit way past.
+    """
+    remote = external_resources(path)
+    if not remote:
+        return
+    shown = ", ".join(url for _, url in remote[:3]) + (
+        f" (+{len(remote) - 3} more)" if len(remote) > 3 else "")
+    if isolation_prefix():
+        print(f"[presentation] {path.name} links {len(remote)} resource(s) "
+              f"from outside the file: {shown}. Not fetched -- LibreOffice "
+              f"has no network here -- so they render empty.",
+              file=sys.stderr)
+        return
+    if os.environ.get(NETWORK_ENV, "").lower() != "allow":
+        raise SofficeError(
+            f"{path.name} would fetch {len(remote)} resource(s) from the "
+            f"network when opened: {shown}. This machine cannot run "
+            f"LibreOffice without network, so it is not opened. Set "
+            f"{NETWORK_ENV}=allow only for a deck you trust.")
+
+
 def load_document(path, read_only: bool = False, timeout: float = 60.0):
     """Open a presentation and return the UNO document.  Caller must close it."""
     path = Path(path).absolute()
@@ -342,6 +374,8 @@ def load_document(path, read_only: bool = False, timeout: float = 60.0):
             f"{path} is not writable, so it cannot be opened for editing. "
             "Copy it first, or open it with read_only=True."
         )
+
+    _check_external(path)
 
     options = {
         "Hidden": True,

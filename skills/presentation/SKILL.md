@@ -1,7 +1,7 @@
 ---
 name: presentation
 description: "Create, edit, read and QA presentations — .odp and .pptx alike, plus .otp/.potx templates and legacy .ppt. Use whenever a slide deck is involved: building a deck or pitch, filling in a template, editing or restyling an existing one, extracting text or speaker notes, converting between formats, or rendering slides to images for visual review. Triggers on \"PowerPoint\", \"Impress\", \"deck\", \"slides\", \"presentation\", \"Präsentation\", \"Folien\", or any .odp/.otp/.pptx/.potx/.ppt filename. The user's word for a file says nothing about its extension — a file someone calls \"the PowerPoint\" is often an .odp — so check the actual file, and save a deck back in the format it arrived in."
-compatibility: "Needs LibreOffice Impress 25.2+ with python3-uno, plus python3-lxml, python3-defusedxml, python3-pil, poppler-utils and Python 3.11+. All dependencies come from apt — never run pip or npm. Works offline. Visual QA never sends a render anywhere: the build agent delegates the renders to a vision-agent, and company slides never leave the machine."
+compatibility: "Needs LibreOffice Impress 25.2+ with python3-uno, plus python3-lxml, python3-defusedxml, python3-pil, poppler-utils, util-linux 2.38+ (unshare) or bubblewrap for running LibreOffice without network, and Python 3.11+. All dependencies come from apt — never run pip or npm. Works offline. Visual QA never sends a render anywhere: the build agent delegates the renders to a vision-agent, and company slides never leave the machine."
 license: Apache-2.0 (see LICENSE at the repository root; third-party notices in THIRD-PARTY.md)
 ---
 
@@ -230,5 +230,12 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 - `from com.sun.star... import` works only after `import uno`.
 - Each script starts its own headless LibreOffice; parallel runs are safe. Set
   `PRESENTATION_TMPDIR` if `/tmp` is not writable.
+- **No network for LibreOffice or `build.py`.** Both run in their own network
+  namespace (`unshare`, else `bwrap`), so a deck that links an image by URL
+  cannot make anything fetch it, and a build script cannot send anything out.
+  `build.py` runs with `python3 -P`: import only `office.*` and the standard
+  library, not helper files beside it. Without either tool a warning says so
+  and decks that link remote resources are refused;
+  `PRESENTATION_NETWORK=allow` is the explicit way past, for trusted decks.
 - On a slow or shared mount, build into a local directory and copy the
   finished deck across.

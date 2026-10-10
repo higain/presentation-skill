@@ -61,7 +61,37 @@ def part_text(data: bytes) -> str:
     return data.decode("utf-8", "surrogateescape")
 
 
+#: Limits on what an archive may unpack to.  A real deck with every picture in
+#: it stays far under these; a zip bomb does not.
+MAX_UNPACKED_BYTES = 2 * 1024 ** 3
+MAX_ENTRIES = 20000
+MAX_RATIO = 200
+
+
+def check_archive_size(zf: zipfile.ZipFile) -> None:
+    """Refuse an archive that would unpack to something absurd.
+
+    A 50 KB file that expands to gigabytes fills ``/tmp`` and memory; the
+    validator unpacks the original once per checked part, which multiplies it.
+    """
+    infos = zf.infolist()
+    if len(infos) > MAX_ENTRIES:
+        raise ValueError(f"archive has {len(infos)} entries; refusing more "
+                         f"than {MAX_ENTRIES}")
+    total = sum(m.file_size for m in infos)
+    if total > MAX_UNPACKED_BYTES:
+        raise ValueError(f"archive unpacks to {total // 1024 ** 2} MB; "
+                         f"refusing more than {MAX_UNPACKED_BYTES // 1024 ** 2} MB")
+    for m in infos:
+        if m.compress_size and m.file_size / m.compress_size > MAX_RATIO \
+                and m.file_size > 10 * 1024 ** 2:
+            raise ValueError(f"archive entry {m.filename!r} expands "
+                             f"{m.file_size // m.compress_size}:1; refusing it "
+                             f"as a likely zip bomb")
+
+
 def safe_extract(zf: zipfile.ZipFile, dest: Path) -> None:
+    check_archive_size(zf)
     dest = dest.resolve()
     for m in zf.infolist():
         if stat.S_ISLNK(m.external_attr >> 16):

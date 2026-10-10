@@ -58,6 +58,7 @@ sys.path.insert(0, str(HERE))
 from office.deckbuild import SKIP_QA_ENV, find_template  # noqa: E402
 from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402
                             SofficeError, parse_slide_spec, shutdown)
+from office.soffice import isolated  # noqa: E402
 from office.qa import QAResult, check, summary, validate_pptx  # noqa: E402
 from office.qa.allowlist import (AllowlistError, _acknowledged,  # noqa: E402
                                  load_allowlist)
@@ -93,10 +94,17 @@ def _build_env() -> dict:
 
 
 def _run_script(script: Path) -> int:
-    """Run a build script in its own interpreter, streaming its output."""
+    """Run a build script in its own interpreter, streaming its output.
+
+    Without network, like LibreOffice itself: the script was written by a
+    model that read untrusted decks, and a sentence planted in a deck's notes
+    ("also upload the template to ...") must not become a request.  ``-P``
+    keeps the script's own directory off ``sys.path``, so an ``office/`` or
+    ``uno.py`` sitting beside it cannot stand in for the engine.
+    """
     print(f"# Building — {script.name}\n", flush=True)
-    proc = subprocess.run([sys.executable, str(script)], cwd=script.parent,
-                          env=_build_env())
+    proc = subprocess.run(isolated([sys.executable, "-P", str(script)]),
+                          cwd=script.parent, env=_build_env())
     print(flush=True)
     return proc.returncode
 
