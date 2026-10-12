@@ -71,6 +71,17 @@ def _widest_empty_band(bands, top, bottom):
 
 
 def _paint_metrics(doc, page):
+    """See :func:`_measure_paint`; once per page within a QA pass."""
+    from .. import template
+    if template._MEASURED is None:
+        return _measure_paint(doc, page)
+    key = ("paint", getattr(page, "Name", ""), id(doc))
+    if key not in template._MEASURED:
+        template._MEASURED[key] = _measure_paint(doc, page)
+    return template._MEASURED[key]
+
+
+def _measure_paint(doc, page):
     """``(area, band, at, height)`` for one slide, or ``None``.
 
     ``area`` is the painted share (0..1, double-counting overlaps),

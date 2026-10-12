@@ -17,6 +17,16 @@ scripts/qa.py out.pptx --template brand.pptx                   # checks only
 build ends between "here is what is wrong" and "fixed it", that report is what
 says so; a clean run overwrites it with a clean one.
 
+**Only changed slides are measured again.** Laying text out to measure it is
+the slow part — a 58-slide deck of 2,400 shapes took nine minutes per run, and
+an agent fixing one slide at a time spent an hour re-checking 57 untouched
+ones. So the per-slide findings go into `<deck>-qa-cache.json` under a
+fingerprint of the slide (its XML without the ids a save renumbers, plus its
+layout and media, not its notes), salted with the QA code and the template.
+A slide that did not change reads its findings back; the deck-wide checks run
+every time. Same deck: nine minutes cold, under twenty seconds warm, identical
+report. Delete the file to force a full re-measure.
+
 ## What the automated checks report
 
 They report what a reader would see as broken and nothing else:

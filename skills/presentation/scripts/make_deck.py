@@ -478,7 +478,11 @@ def main():
     parser.add_argument("--outdir", default=None,
                         help="Where to write PNGs (default: render/ beside the deck)")
     parser.add_argument("--dpi", type=int, default=110)
-    parser.add_argument("--slides", help="Only QA these slides, e.g. 4,7-9")
+    parser.add_argument("--slides", help="Only QA these slides, e.g. 4,7-9. "
+                                         "Rarely needed: the full gate already "
+                                         "re-checks only slides that changed "
+                                         "(<deck>-qa-cache.json), and this "
+                                         "skips the deck-wide checks")
     parser.add_argument("--no-render", action="store_true",
                         help="Skip the renders (you will not be able to review it)")
     parser.add_argument("--skip-qa", action="store_true",

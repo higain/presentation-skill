@@ -127,6 +127,13 @@ any finding. **Fix every finding in `build.py` and run the gate again** until
 it is clean. Leftover template text, a missing title, text off the slide,
 low contrast and top-heavy slides are defects, not noise.
 
+Re-running the gate is cheap: it keeps each slide's findings in
+`out-qa-cache.json` and re-measures only the slides whose content changed, so
+after fixing two slides of sixty only those two are checked again. Fix several
+findings per round rather than one. `--slides 4,7-9` narrows the checks
+further, but skips the deck-wide ones (variety, leftover wording across
+slides) — the last run before step 6 is always the full gate.
+
 **6. The vision-agent looks at every slide — one slide per call.**
 
 ```bash

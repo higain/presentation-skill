@@ -33,6 +33,7 @@ know which ``s[i]`` to write to.
 import json
 import re
 import unicodedata
+from contextlib import contextmanager
 
 from office.colors import parse_hex as _hex
 from office.impress import (add_slide, notes_text, placeholder, set_notes,
@@ -297,7 +298,67 @@ def text_width(doc, page, text, like):
         page.remove(tmp)
 
 
+#: Text measurements of one QA pass, ``{(kind, shape key): result}``, or
+#: ``None`` outside one.  See :func:`measure_cache`.
+_MEASURED = None
+
+
+@contextmanager
+def measure_cache():
+    """Measure each shape's text once for the length of the ``with`` block.
+
+    Laying text out is the expensive part of QA -- two UNO layout round trips
+    per shape -- and three checks used to do it for the same shapes: overflow,
+    collision, and the paint metrics behind the sparse and top-heavy checks
+    (twice over, once for each).  A 58-slide deck of 2,400 shapes spent nine
+    minutes in QA, most of it measuring the same text again.
+
+    Only for reading a finished deck.  A build changes shapes as it goes, and a
+    cached measurement of a shape that has since been edited would be wrong.
+    """
+    global _MEASURED
+    outer = _MEASURED
+    _MEASURED = {} if outer is None else outer
+    try:
+        yield
+    finally:
+        _MEASURED = outer
+
+
+def _measure_key(kind, page, shape, *extra):
+    """A key for ``shape``'s measurement, or ``None`` when nothing is cached.
+
+    Built from what the measurement depends on -- the shape's text, geometry
+    and place in the stacking order -- not from the Python wrapper, which UNO
+    hands out afresh on every access.
+    """
+    if _MEASURED is None:
+        return None
+    try:
+        pos, size = shape.getPosition(), shape.getSize()
+        return (kind, getattr(page, "Name", ""), shape.Name,
+                getattr(shape, "ZOrder", None), pos.X, pos.Y, size.Width,
+                size.Height, shape.getString()) + extra
+    except Exception:
+        return None
+
+
+def _memo(kind, page, shape, compute, *extra):
+    key = _measure_key(kind, page, shape, *extra)
+    if key is None:
+        return compute()
+    if key not in _MEASURED:
+        _MEASURED[key] = compute()
+    return _MEASURED[key]
+
+
 def text_overflow(doc, page, shape):
+    """See :func:`_text_overflow`; measured once per shape in a QA pass."""
+    return _memo("overflow", page, shape,
+                 lambda: _text_overflow(doc, page, shape))
+
+
+def _text_overflow(doc, page, shape):
     """``(needed, available, line)`` height in 1/100 mm, or ``None``.
 
     Lays the shape's own text out fresh at the shape's own width on a throwaway
@@ -463,6 +524,11 @@ def overflowing(doc, page):
 
 
 def ink_box(doc, page, shape):
+    """See :func:`_ink_box`; measured once per shape in a QA pass."""
+    return _memo("ink", page, shape, lambda: _ink_box(doc, page, shape))
+
+
+def _ink_box(doc, page, shape):
     """``(x, y, w, h, text)`` of the *ink* a text shape puts on the slide.
 
     A text box is nearly always bigger than the words in it: a caption box the
@@ -510,6 +576,12 @@ def ink_box(doc, page, shape):
 
 
 def _ink_width(doc, page, shape, box_width):
+    return _memo("width", page, shape,
+                 lambda: _measure_ink_width(doc, page, shape, box_width),
+                 box_width)
+
+
+def _measure_ink_width(doc, page, shape, box_width):
     """Width of the longest line the text lays out to, capped at the box."""
     try:
         paras = read_text(shape)

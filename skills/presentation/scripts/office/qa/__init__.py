@@ -20,7 +20,9 @@ from pathlib import Path
 from ..deckbuild import recorded_designs
 from ..impress import PPTX_EXTS, load_document, slides
 from ..pack import active
-from ..template import _bleed_key, colliding, footer_text, offslide, overflowing
+from ..template import (_bleed_key, colliding, footer_text, measure_cache,
+                        offslide, overflowing)
+from . import cache as slide_cache
 from .allowlist import _acknowledged, load_allowlist, stale_acknowledgements
 from .baseline import _collision_key, _template_baseline
 from .colour import buried_text_issues, contrast_issues, occlusion_issues
@@ -59,7 +61,7 @@ def check(path, template=None, wanted=None) -> QAResult:
     # Every check that reads a template fact -- the readable floor, the
     # palette a contrast check compares against -- has to read *this* deck's,
     # not whichever pack happens to be installed.
-    with active(template):
+    with active(template), measure_cache():
         findings, checked, sparse, notes, prose = _check(path, template, wanted)
 
     result = QAResult(checked=checked, sparse=sparse, notes=notes,
@@ -78,6 +80,32 @@ def check(path, template=None, wanted=None) -> QAResult:
 
 
 
+def _fresh_page_checks(page, number, add, deck_texts, leftovers, footers,
+                       base, tpl_strings):
+    """The cheap per-slide reads every run makes, cached slide or not.
+
+    They feed the deck-wide checks -- template wording left on several
+    slides, the footer, the ghost deck -- which compare slides with each
+    other and so can never come out of a per-slide cache.
+    """
+    for address, text in _page_texts(page):
+        deck_texts.append((number, text))
+        hit = PLACEHOLDER.search(text)
+        if hit:
+            add(
+                f"slide {number} shape [{address}]: placeholder text "
+                f"{hit.group(0)!r} in {text[:60]!r}"
+            )
+        elif text in tpl_strings:
+            leftovers.setdefault(text, []).append((number, address))
+
+    # The footer is a page property, so it is not in _page_texts and
+    # nothing above this line can see it.  See template.footer_text.
+    foot = footer_text(page).strip()
+    if foot and foot in base.footers:
+        footers.setdefault(foot, []).append(number)
+
+
 def _check(path, template, wanted):
     findings = []            # (text, allowlist key or None), in report order
     leftovers, footers, deck_texts = {}, {}, []
@@ -92,15 +120,35 @@ def _check(path, template, wanted):
     base = _template_baseline(template)
     tpl_strings, tpl_bleeds = base.strings, base.bleeds
 
+    # Slides whose fingerprint matches the last run reuse its per-slide
+    # findings; see ``cache.py``.
+    prints = slide_cache.slide_fingerprints(path)
+    engine = slide_cache.engine_key(template) if prints else None
+    stored = slide_cache.load(path, engine) if prints else {}
+    fresh = {}
+
     doc = load_document(path, read_only=True)
     designs = []
     try:
         pages = slides(doc)
+        if prints and len(prints) != len(pages):
+            prints, stored = None, {}
         checked = 0
         for number, page in enumerate(pages, start=1):
             if wanted and number not in wanted:
                 continue
             checked += 1
+            print_ = prints[number - 1] if prints else None
+            entry = stored.get(print_) if print_ else None
+            if entry is not None:
+                for packed in entry["a"]:
+                    add(*slide_cache.unpack_finding(number, packed))
+                _fresh_page_checks(page, number, add, deck_texts, leftovers,
+                                   footers, base, tpl_strings)
+                for packed in entry["b"]:
+                    add(*slide_cache.unpack_finding(number, packed))
+                continue
+            start = len(findings)
 
             for address, reason in overflowing(doc, page):
                 add(f"slide {number} shape [{address}]: {reason}")
@@ -142,22 +190,10 @@ def _check(path, template, wanted):
                         f" -- one object drawn too wide)" if len(group) > 1 else "")
                 add(f"slide {number} shape [{address}]: {reason}{more}")
 
-            for address, text in _page_texts(page):
-                deck_texts.append((number, text))
-                hit = PLACEHOLDER.search(text)
-                if hit:
-                    add(
-                        f"slide {number} shape [{address}]: placeholder text "
-                        f"{hit.group(0)!r} in {text[:60]!r}"
-                    )
-                elif text in tpl_strings:
-                    leftovers.setdefault(text, []).append((number, address))
-
-            # The footer is a page property, so it is not in _page_texts and
-            # nothing above this line can see it.  See template.footer_text.
-            foot = footer_text(page).strip()
-            if foot and foot in base.footers:
-                footers.setdefault(foot, []).append(number)
+            part_a = findings[start:]
+            _fresh_page_checks(page, number, add, deck_texts, leftovers,
+                               footers, base, tpl_strings)
+            start = len(findings)
 
             for text in missing_title_issues(page, number):
                 add(text, ("no-title", number, "title"))
@@ -168,10 +204,34 @@ def _check(path, template, wanted):
                          + occlusion_issues(page, number, base.occlusion)
                          + buried_text_issues(page, number)):
                 add(text)
+            if print_:
+                packs = [[slide_cache.pack_finding(number, text, key)
+                          for text, key in part]
+                         for part in (part_a, findings[start:])]
+                if all(pack is not None for part in packs for pack in part):
+                    fresh[print_] = {"a": packs[0], "b": packs[1], "n": number}
 
-        sparse = sparse_slides(doc, wanted)
-        for number, reason in balance_findings(doc, wanted):
-            add(f"slide {number}: {reason}", ("balance", number, "top-heavy"))
+        # The paint metrics are per slide too: measured for the slides that
+        # changed, read back for the rest.
+        numbers = [n for n in range(1, len(pages) + 1)
+                   if not wanted or n in wanted]
+        cached = {n: stored[prints[n - 1]] for n in numbers
+                  if prints and prints[n - 1] in stored}
+        todo = set(numbers) - set(cached)
+        new_sparse = dict(sparse_slides(doc, todo)) if todo else {}
+        new_balance = dict(balance_findings(doc, todo)) if todo else {}
+        sparse = []
+        for number in numbers:
+            if number in cached:
+                reason, top = cached[number].get("sparse"), cached[number].get("balance")
+            else:
+                reason, top = new_sparse.get(number), new_balance.get(number)
+                if prints and prints[number - 1] in fresh:
+                    fresh[prints[number - 1]].update(sparse=reason, balance=top)
+            if reason:
+                sparse.append((number, reason))
+            if top:
+                add(f"slide {number}: {top}", ("balance", number, "top-heavy"))
         notes = [note for note in (design_note(recorded_designs(doc),
                                                _catalog_size(template)),)
                  if note]
@@ -191,6 +251,14 @@ def _check(path, template, wanted):
             prose = (prose[0] + reworded, prose[1])
     finally:
         doc.close(False)
+
+    if prints:
+        keep = dict(stored) if wanted else {
+            p: stored[p] for p in prints if p in stored}
+        for print_, entry in fresh.items():
+            entry.pop("n", None)
+            keep[print_] = entry
+        slide_cache.save(path, engine, keep)
 
     # One label nobody replaced, on thirteen slides, is one thing to fix, and
     # the fix is one retext key.  It is still reported **per slide**, one line
