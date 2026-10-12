@@ -109,5 +109,56 @@ class ReviewTest(unittest.TestCase):
         self.assertFalse(set("0O1IL2Z5S6G8B") & set(review.ALPHABET))
 
 
+class DesignReviewTest(unittest.TestCase):
+    """presentation-setup's design catalog: one ``slide-NN/`` per design."""
+
+    def setUp(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.cat = Path(d.name)
+        for n, colour in ((1, "red"), (2, "green")):
+            folder = review.design_folder(self.cat, n)
+            folder.mkdir()
+            png(folder / "render.png", colour)
+
+    def prepare(self):
+        with mock.patch.object(review, "new_code", return_value=CODE):
+            return review.prepare_designs(self.cat, [1, 2])
+
+    def test_a_typed_answer_is_no_proposal(self):
+        self.prepare()
+        folder = review.design_folder(self.cat, 1)
+        self.assertTrue((folder / "review.png").is_file())
+        (folder / "answer.md").write_text('{"name": "Three KPI circles"}')
+        self.assertEqual(review.verify_design(self.cat, 1)[0], "no-code")
+        (folder / "answer.md").write_text(
+            '{"code": "%s", "name": "Three KPI circles"}' % CODE)
+        status, parsed = review.verify_design(self.cat, 1)
+        self.assertEqual((status, parsed["name"]), ("ok", "Three KPI circles"))
+
+    def test_the_worksheet_reads_only_verified_answers(self):
+        setup = Path(__file__).resolve().parents[2] / "presentation-setup"
+        sys.path.insert(0, str(setup / "scripts"))
+        import name_designs
+        self.prepare()
+        (review.design_folder(self.cat, 1) / "answer.md").write_text(
+            '{"code": "%s", "name": "Cover"}' % CODE)
+        (review.design_folder(self.cat, 2) / "answer.md").write_text(
+            '{"name": "Typed by the build model"}')
+        self.assertEqual(name_designs.read_answer(self.cat, 1)["name"], "Cover")
+        self.assertEqual(name_designs.read_answer(self.cat, 2), {})
+
+    def test_an_unchanged_design_keeps_its_answer_on_re_extraction(self):
+        self.prepare()
+        for n in (1, 2):
+            (review.design_folder(self.cat, n) / "answer.md").write_text(
+                '{"code": "%s"}' % CODE)
+        png(review.design_folder(self.cat, 2) / "render.png", "blue")
+        fresh = {n: f for n, (_, f) in self.prepare().items()}
+        self.assertEqual(fresh, {1: False, 2: True})
+        self.assertEqual(review.verify_design(self.cat, 1)[0], "ok")
+        self.assertEqual(review.verify_design(self.cat, 2)[0], "no-answer")
+
+
 if __name__ == "__main__":
     unittest.main()

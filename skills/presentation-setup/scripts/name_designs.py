@@ -34,7 +34,8 @@ from _skill import engine  # noqa: E402
 
 engine()
 
-from office.vision import CONTENT_TYPES, last_json  # noqa: E402
+from office import review  # noqa: E402
+from office.vision import CONTENT_TYPES  # noqa: E402
 
 #: What a vision-agent answer may fill, beyond the three blanks a person fills.
 #: ``content_shape``, ``max_items`` and ``looks_best`` are the fields a
@@ -44,16 +45,18 @@ JUDGED = ("name", "content_types", "purpose", "use_when", "avoid_when",
           "content_shape", "max_items", "looks_best")
 
 
-def read_answer(folder: Path) -> dict:
+def read_answer(catalog: Path, number: int) -> dict:
     """The vision-agent's JSON answer for one design, or ``{}``.
 
     ``vision_brief.py designs`` writes ``brief.md`` beside each render; the
     build model saves the vision-agent's reply beside it as ``answer.md``.
+    It counts only when it gives back the review code printed under the
+    image it was sent (``office.review``): a reply the build model typed in
+    is no proposal, and the worksheet must not present it as one.
     """
-    path = folder / "answer.md"
-    if not path.is_file():
+    status, answer = review.verify_design(catalog, number)
+    if status != "ok":
         return {}
-    answer = last_json(path.read_text(encoding="utf-8")) or {}
     out = {}
     for key in JUDGED:
         value = answer.get(key)
@@ -154,7 +157,7 @@ def worksheet(catalog: Path):
             (catalog / f"slide-{number:02d}" / "structure.json").read_text())
         name, kinds = _guess(structure)
         capacity = _capacity(structure)
-        answer = read_answer(catalog / f"slide-{number:02d}")
+        answer = read_answer(catalog, number)
         render = catalog / f"slide-{number:02d}" / "render.png"
         keys = structure.get("retext_keys") or []
         budgets = structure.get("title_budgets") or []
@@ -230,7 +233,7 @@ def write_entries(catalog: Path, filled):
             (catalog / f"slide-{number:02d}" / "structure.json").read_text())
         guess_name, guess_kinds = _guess(structure)
         fields = filled.get(number, {})
-        answer = read_answer(catalog / f"slide-{number:02d}")
+        answer = read_answer(catalog, number)
         kinds = [kind.strip() for kind
                  in (fields.get("content_types") or "").split(",") if kind.strip()]
         entry = {
@@ -343,8 +346,17 @@ def main():
     if not args.do_import:
         out = worksheet(args.catalog)
         print(f"Wrote {out}")
-        answered = sum(1 for folder in args.catalog.glob("slide-*")
-                       if (folder / "answer.md").is_file())
+        numbers = [row["number"] for row in json.loads(
+            (args.catalog / "manifest.json").read_text())["slides"]]
+        status = {n: review.verify_design(args.catalog, n)[0] for n in numbers}
+        answered = sum(1 for s in status.values() if s == "ok")
+        rejected = [n for n, s in status.items()
+                    if s in ("no-code", "wrong-code", "cannot-see")]
+        if rejected:
+            print(f"\nNot used -- no valid review code, or the image was not "
+                  f"seen: design(s) {', '.join(map(str, rejected))}. Send "
+                  f"those briefs to the vision-agent again; never write an "
+                  f"answer yourself.")
         if answered:
             print(f"\n{answered} design(s) prefilled from the vision-agent's "
                   f"answers. Review them with the user; the measured lines "

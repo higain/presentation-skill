@@ -176,14 +176,19 @@ for — **one design per call, with the generated brief**:
 python3 $SKILL/scripts/vision_brief.py designs $SKILL/templates/acme/catalog
 ```
 
-It writes `brief.md` beside each `render.png`. For **each** design, send the
-vision-agent exactly `Read the brief at <catalog>/slide-NN/brief.md and follow
-it exactly.` and save its whole reply, unedited, as `slide-NN/answer.md`.
-Never batch designs: fifteen renders in one call come back as fifteen generic
-answers, and the decision table built from them picks designs by accident.
-If it answers `CANNOT SEE IMAGE`, send the same brief again (up to three tries);
-only then save it and tell the user. **Never write an answer yourself** — that
-design stays blank for the user to fill.
+It writes `brief.md` beside each `render.png` and lists the designs to send.
+For **each** listed design, send the vision-agent exactly `Read the brief at
+<catalog>/slide-NN/brief.md and follow it exactly.` and save its whole reply,
+unedited, as `slide-NN/answer.md`. Never batch designs: fifteen renders in one
+call come back as fifteen generic answers, and the decision table built from
+them picks designs by accident. If it answers `CANNOT SEE IMAGE`, send the
+same brief again (up to three tries); only then save it and tell the user.
+
+The brief's image is `slide-NN/review.png`, the render with a **review code**
+printed under it, and an answer counts only when it gives that code back.
+**Never write an answer yourself**: the worksheet ignores an answer without
+the code, and that design stays blank for the user to fill. After a
+re-extraction only the designs whose render changed are listed again.
 No vision-agent? Skip this; you will fill the blanks by hand.
 
 Then write the worksheet:

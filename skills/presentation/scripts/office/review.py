@@ -214,6 +214,21 @@ def sync(outdir: Path) -> dict:
             "reset": sorted(reset)}
 
 
+def _issue(png: Path, image: Path, answer: Path, entry) -> tuple:
+    """``(entry, fresh)``: keep ``entry`` if it still describes ``png``.
+
+    Otherwise stamp a new code onto ``image`` and delete ``answer``, which
+    belonged to a picture that no longer exists.
+    """
+    digest = render_hash(png)
+    if entry and entry["render"] == digest and image.is_file():
+        return entry, False
+    code = new_code()
+    stamp(png, code, image)
+    answer.unlink(missing_ok=True)
+    return {"render": digest, "code": code_hash(code)}, True
+
+
 def prepare(outdir: Path) -> dict:
     """``{number: (review_png, fresh)}`` for every render, issuing codes.
 
@@ -226,17 +241,10 @@ def prepare(outdir: Path) -> dict:
     ledger = load(outdir)
     out = {}
     for number, png in sorted(renders(outdir).items()):
-        digest = render_hash(png)
-        entry = ledger.get(number)
         image = review_image(outdir, number)
-        if entry and entry["render"] == digest and image.is_file():
-            out[number] = (image, False)
-            continue
-        code = new_code()
-        stamp(png, code, image)
-        ledger[number] = {"render": digest, "code": code_hash(code)}
-        answer_path(outdir, number).unlink(missing_ok=True)
-        out[number] = (image, True)
+        ledger[number], fresh = _issue(png, image, answer_path(outdir, number),
+                                       ledger.get(number))
+        out[number] = (image, fresh)
     for number in set(ledger) - set(out):
         del ledger[number]
     save(outdir, ledger)
@@ -263,12 +271,15 @@ def verify(outdir: Path, number: int, ledger=None) -> tuple[str, dict]:
     """
     outdir = Path(outdir)
     ledger = load(outdir) if ledger is None else ledger
-    png = outdir / f"slide-{number}.png"
-    entry = ledger.get(number)
+    return _check(outdir / f"slide-{number}.png", answer_path(outdir, number),
+                  ledger.get(number))
+
+
+def _check(png: Path, answer: Path, entry) -> tuple[str, dict]:
+    """:func:`verify` on explicit paths, shared with the design catalog."""
     if (entry is None or not png.is_file()
             or entry["render"] != render_hash(png)):
         return "unbriefed", {}
-    answer = answer_path(outdir, number)
     if not answer.is_file():
         return "no-answer", {}
     text = answer.read_text(encoding="utf-8")
@@ -280,3 +291,55 @@ def verify(outdir: Path, number: int, ledger=None) -> tuple[str, dict]:
     if code_hash(parsed["code"]) != entry["code"]:
         return "wrong-code", parsed
     return "ok", parsed
+
+
+# ------------------------------------------------------- the design catalog
+#
+# ``presentation-setup`` has the vision-agent judge what each template design
+# is for, one ``slide-NN/`` folder per design, and the same temptation: the
+# build model saves each reply as ``answer.md`` and nothing told a saved reply
+# from a typed one.  Same codes, same ledger rules, the catalog's own layout.
+
+#: Beside ``manifest.json``.
+DESIGN_LEDGER = "review-ledger.json"
+
+
+def design_folder(catalog: Path, number: int) -> Path:
+    return Path(catalog) / f"slide-{number:02d}"
+
+
+def _load_designs(catalog: Path) -> dict:
+    try:
+        raw = json.loads((Path(catalog) / DESIGN_LEDGER).read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {int(k): v for k, v in (raw.get("designs") or {}).items()
+            if str(k).isdigit() and isinstance(v, dict)
+            and v.get("render") and v.get("code")}
+
+
+def prepare_designs(catalog: Path, numbers) -> dict:
+    """``{number: (review_png, fresh)}`` for each design's ``render.png``."""
+    catalog = Path(catalog)
+    ledger, out = _load_designs(catalog), {}
+    for number in numbers:
+        folder = design_folder(catalog, number)
+        if not (folder / "render.png").is_file():
+            continue
+        image = folder / "review.png"
+        ledger[number], fresh = _issue(folder / "render.png", image,
+                                       folder / "answer.md", ledger.get(number))
+        out[number] = (image, fresh)
+    (catalog / DESIGN_LEDGER).write_text(json.dumps(
+        {"designs": {str(n): ledger[n] for n in sorted(ledger)}}, indent=1),
+        encoding="utf-8")
+    return out
+
+
+def verify_design(catalog: Path, number: int, ledger=None) -> tuple[str, dict]:
+    """:func:`verify` for one design of a template catalog."""
+    ledger = _load_designs(catalog) if ledger is None else ledger
+    folder = design_folder(catalog, number)
+    return _check(folder / "render.png", folder / "answer.md",
+                  ledger.get(number))

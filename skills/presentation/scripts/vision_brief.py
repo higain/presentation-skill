@@ -115,18 +115,27 @@ def collect(deck: Path, outdir: Path) -> tuple[int, dict]:
 
 
 def write_design_briefs(catalog: Path) -> list:
+    """A brief in every design folder; returns those still needing an answer.
+
+    A design whose render has not changed since its answer was saved keeps
+    that answer, so re-running after a re-extraction sends only what changed.
+    """
     manifest = catalog / "manifest.json"
     if not manifest.is_file():
         raise SystemExit(f"No manifest.json in {catalog}. Point this at the "
                          f"directory catalog_extract.py wrote.")
+    numbers = [row["number"] for row in
+               json.loads(manifest.read_text())["slides"]]
+    images = review.prepare_designs(catalog, numbers)
     written = []
-    for row in json.loads(manifest.read_text())["slides"]:
-        folder = catalog / f"slide-{row['number']:02d}"
+    for number, (image, _fresh) in images.items():
+        folder = review.design_folder(catalog, number)
         structure = json.loads((folder / "structure.json").read_text())
         brief = folder / "brief.md"
-        brief.write_text(design_brief(str((folder / "render.png").absolute()),
-                                      structure), encoding="utf-8")
-        written.append(brief)
+        brief.write_text(design_brief(str(image.absolute()), structure),
+                         encoding="utf-8")
+        if review.verify_design(catalog, number)[0] != "ok":
+            written.append(brief)
     return written
 
 
@@ -141,9 +150,10 @@ def _delegation(briefs: list, answer_name) -> str:
             f"IMAGE, send that same brief again -- up to three tries; the "
             f"failure is often transient. Only then save CANNOT SEE IMAGE as "
             f"its answer and tell the user which slides nothing has seen. "
-            f"**Never write an answer yourself**, and never for a brief you "
-            f"did not send: an answer nothing with eyes wrote is worse than "
-            f"none, and it is the one defect no later step can detect.")
+            f"**Never write, repair or restore an answer yourself**: each "
+            f"image carries a review code under the slide that only "
+            f"something with eyes can read, and an answer without it is "
+            f"thrown away.")
 
 
 def main() -> int:
@@ -165,7 +175,12 @@ def main() -> int:
 
     if args.cmd == "designs":
         briefs = write_design_briefs(args.catalog)
-        print(f"Wrote {len(briefs)} design brief(s) into {args.catalog}/")
+        if not briefs:
+            print("Every design already has an answer for its current "
+                  "render -- nothing to send.")
+            return 0
+        print(f"{len(briefs)} design(s) to send: " + ", ".join(
+            str(int(b.parent.name.split("-")[1])) for b in briefs))
         print(_delegation(briefs, lambda b: b.with_name("answer.md")))
         print("\nThen run name_designs.py on the catalog: it reads every "
               "answer.md into the worksheet for review.")

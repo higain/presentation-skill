@@ -113,6 +113,10 @@ If you cannot open that image, reply with exactly CANNOT SEE IMAGE and \
 nothing else. Never answer from the text of this brief alone, and never hand \
 this task to another agent.
 
+Under the slide is a white strip that says REVIEW CODE and then a code like \
+ABCD-EFGH. The strip is not part of the design: never describe it. Copy the \
+code into your JSON exactly as printed - it proves you saw this image.
+
 A text-only assistant that cannot see images will later read your answer to \
 decide when to use this design, so describe it in words it can match against \
 content. The text on the slide is sample text: ignore what it says and judge \
@@ -129,6 +133,7 @@ arranged.
 
 STEP 2 - ANSWER. Output exactly one JSON object and nothing after it:
 {{
+ "code": "<the review code under the slide>",
  "name": "<2-5 words a person would say, e.g. 'Three KPI circles'>",
  "purpose": "<one sentence: what message this slide makes visible>",
  "content_types": [one or more of: {types}],
