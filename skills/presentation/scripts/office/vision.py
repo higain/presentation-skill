@@ -169,6 +169,13 @@ def design_facts(structure: dict) -> list[str]:
     columns = len((structure.get("reading_order") or {}).get("columns") or [])
     budgets = [b for b in structure.get("title_budgets") or []
                if isinstance(b, dict) and b.get("chars_per_line")]
+    # The title's own budget, not the first one: a cover lists its 32pt
+    # subtitle corner first, and the brief told the vision-agent a title
+    # held 21 characters when the title bar holds 80.
+    titles = {slot.get("index") for slot in slots
+              if slot.get("type") == "TitleTextShape"
+              or slot.get("placeholder") == "title"}
+    budgets.sort(key=lambda b: b.get("address") not in titles)
     facts = [f"- design number {structure.get('number')}, master "
              f"{structure.get('master')}",
              f"- {len(texts)} text slot(s) carry sample text, in {columns} "

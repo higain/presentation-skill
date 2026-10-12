@@ -264,7 +264,6 @@ TITLES = {
 }
 
 def fill(doc, page, slot, design):
-    strip_annotations(page)
     if slot in TITLES:
         retext(page, {TITLE_KEY[design]: TITLES[slot]})   # the design's title key
     ...

@@ -25,10 +25,14 @@ every section belongs on title-and-bullets.
   `load_document` says so rather than failing obscurely.
 - A template carries authoring notes addressed to whoever builds from it — an
   "example" flag, a customer-logo marker, a block of build instructions.
-  `office.template.strip_annotations(page)` deletes them, reaching inside
-  groups. The strings for an installed pack live in its `profile.json`
-  (`presentation-setup` writes them); for another template pass
-  `profile={"exact": [...], "prefixes": [...]}`.
+  `build_deck` deletes them after `fill` returns, reaching inside groups —
+  **never call `strip_annotations(page)` inside `fill`**: deleting a shape
+  renumbers every index after it, and the catalog's `keep` tuples and slot
+  indices stop naming the shapes they name. The strings for an installed
+  pack live in its `profile.json` (`presentation-setup` writes them); for a
+  deck edited outside `build_deck`, call
+  `office.template.strip_annotations(page)` as the last step, with
+  `profile={"exact": [...], "prefixes": [...]}` for a template with no pack.
 
 ## Reading the probe before you index anything
 

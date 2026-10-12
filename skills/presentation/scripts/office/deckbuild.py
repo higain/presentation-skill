@@ -39,7 +39,7 @@ from .pack import (
 from .impress import (
     load_document, save_as, slides, duplicate_slide, delete_slide,
 )
-from .template import set_footer
+from .template import set_footer, strip_annotations
 
 #: Set by ``make_deck.py`` around the build script it runs.  QA on a 15-slide
 #: deck is a full LibreOffice load and about a minute of measuring, and
@@ -345,7 +345,9 @@ def build_deck(template, out, designs, fill=None, qa=True,
     template's alone.
 
     ``fill(doc, page, slot, design)``, if given, is called on each new page
-    before the save.  This is where **all** of the content goes: retexting with
+    before the save, on the template's shapes at the indices the catalog
+    records; the pack's authoring notes are stripped after it returns, so
+    ``fill`` must not call ``strip_annotations`` itself.  This is where **all** of the content goes: retexting with
     ``office.template.retext`` and drawing with ``office.draw``.  Do not reopen
     the finished file to add shapes -- that is a second .pptx round trip, it
     grows the masters, and it is how overlays end up on top of template text
@@ -421,6 +423,16 @@ def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP) -> Path:
         if fill is not None:
             for slot, page in enumerate(made):
                 _call_fill(fill, doc, page, slot, designs[slot])
+
+        # After ``fill``, never before: deleting a shape renumbers every one
+        # above it, and the indices ``fill`` uses -- a canvas ``keep`` tuple,
+        # an empty slot's ``shapes(page)[i]`` -- are the template's, as the
+        # catalog recorded them.  Stripped first, design 14's keep=(0, 1, 2)
+        # kept its bullet list instead of the source line it named, and the
+        # canvas shrank to a corner.  Here a note that is still on the slide
+        # -- one ``fill`` neither retexted nor removed -- goes.
+        for page in made:
+            strip_annotations(page, template=template)
 
         _record_designs(doc, designs)
         save_as(doc, out)

@@ -498,7 +498,7 @@ DIVIDER_TYPES = re.compile(r"section[-_ ]?divider|^divider$", re.I)
 COVER_ROW = re.compile(
     r"\bopener\b|\bopening (?:slide|of the)\b|\bfirst slide\b"
     r"|\btitle slide\b|\bcover\b|\bstart of the (?:deck|presentation)\b"
-    r"|\btitelfolie\b|\bdeckblatt\b"
+    r"|\bdeckblatt\b"
     r"|\beröffnung", re.I)
 
 

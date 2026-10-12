@@ -36,7 +36,7 @@ skill = engine()
 from office.deckbuild import build_deck  # noqa: E402
 from office.impress import mm  # noqa: E402
 from office.pack import pack_named, packs  # noqa: E402
-from office.template import retext, strip_annotations  # noqa: E402
+from office.template import retext, set_title  # noqa: E402
 from office import draw as D  # noqa: E402
 
 
@@ -147,8 +147,19 @@ def _content_design(pack, canvas, divider):
     numbers = sorted(int(path.name[len("slide-"):])
                      for path in pack.catalog_dir.glob("slide-[0-9]*")
                      if path.is_dir() and path.name[len("slide-"):].isdigit())
+    # A cover has the fewest keys of all -- a title and a page number -- and
+    # is no content slide: the probe retexted one and proved nothing.
+    covers = set()
+    for path in (pack.catalog_dir / "entries").glob("slide-*.json"):
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if "cover" in (entry.get("content_types") or ()):
+            covers.add(entry.get("slide"))
     scored = [(len(_keys_for(pack, n)), n) for n in numbers
-              if n not in (canvas, divider) and _keys_for(pack, n)]
+              if n not in (canvas, divider) and n not in covers
+              and _keys_for(pack, n)]
     return min(scored)[1] if scored else canvas
 
 
@@ -177,7 +188,6 @@ def main():
     content_keys = _keys_for(pack, content)
 
     def fill(doc, page, slot, design):
-        strip_annotations(page)
         if slot == 0 and divider_keys:
             # The headline gets the probe's title; every other string the
             # design carries gets a same-length stand-in, so what is left on
@@ -205,6 +215,10 @@ def main():
                 for key in canvas_keys[1:]:
                     retext(page, {key: "Counted off your template — "
                                        "nothing here was invented."})
+            # The canvas's own title is often an empty placeholder, which
+            # retext cannot reach; a probe slide with no headline tests
+            # nothing about where the title sits.
+            set_title(page, "Your colours, your type scale.")
             area = D.canvas(page, keep=keep)
             # Proportional, not absolute: the free area on a design with a
             # subtitle stripped out can be 50 mm tall, and a 40 mm KPI band
@@ -220,7 +234,7 @@ def main():
                     [("Accent", "One element per slide, and this is it."),
                      ("Muted", "Everything that is not the point."),
                      ("Alert", "Kept for the thing that is wrong.")],
-                    fill=D.color("muted"),
+                    cols=3, fill=D.color("muted"),
                     accent=[D.color("accent"), D.color("neutral"),
                             D.color("alert")],
                     title_size=D.size_for("caption"),
