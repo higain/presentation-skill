@@ -186,13 +186,12 @@ def set_text(shape, *lines):
     paragraph's format turns that into a wall of blue.  Where every paragraph
     is formatted alike this is the same as taking the first.
 
-    **Colour is the exception, and no code here can fix it: the .pptx export
-    discards per-paragraph character colour** and writes one colour for the
-    whole shape.  Measured on the house template -- three paragraphs written
-    red/blue/green come back all one colour, while their per-paragraph *sizes
-    and weights* survive intact.  An .odp keeps all of it.  So a heading and
-    its body in different colours have to be **separate shapes** in a .pptx;
-    ``office.draw.text`` makes that cheap.
+    **To recolour, use** :func:`set_char_color` -- per shape or per paragraph.
+    A run from a .pptx carries a theme colour reference that the export writes
+    instead of a plain ``CharColor``; that once read as "a .pptx keeps one
+    colour per shape".  It does not: with the reference cleared, three
+    paragraphs written red, blue and green save and render as red, blue and
+    green (measured on a corporate template, 2026-10).
     """
     if any(line is None for line in lines):
         raise TypeError(
@@ -908,8 +907,11 @@ def fit_pill(doc, page, pill, label, slack=0):
     return width
 
 
-def set_char_color(shape, color):
+def set_char_color(shape, color, paragraph=None):
     """Recolour every run in a shape -- for flipping a card to a dark fill.
+
+    ``paragraph`` (0-based) recolours that paragraph only: a heading in one
+    colour above body text in another is one shape, in .pptx as in .odp.
 
     Set the colour on each paragraph *and* on its runs: a paragraph's own
     CharColor does not reach runs that carry their own, which is most of them
@@ -932,8 +934,12 @@ def set_char_color(shape, color):
             pass
 
     enum = shape.createEnumeration()
+    index = -1
     while enum.hasMoreElements():
         para = enum.nextElement()
+        index += 1
+        if paragraph is not None and index != paragraph:
+            continue
         paint(para)
         if not hasattr(para, "createEnumeration"):
             continue

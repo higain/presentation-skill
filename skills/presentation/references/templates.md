@@ -149,14 +149,15 @@ with impress_document("brand.pptx", save=False) as doc:
   paragraph in the same position — a designed body that opens with a coloured
   heading and continues in body text stays that shape. `retext` calls it for
   you.
-- **A `.pptx` cannot hold two text colours in one shape.** The export discards
-  per-paragraph character colour and writes a single colour for the whole
-  shape. Measured on a corporate template: three paragraphs written red, blue and
-  green come back all one colour, while their per-paragraph **sizes and weights
-  survive intact**. An `.odp` keeps all of it. So a heading in one colour above
-  body text in another has to be **two shapes** in a `.pptx` — `office.draw.text`
-  makes that cheap. The template's own multi-coloured bodies were authored in
-  PowerPoint and are fine until you retext them.
+- **A `.pptx` holds several text colours in one shape — set them with
+  `set_char_color(shape, color, paragraph=i)`.** What once looked like "the
+  export keeps one colour per shape" was the theme colour: a run from a
+  `.pptx` carries a reference (`schemeClr dk1`) that the export writes instead
+  of a plain `CharColor`, so every recoloured paragraph fell back to the
+  template's grey. `set_char_color` clears it. Measured on a corporate
+  template: three paragraphs written red, blue and green save and render as
+  red, blue and green. The template's own multi-coloured bodies survive
+  `retext` as they are.
 - **Reuse the template's own colours** rather than inventing new ones: probe
   prints them, and a card flipped to the dark fill needs `set_char_color(shape,
   0xFFFFFF)` on its text to stay legible.
