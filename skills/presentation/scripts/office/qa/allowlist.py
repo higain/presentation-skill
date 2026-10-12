@@ -58,9 +58,35 @@ def load_allowlist(deck):
     slide + kind + content; there is no wildcard, so an entry cannot
     accidentally cover a finding the author had not seen.
     """
+    out = {}
+    for entry in _entries(deck):
+        out.setdefault(entry["kind"], {}).setdefault(
+            entry["slide"], {})[entry["content"]] = entry["reason"].strip()
+    return out
+
+
+def vision_overrules(deck):
+    """The ``vision`` entries of ``<deck>-allowlist.json``, as dicts.
+
+    Each has ``slide``, ``content`` (a question such as ``"Q7"``, or
+    ``"seen"`` for a slide a person looked at in place of the vision-agent),
+    ``reason`` and ``approved_by`` -- empty until the user has approved it.
+    An overrule counts only once approved: the build model that wants the
+    gate to pass is the one writing the entry, and one run overruled a
+    reviewer who was right ("the probe shows the title is there") while the
+    title sat invisible under a picture.
+    """
+    return [{"slide": e["slide"], "content": e["content"],
+             "reason": e["reason"].strip(),
+             "approved_by": str(e.get("approved_by") or "").strip()}
+            for e in _entries(deck) if e["kind"] == "vision"]
+
+
+def _entries(deck):
+    """The validated entries of ``<deck>-allowlist.json``; see ``load_allowlist``."""
     path = _allowlist_path(deck)
     if path is None or not path.exists():
-        return {}
+        return []
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
@@ -75,7 +101,6 @@ def load_allowlist(deck):
             f"{path.name}: expected a list, or an object with an "
             f"'acknowledgements' list")
 
-    out = {}
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise AllowlistError(
@@ -98,8 +123,7 @@ def load_allowlist(deck):
             raise AllowlistError(
                 f"{path.name}: entry {i} needs a non-empty 'reason' -- an "
                 f"acknowledgement with no reason is a way to ignore the check")
-        out.setdefault(kind, {}).setdefault(slide, {})[content] = reason
-    return out
+    return entries
 
 
 def _acknowledged(allowlist, kind, slide, content):
@@ -120,6 +144,8 @@ def stale_acknowledgements(allowlist, findings):
                for kind, slide, content in findings}
     out = []
     for kind, by_slide in allowlist.items():
+        if kind == "vision":
+            continue        # answers, not QA findings: the gate matches these
         for slide, by_content in by_slide.items():
             for content in by_content:
                 if (kind, slide, content) not in present:

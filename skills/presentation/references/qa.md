@@ -172,7 +172,11 @@ whole transcripts re-litigating it.
 ]}
 ```
 
-- `kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`.
+- `kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`,
+  `no-title`, `variety` or `vision`. A `vision` entry overrules the
+  vision-agent and counts only with the user's `"approved_by"` (see *Visual
+  QA* below); it is matched by the gate, not by `qa.py`, so it is never
+  reported as stale.
 - Matching is **exact** on kind + slide + content. There is no wildcard, so an
   entry cannot cover a finding the author had not seen — which is what an entry
   *should* cover, slide by slide, content by content.
@@ -281,10 +285,26 @@ the vision-agent's brief itself:
 
 ```bash
 scripts/vision_brief.py slides deck.pptx --language German   # after make_deck.py
-# for each slide N, one call:  Read the brief at <render>/slide-N.brief.md and follow it exactly.
-# save each reply, unedited:   <render>/slide-N.answer.md
+# for each slide it lists, one call:  Read the brief at <render>/slide-N.brief.md and follow it exactly.
+# save each reply, unedited:          <render>/slide-N.answer.md
 scripts/vision_brief.py collect deck.pptx                   # fills the verdict table
 ```
+
+**Every answer carries proof that eyes saw the slide.** The brief points at
+`render/review/slide-N.png`: the render with a strip under it that prints a
+random review code, which the answer has to return in its JSON. The ledger
+beside it (`render/review/ledger.json`) keeps only the code's SHA-256, so
+nothing that reads files can produce it. An answer without the right code is
+"not seen", however plausible it reads. That closes the failure this exists
+for: a run whose answers had been wiped by a rebuild retyped twenty-nine of
+them from memory, the gate passed, and three dividers shipped with invisible
+titles the real reviewer had flagged.
+
+**Answers survive rebuilds when the slide does.** The ledger also records
+which render each code was issued for. `make_deck.py` keeps the answer of
+every slide that renders to the same bytes — following it if the slide moved —
+and drops only the changed ones; `vision_brief.py slides` then lists just
+those. LibreOffice renders an unchanged slide byte-identically.
 
 **Why the brief is generated, not written** — measured on gemma-4-31b against
 slides with planted defects, on a German and an English template:
@@ -310,14 +330,25 @@ the vision-agent about colours**: one named a brand's cyan "yellow-orange", and
 the run that believed it picked the wrong accent.
 
 **A `fix` verdict is work, not a record.** Change the build script, re-run
-`make_deck.py`, brief the new renders. `make_deck.py deck.pptx
+`make_deck.py`, brief the changed slides. `make_deck.py deck.pptx
 --require-verdicts` reads the report and the saved answers without rebuilding,
-and exits 1 while any verdict is blank or says `fix`, any answer still holds a
-medium or high finding, or the report belongs to an earlier build. Editing a
-verdict cell clears nothing; a finding a measurement disproves is a `vision`
-entry in `<deck>-allowlist.json`, where the user can see it. A run that
-rewrote seven "cards mostly empty" verdicts as "cards fill the area
-proportionally" is why.
+and exits 1 while any slide lacks an answer with its review code, any answer
+still holds a medium or high finding, a `vision` overrule waits for the
+user's approval, or the report belongs to an earlier build. Editing a verdict
+cell clears nothing — the table is a view of the answers. A run that rewrote
+seven "cards mostly empty" verdicts as "cards fill the area proportionally"
+is why.
+
+**An overrule is the user's decision.** A finding a measurement disproves is
+a `vision` entry in `<deck>-allowlist.json` — `content` the question, the
+measurement as `reason` — and it holds the gate until the user adds
+`"approved_by"`. The build model never writes that field. Every approved
+overrule is printed on every gate run, pass or fail, so it reaches whoever
+reads the result. Without a vision-agent, a slide the user looked at is an
+entry with `"content": "seen"` and the user's `approved_by`. The run that
+made this rule overruled four findings itself, one of them "no headline" on
+dividers whose titles were in the file and under a picture: present is not
+visible, and the reviewer was right.
 
 **Treat what the vision-agent reports as a reason to look, never as a fact.**
 A vision model's false-positive rate on slide layout is unknown and its findings

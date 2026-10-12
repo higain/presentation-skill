@@ -55,6 +55,10 @@ If you cannot open that image, reply with exactly CANNOT SEE IMAGE and \
 nothing else. Never answer from the text of this brief alone, and never hand \
 this task to another agent.
 
+Under the slide is a white strip that says REVIEW CODE and then a code like \
+ABCD-EFGH. The strip is not part of the slide: never judge it. Copy the code \
+into your JSON exactly as printed - it proves you saw this image.
+
 A separate tool has already checked spelling, leftover template text, text \
 overflow, colour contrast and font sizes from the file itself. Do NOT report \
 those.
@@ -94,7 +98,8 @@ Q10 UNFINISHED: Would a professional designer send this slide back as \
 unfinished or amateurish? Give the single main reason.
 
 Finish with exactly one JSON object and nothing after it:
-{{"verdict": "ok" or "fix", "findings": [{{"q": "Q1".."Q10", "where": \
+{{"code": "<the review code under the slide>", "verdict": "ok" or "fix", \
+"findings": [{{"q": "Q1".."Q10", "where": \
 "<grid cell>", "what": "<concrete element and problem>", "fix": "<one concrete \
 suggestion>", "severity": "high"|"medium"|"low"}}]}}
 "ok" only if every answer is "no". A clean slide is a normal, good result; do \

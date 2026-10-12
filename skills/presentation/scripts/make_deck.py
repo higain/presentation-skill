@@ -34,12 +34,18 @@ writes a report, so a deck that was not checked never leaves a clean-looking
 one behind.  The full command is the gate and is run once, when the tight loop
 is clean.
 
-**The visual gate.** ``--require-verdicts`` makes the "every slide needs a
-verdict" rule an exit code: a blank verdict cell fails the run.  It only reads
-the report -- it builds, checks and renders nothing, because any of those
-rewrites the report and blanks the verdicts it is meant to check.  The report
-carries the deck's SHA-256, so verdicts written for an earlier build of the
-deck are refused rather than counted.
+**The visual gate.** ``--require-verdicts`` makes "every slide was seen"
+an exit code.  It reads the vision-agent's saved answers, not the verdict
+table: an answer counts only when it gives back the review code printed under
+the image it was sent (``office.review``), a medium or high finding holds the
+gate until the slide is fixed and seen again, and an overrule counts only once
+the user has approved it in ``<deck>-allowlist.json``.  It builds, checks and
+renders nothing.  The report carries the deck's SHA-256, so a report written
+for an earlier build of the deck is refused.
+
+**Re-rendering keeps answers.**  A slide that renders to the same pixels
+keeps the answer it has, even if it moved; only changed slides go back to the
+vision-agent.
 
 Exit codes: 0 clean, 1 the build failed or the checks found something, 2 bad
 usage.
@@ -60,9 +66,8 @@ from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402
                             SofficeError, parse_slide_spec, shutdown)
 from office.soffice import isolated  # noqa: E402
 from office.qa import QAResult, check, summary, validate_pptx  # noqa: E402
-from office.qa.allowlist import (AllowlistError, _acknowledged,  # noqa: E402
-                                 load_allowlist)
-from office.vision import last_json  # noqa: E402
+from office import review  # noqa: E402
+from office.qa.allowlist import AllowlistError, vision_overrules  # noqa: E402
 
 #: A vision finding at these severities holds the gate until the slide is
 #: rebuilt and reviewed again, or acknowledged in the allowlist.
@@ -118,11 +123,8 @@ def _start_render(deck: Path, outdir: Path, dpi: int):
     and a run that gets cut off before the renders exist is a run that ships
     without anyone looking.  Overlapped, they cost the longer of the two.
     """
-    # New renders mean every brief and answer beside them describes slides
-    # that no longer exist.
-    for stale in (list(outdir.glob("slide-*.brief.md"))
-                  + list(outdir.glob("slide-*.answer.md"))):
-        stale.unlink(missing_ok=True)
+    # Answers are not cleared here: ``review.sync`` runs once the new renders
+    # exist and keeps every answer whose slide renders to the same pixels.
     return subprocess.Popen(
         [sys.executable, str(HERE / "render.py"), str(deck),
          "--outdir", str(outdir), "--dpi", str(dpi)],
@@ -130,12 +132,30 @@ def _start_render(deck: Path, outdir: Path, dpi: int):
     )
 
 
-def _finish_render(proc) -> list:
+def _finish_render(proc, outdir: Path) -> list:
     out, err = proc.communicate()
     if proc.returncode != 0:
         print(f"render.py failed:\n{out}{err}", file=sys.stderr)
         return []
+    _sync_reviews(outdir)
     return [line for line in out.splitlines() if line.strip()]
+
+
+def _sync_reviews(outdir: Path) -> None:
+    """Keep the vision-agent's answers for every slide that did not change.
+
+    Every answer used to be deleted on every render.  A one-slide fix then
+    cost a whole deck of vision calls, and one run, rather than make them,
+    typed twenty-nine answers back in from memory.
+    """
+    moved = review.sync(outdir)
+    kept = len(moved["kept"]) + len(moved["moved"])
+    if kept or moved["reset"]:
+        print(f"Review: {kept} slide(s) unchanged keep their answer"
+              + (f"; slide(s) {', '.join(map(str, moved['reset']))} are new "
+                 f"or changed and need the vision-agent" if moved["reset"]
+                 else "")
+              + ".")
 
 
 def _verdict_table(checked: int, sparse=()) -> list:
@@ -179,90 +199,50 @@ def report_deck_hash(report: Path):
     return None
 
 
-def open_vision_findings(deck: Path) -> list:
-    """``[slide]`` whose saved vision-agent answer still holds a real finding.
+def review_state(deck: Path, slides: int) -> dict:
+    """What the vision-agent's saved answers say about every slide.
 
-    Read from the answers, not from the verdict table: the table is text the
-    build model edits, and a model that wants the gate to pass rewrites
-    "cards mostly empty" as "ok -- cards fill the area proportionally".  The
-    answers are deleted whenever ``make_deck.py`` renders again, so a slide
-    clears by being rebuilt and reviewed -- or by a ``vision`` entry in the
-    allowlist (``"content": "Q7"``), which a person can read and dispute.
+    ``{"unseen": {slide: status}, "open": [slide], "approved": [entry],
+    "pending": [entry]}``.  Read from the answers, never from the verdict
+    table: the table is text the build model edits, and a model that wants
+    the gate to pass rewrites "cards mostly empty" as "ok -- cards fill the
+    area proportionally".  An answer counts only when it carries the review
+    code printed on its image (``office.review``), so an answer the build
+    model typed itself is "unseen" however plausible it reads.
+
+    A medium or high finding stays open until the slide is rebuilt and seen
+    again, or the user approves a ``vision`` allowlist entry for it.  A
+    ``"content": "seen"`` entry, approved, stands in for a slide a person
+    looked at when no vision-agent was available.  Entries nobody has
+    approved yet are ``pending`` and hold the gate.
     """
     outdir = deck.resolve().parent / "render"
     try:
-        allow = load_allowlist(deck)
+        overrules = vision_overrules(deck)
     except AllowlistError:
-        allow = {}
-    out = []
-    for answer in sorted(outdir.glob("slide-*.answer.md")):
-        number = int(answer.name.split("-")[1].split(".")[0])
-        parsed = last_json(answer.read_text(encoding="utf-8")) or {}
+        overrules = []
+    approved = {(e["slide"], e["content"].upper()) for e in overrules
+                if e["approved_by"]}
+    ledger = review.load(outdir)
+    unseen, open_ = {}, []
+    for number in range(1, slides + 1):
+        status, parsed = review.verify(outdir, number, ledger)
+        if status != "ok":
+            if (number, "SEEN") not in approved:
+                unseen[number] = status
+            continue
         for finding in parsed.get("findings") or []:
             if not isinstance(finding, dict):
                 continue
             if str(finding.get("severity", "")).lower() not in BLOCKING_SEVERITY:
                 continue
-            q = str(finding.get("q", "")).upper()
-            if allow and _acknowledged(allow, "vision", number, q):
+            if (number, str(finding.get("q", "")).upper()) in approved:
                 continue
-            out.append(number)
+            open_.append(number)
             break
-    return out
-
-
-def open_fix_verdicts(report: Path) -> list:
-    """``[slide_number]`` whose verdict still says ``fix``.
-
-    ``vision_brief.py collect`` writes the vision-agent's findings as
-    ``fix — ...``.  A verdict is a decision, and "here is what is wrong" is
-    not one: the gate passes only once the slide is fixed and re-checked, or
-    the finding is overruled in the cell with a measurement.
-    """
-    out = []
-    for line in report.read_text(encoding="utf-8").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if (line.startswith("|") and len(cells) == 3 and cells[0].isdigit()
-                and cells[2].lower().startswith("fix")):
-            out.append(int(cells[0]))
-    return out
-
-
-def missing_verdicts(report: Path, checked: int) -> list:
-    """``[slide_number]`` whose verdict cell in ``report`` is blank.
-
-    ``--require-verdicts`` turns the report's "the deck is not finished while a
-    verdict is blank" into an exit code, so the visual half of QA gates the
-    same way the automated half does.  The verdict column is the whole record
-    that something with eyes looked at the slide; a blank cell means nobody
-    has, and the deck does not ship.
-    """
-    if not report.is_file():
-        return list(range(1, checked + 1))
-    missing = []
-    found_rows = False
-    try:
-        lines = report.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return list(range(1, checked + 1))
-    for line in lines:
-        # | 7 | paints 22% of the slide | |
-        if not line.startswith("| "):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 3:
-            continue
-        slide, _measured, verdict = cells
-        if not slide.isdigit():
-            continue
-        found_rows = True
-        if not verdict:
-            missing.append(int(slide))
-    # A report with no verdict rows at all means nobody has started -- every
-    # slide is unlooked-at, not just the ones an empty table implies.
-    if not found_rows:
-        return list(range(1, checked + 1))
-    return missing
+    return {"unseen": unseen, "open": open_,
+            "approved": [e for e in overrules if e["approved_by"]],
+            "pending": [e for e in overrules if not e["approved_by"]]}
 
 
 def _wireframes(outdir: Path, numbers) -> list:
@@ -438,27 +418,46 @@ def _gate_on_verdicts(deck: Path, script) -> int:
         return 1
     rows = sum(1 for line in report.read_text(encoding="utf-8").splitlines()
                if line.startswith("| ") and line[2:].split("|")[0].strip().isdigit())
-    missing = missing_verdicts(report, rows)
-    if missing:
-        shown = ", ".join(str(n) for n in sorted(missing))
-        print(f"Missing verdicts for slide(s): {shown}. A slide nobody has "
-              f"looked at cannot be finished -- give the renders to the "
-              f"vision-agent and write its verdict into the report's table.")
+    try:
+        vision_overrules(deck)
+    except AllowlistError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    state = review_state(deck, rows)
+    failed = False
+    if state["unseen"]:
+        failed = True
+        print("Not seen by the vision-agent:")
+        for number, status in sorted(state["unseen"].items()):
+            print(f"  slide {number}: {review.STATUS.get(status, status)}")
+        print("Run `vision_brief.py slides` and send the briefs it lists, one "
+              "per call; save each reply whole. An answer counts only with "
+              "the review code printed under its image -- never type or "
+              "repair one yourself.")
+    if state["open"]:
+        failed = True
+        shown = ", ".join(str(n) for n in state["open"])
+        print(f"Open findings on slide(s): {shown} -- a medium or high "
+              f"finding in the vision-agent's answer. Fix the slide in the "
+              f"build script, re-run make_deck.py and send the changed "
+              f"slides again. Editing the verdict cell does not clear it.")
+    if state["pending"]:
+        failed = True
+        print("Overrules waiting for the user's approval -- show the user "
+              "each one with its reason; only the user fills in "
+              "\"approved_by\" in <deck>-allowlist.json:")
+        for e in state["pending"]:
+            print(f"  slide {e['slide']} {e['content']}: {e['reason']}")
+    if state["approved"]:
+        # Printed on every run, pass or fail: an approval is a decision a
+        # person made, and it belongs in front of whoever reads the result.
+        print("Approved by a person (tell the user these stand):")
+        for e in state["approved"]:
+            print(f"  slide {e['slide']} {e['content']} -- {e['approved_by']}: "
+                  f"{e['reason']}")
+    if failed:
         return 1
-    open_fixes = sorted(set(open_fix_verdicts(report))
-                        | set(open_vision_findings(deck)))
-    if open_fixes:
-        shown = ", ".join(str(n) for n in open_fixes)
-        print(f"Open findings on slide(s): {shown} -- a `fix` verdict, or a "
-              f"medium/high finding in the vision-agent's saved answer. Fix "
-              f"the slide in the build script, re-run make_deck.py and brief "
-              f"the new renders. Editing the verdict cell does not clear it. "
-              f"A finding a measurement proves wrong goes in "
-              f"<deck>-allowlist.json as kind \"vision\", content \"Q7\" "
-              f"(the question), with the measurement as its reason -- the "
-              f"user reviews that file.")
-        return 1
-    print(f"All {rows} slide(s) have a verdict.")
+    print(f"All {rows} slide(s) seen by the vision-agent, no open findings.")
     return 0
 
 
@@ -620,7 +619,7 @@ def main():
 
     if render_proc is not None:
         print("\n## Renders\n")
-        images = _finish_render(render_proc)
+        images = _finish_render(render_proc, outdir)
         for image in images:
             print(image)
         sheet = _contact_sheet(deck, outdir)

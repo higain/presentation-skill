@@ -15,6 +15,11 @@ tested brief beside every image, so the delegation is one line --
 it as ``slide-3.answer.md``.  ``collect`` then reads every answer and fills
 the report's verdict table, so nobody hand-edits a markdown table either.
 
+The image a brief points at is the render with a review code printed under it
+(``office.review``); an answer counts only when it gives that code back.  A
+slide whose render has not changed keeps the answer it has, so after a fix
+only the slides that changed are sent again.
+
 ``slides`` needs ``make_deck.py``'s report and renders.  ``designs`` writes one
 brief per design into a catalog directory ``catalog_extract.py`` made; the
 answers are read by ``presentation-setup``'s ``name_designs.py``.
@@ -28,8 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from office.vision import (design_brief, last_json,  # noqa: E402
-                           slide_brief, verdict_line)
+from office import review  # noqa: E402
+from office.vision import design_brief, slide_brief, verdict_line  # noqa: E402
 
 ROW = re.compile(r"^\|\s*(\d+)\s*\|([^|]*)\|([^|]*)\|$")
 
@@ -48,63 +53,65 @@ def _measured(report: Path) -> dict:
     return out
 
 
-def _renders(outdir: Path) -> dict:
-    return {int(m.group(1)): png for png in outdir.glob("slide-*.png")
-            if (m := re.fullmatch(r"slide-(\d+)\.png", png.name))}
+def write_slide_briefs(deck: Path, outdir: Path, language: str) -> tuple:
+    """``(briefs, pending)``: a brief beside every render, and the slides that
+    still need a vision-agent call.
 
-
-def write_slide_briefs(deck: Path, outdir: Path, language: str) -> list:
+    A slide whose render has not changed since its answer was saved keeps
+    that answer: it is not in ``pending`` and needs no new call.
+    """
     report = _report(deck)
     if not report.is_file():
         raise SystemExit(f"No report at {report}. Run make_deck.py on the "
                          f"deck first; it writes the report and the renders.")
     measured = _measured(report)
-    renders = _renders(outdir)
-    if not renders:
+    if not review.renders(outdir):
         raise SystemExit(f"No slide-N.png in {outdir}. Run make_deck.py "
                          f"without --no-render.")
-    written = []
-    for number, png in sorted(renders.items()):
-        brief = outdir / f"slide-{number}.brief.md"
-        brief.write_text(slide_brief(str(png.absolute()),
+    written, pending = [], []
+    images = review.prepare(outdir)
+    ledger = review.load(outdir)
+    for number, (image, _fresh) in images.items():
+        brief = review.brief_path(outdir, number)
+        brief.write_text(slide_brief(str(image.absolute()),
                                      measured.get(number, ""), language),
                          encoding="utf-8")
-        # A stale answer belongs to an earlier build of this slide.
-        (outdir / f"slide-{number}.answer.md").unlink(missing_ok=True)
         written.append(brief)
-    return written
+        if review.verify(outdir, number, ledger)[0] != "ok":
+            pending.append(brief)
+    return written, pending
 
 
-def collect(deck: Path, outdir: Path) -> tuple[int, list, list]:
-    """Fill the report's verdict cells from ``slide-N.answer.md``.
+def collect(deck: Path, outdir: Path) -> tuple[int, dict]:
+    """Fill the report's verdict cells from the verified answers.
 
-    Returns ``(filled, unanswered, unparsed)``.  A verdict already written by
-    hand is kept: a person overrides the vision-agent, never the reverse.
+    Returns ``(filled, problems)`` with ``problems`` as ``{slide: status}``
+    for every slide whose answer does not count -- missing, unreadable, or
+    without the review code printed on its image (``office.review``).  A
+    verdict already in the table is replaced by the answer that verifies;
+    the table is a view of the answers, never a place to decide one.
     """
     report = _report(deck)
     lines = report.read_text(encoding="utf-8").splitlines()
-    filled, unanswered, unparsed = 0, [], []
+    ledger = review.load(outdir)
+    filled, problems = 0, {}
     for i, line in enumerate(lines):
         match = ROW.match(line.strip())
         if not match:
             continue
-        number, measured, verdict = (int(match.group(1)),
-                                     match.group(2).strip(),
-                                     match.group(3).strip())
-        if verdict:
-            continue
-        answer = outdir / f"slide-{number}.answer.md"
-        if not answer.is_file():
-            unanswered.append(number)
-            continue
-        cell = verdict_line(last_json(answer.read_text(encoding="utf-8")))
-        if not cell:
-            unparsed.append(number)
+        number, measured = int(match.group(1)), match.group(2).strip()
+        status, parsed = review.verify(outdir, number, ledger)
+        cell = verdict_line(parsed) if status == "ok" else ""
+        if status == "ok" and not cell:
+            status = "unparsed"
+        if status != "ok":
+            problems[number] = status
+            lines[i] = f"| {number} | {measured} | |"
             continue
         lines[i] = f"| {number} | {measured} | {cell} |"
         filled += 1
     report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return filled, unanswered, unparsed
+    return filled, problems
 
 
 def write_design_briefs(catalog: Path) -> list:
@@ -166,29 +173,40 @@ def main() -> int:
 
     outdir = args.outdir or args.deck.resolve().parent / "render"
     if args.cmd == "slides":
-        briefs = write_slide_briefs(args.deck, outdir, args.language)
+        briefs, pending = write_slide_briefs(args.deck, outdir, args.language)
         print(f"Wrote {len(briefs)} slide brief(s) into {outdir}/")
-        print(_delegation(briefs, lambda b: b.with_name(
-            b.name.replace(".brief.md", ".answer.md"))))
+        done = len(briefs) - len(pending)
+        if done:
+            print(f"{done} slide(s) keep the answer they already have -- "
+                  f"their renders did not change. Send only the "
+                  f"{len(pending)} brief(s) below.")
+        if pending:
+            print("Slides to send: " + ", ".join(
+                b.name.split(".")[0].split("-")[1] for b in pending))
+            print(_delegation(pending, lambda b: b.with_name(
+                b.name.replace(".brief.md", ".answer.md"))))
         print(f"\nThen: python3 {sys.argv[0]} collect {args.deck}")
         return 0
 
-    filled, unanswered, unparsed = collect(args.deck, outdir)
+    filled, problems = collect(args.deck, outdir)
     print(f"Filled {filled} verdict(s) in {_report(args.deck).name}.")
-    if unanswered:
-        print("No answer (or CANNOT SEE IMAGE) for slide(s): "
-              + ", ".join(map(str, unanswered)))
-    if unparsed:
-        print("No usable answer for slide(s): "
-              + ", ".join(map(str, unparsed))
-              + " -- the vision-agent could not see the image or gave no "
-                "JSON. Ask again with the same brief; if it still cannot see "
-                "it, tell the user. Never fill the verdict yourself.")
+    for status in ("no-answer", "cannot-see", "unparsed", "no-code",
+                   "wrong-code", "unbriefed"):
+        slides = [n for n, s in sorted(problems.items()) if s == status]
+        if slides:
+            why = review.STATUS.get(status, "no JSON verdict in the answer")
+            print(f"Not counted -- {why}: slide(s) "
+                  + ", ".join(map(str, slides)))
+    if any(s in ("no-code", "wrong-code") for s in problems.values()):
+        print("An answer without the right review code was not written by "
+              "something that saw the image. Send that slide's brief to the "
+              "vision-agent again and save its whole reply. Never type or "
+              "repair an answer yourself.")
     print("\nEvery `fix` verdict is work: change the build script, re-run "
           "make_deck.py, and brief the new renders. Overrule a finding only "
-          "with a measurement (references/qa.md).")
-    return 1 if unanswered or unparsed else 0
-
+          "with a measurement, and only with the user's approval "
+          "(references/qa.md).")
+    return 1 if problems else 0
 
 if __name__ == "__main__":
     sys.exit(main())

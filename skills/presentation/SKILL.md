@@ -133,26 +133,35 @@ low contrast and top-heavy slides are defects, not noise.
 scripts/vision_brief.py slides out.pptx --language English
 ```
 
-For **each** slide N send the vision-agent exactly
+It lists the slides to send. For **each** listed slide N send the
+vision-agent exactly
 `Read the brief at <render>/slide-N.brief.md and follow it exactly.` and save
 its whole reply, unedited, as `<render>/slide-N.answer.md`. Never put several
 slides in one call and never write the brief yourself. If it answers
 `CANNOT SEE IMAGE`, send the same brief again (up to three tries — it is often
-transient); only then save it as the answer and tell the user. Send every
-slide's brief, and **never write an answer yourself**. Then:
+transient); only then save it as the answer and tell the user.
+
+The image in each brief has a **review code** printed under the slide, and an
+answer counts only when it gives that code back. You cannot read it, so
+**never write, repair or "restore" an answer yourself** — the gate rejects it.
+Slides whose render did not change keep their answer across rebuilds; after a
+fix, only the changed slides are listed again. Then:
 
 ```bash
 scripts/vision_brief.py collect out.pptx       # fills the report's verdict table
 ```
 
 **7. Every `fix` verdict is work.** Change `build.py`, re-run step 5, brief the
-new renders (step 6). Rewriting the verdict cell clears nothing: the gate
+changed slides (step 6). Rewriting the verdict cell clears nothing: the gate
 reads the vision-agent's saved answers. A finding a measurement proves wrong
 (`probe.py` for geometry, `qa.py` for wording and colour, `wireframe.py` for
 emptiness) goes in the allowlist below as kind `vision`, `content` the
-question (`"Q7"`), the measurement as the reason — the user reviews that file.
-"Hollow", "empty", "no focal point" and "unfinished" are not disproved by
-measurement; change the slide.
+question (`"Q7"`), the measurement as the reason — and **counts only once the
+user has approved it**: show the user the entry and the measurement, and let
+the user add `"approved_by"`. Never fill that field yourself. That text exists
+in the file is no measurement that it shows: a title under a picture is in the
+file and invisible. "Hollow", "empty", "no focal point" and "unfinished" are
+not disproved by measurement; change the slide.
 
 **8. Finish.**
 
@@ -160,11 +169,15 @@ measurement; change the slide.
 scripts/make_deck.py out.pptx --require-verdicts
 ```
 
-It only reads the report and the saved answers, and exits 1 while any verdict
-is blank or says `fix`, an answer still holds a medium or high finding, or the
-report belongs to an earlier build. The deck is done when this passes.
-No vision-agent available? Run `scripts/wireframe.py render/` and tell the user
-which slides nothing with eyes has seen.
+It only reads the report and the saved answers, and exits 1 while any slide
+lacks an answer with its review code, an answer still holds a medium or high
+finding, an overrule awaits the user's approval, or the report belongs to an
+earlier build. The deck is done when this passes; tell the user every
+approved overrule it prints.
+No vision-agent available? Run `scripts/wireframe.py render/`, tell the user
+which slides nothing with eyes has seen, and ask the user to look at them: a
+slide the user has checked is a `vision` entry with `"content": "seen"` and
+the user's `"approved_by"`.
 
 ## When QA flags something intentional
 
@@ -181,7 +194,8 @@ deck, never by distorting the content:
 
 `kind` is `leftover-wording`, `stray-image`, `footer`, `balance`, `no-title`,
 `variety` or `vision`; each entry must match a real finding and carry a
-reason. Tell the user about every entry you add.
+reason. Tell the user about every entry you add. A `vision` entry also needs
+`"approved_by"`, which only the user writes.
 
 ## Scripts
 

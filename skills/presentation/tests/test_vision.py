@@ -12,7 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from make_deck import open_fix_verdicts  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from PIL import Image  # noqa: E402
+
+from office import review  # noqa: E402
 from office.vision import (CONTENT_TYPES, DEFAULT_LANGUAGE,  # noqa: E402
                            design_brief, last_json, slide_brief, verdict_line)
 from vision_brief import collect  # noqa: E402
@@ -65,6 +69,8 @@ class BriefTest(unittest.TestCase):
 
 
 class CollectTest(unittest.TestCase):
+    CODE = "ACDE-FHJK"
+
     def setUp(self):
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
@@ -72,27 +78,38 @@ class CollectTest(unittest.TestCase):
         self.deck = self.dir / "deck.pptx"
         self.render = self.dir / "render"
         self.render.mkdir()
+        for n in range(1, 6):
+            Image.new("RGB", (160, 90), (n * 40, 0, 0)).save(
+                self.render / f"slide-{n}.png")
+        with mock.patch.object(review, "new_code", return_value=self.CODE):
+            review.prepare(self.render)
         self.report = self.dir / "deck-report.md"
         # Exactly as make_deck writes the rows: one space in a blank cell.
         self.report.write_text(
             "# deck.pptx\n\n| Slide | Measured | Verdict |\n|---|---|---|\n"
             "| 1 | paints 9% of the slide | |\n| 2 |  | |\n"
-            "| 3 |  | ok — by hand |\n| 4 |  | |\n")
+            "| 3 |  | ok — typed by the build model |\n| 4 |  | |\n"
+            "| 5 |  | |\n")
 
     def test_round_trip(self):
+        code = f'"code": "{self.CODE}", '
         (self.render / "slide-1.answer.md").write_text(
-            'Q1 HEADLINE: no\n{"verdict": "ok", "findings": []}')
+            'Q1 HEADLINE: no\n{' + code + '"verdict": "ok", "findings": []}')
         (self.render / "slide-2.answer.md").write_text(
-            '{"verdict": "fix", "findings": [{"q": "Q7", "what": "hollow"}]}')
-        (self.render / "slide-3.answer.md").write_text('{"verdict": "fix"}')
+            '{' + code + '"verdict": "fix", "findings": '
+            '[{"q": "Q7", "what": "hollow"}]}')
+        (self.render / "slide-3.answer.md").write_text(
+            '{"verdict": "ok", "findings": []}')
         (self.render / "slide-4.answer.md").write_text("I could not see it")
-        filled, unanswered, unparsed = collect(self.deck, self.render)
-        self.assertEqual((filled, unanswered, unparsed), (2, [], [4]))
+        filled, problems = collect(self.deck, self.render)
+        self.assertEqual(filled, 2)
+        self.assertEqual(problems, {3: "no-code", 4: "no-code",
+                                    5: "no-answer"})
         text = self.report.read_text()
         self.assertIn("| 1 | paints 9% of the slide | ok (vision-agent) |", text)
-        self.assertIn("| 3 |  | ok — by hand |", text)   # a person wins
-        self.assertEqual(open_fix_verdicts(self.report), [2])
-
+        self.assertIn("| 2 |  | fix — hollow: hollow |", text)
+        # A cell nobody with eyes backs is cleared, not kept.
+        self.assertIn("| 3 |  | |", text)
 
 if __name__ == "__main__":
     unittest.main()
