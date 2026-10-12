@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # same accessors, so the catalog cannot document a palette the build would not
 # hand out.  (These pull in ``uno``; this script runs on the infra that ran
 # ``catalog_extract.py``, which needs LibreOffice anyway.)
-from office.draw import contrast_ratio  # noqa: E402
+from office.draw import contrast_ratio, free_area  # noqa: E402
 from office.pack import SKILL, TEMPLATE_EXTS, pack_for  # noqa: E402
 from office.template import palette, palette_roles, type_scale  # noqa: E402
 
@@ -214,8 +214,13 @@ def _entry_block(number, entry, structure, extra=None):
 #: exists to avoid.
 MAX_CANVAS_SHARE = 0.85
 
+#: The least free area, as a share of the slide, a canvas has to offer.  Below
+#: it a design does not qualify, and among the unqualified ones plainness
+#: only outranks size above it.
+MIN_CANVAS_SHARE = 0.35
 
-def _canvas_design(structures, slide_area):
+
+def _canvas_design(structures, slide_area, exclude=()):
     """``(number, qualified)`` -- the design a canvas should be cut from.
 
     The biggest free area that still leaves the design's own chrome standing:
@@ -236,7 +241,33 @@ def _canvas_design(structures, slide_area):
     The catalog would then have told every deck to draw on a blank page, in the
     confident voice of a measured field.
     """
-    best, best_area, fallback, fallback_area = None, 0, None, 0
+    # The canvas is a content slide, so it comes from the master most designs
+    # are built on.  The largest free area alone picked a cover once: a photo
+    # under the title bar is a big rectangle to drop, and every content slide
+    # of the deck after it was a title slide with no footer and no page
+    # number.  Only when the content master offers no candidate at all is
+    # the field widened to every master.
+    # Nor is it a design judged to open a deck or a section: a divider that
+    # strips back to its big number is roomy and plain, and still a divider.
+    if exclude:
+        pick = _canvas_design({n: s for n, s in structures.items()
+                               if n not in set(exclude)}, slide_area)
+        if pick[0]:
+            return pick
+    counts = {}
+    for s in structures.values():
+        counts[s.get("master")] = counts.get(s.get("master"), 0) + 1
+    content = max(counts, key=counts.get) if counts else None
+    pick = _canvas_pick({n: s for n, s in structures.items()
+                         if s.get("master") == content}, slide_area)
+    # Even unqualified, the content master's least-bad design beats a clean
+    # strip-back of a cover: it is printed with a warning, the cover is not.
+    return pick if pick[0] else _canvas_pick(structures, slide_area)
+
+
+def _canvas_pick(structures, slide_area):
+    """``(number, qualified)`` over ``structures``: see :func:`_canvas_design`."""
+    best, best_area, fallback, fallback_key = None, 0, None, None
     for number, s in structures.items():
         canvas = s.get("canvas") or {}
         box = canvas.get("free_box")
@@ -245,17 +276,30 @@ def _canvas_design(structures, slide_area):
         area = box["w"] * box["h"]
         if area > slide_area * MAX_CANVAS_SHARE:
             continue                      # full bleed: no chrome to inherit
-        if area > fallback_area:
-            fallback, fallback_area = number, area
+        keep = set(canvas.get("keep") or [])
+        if any(_is_title(slot) and slot.get("covered_by") is not None
+               and slot.get("index") in keep for slot in s.get("slots") or []):
+            continue                      # its title is under a picture
         # Two conditions, and the second is the one that matters: the free area
         # has to come from *one* body placeholder, not from clearing a slide
         # full of sample content.  A design whose canvas drops nine shapes is
         # an org chart being demolished; a design whose canvas drops one is the
-        # content slide the designer left room on.
-        keeps_chrome = len(canvas.get("keep", [])) >= 2
-        single_body = len(canvas.get("drops", [])) <= 2
-        if keeps_chrome and single_body and area > best_area:
+        # content slide the designer left room on.  Counted with group
+        # contents, where the extractor recorded them.
+        # And it has to leave room: a question slide that drops its picture
+        # frees the right half and nothing else.
+        demolished = canvas.get("dropped_shapes", len(canvas.get("drops", [])))
+        keeps_chrome = len(keep) >= 2
+        roomy = area >= slide_area * MIN_CANVAS_SHARE
+        if keeps_chrome and roomy and demolished <= 2 and area > best_area:
             best, best_area = number, area
+        # The fallback is the plainest design with room to draw, not the
+        # largest: largest-first handed one template a slide of thirty sample
+        # shapes to tear down.  One that keeps nothing of its own chrome
+        # comes after one that does; below the room threshold, area decides.
+        key = (roomy, keeps_chrome, -demolished if roomy else 0, area)
+        if fallback_key is None or key > fallback_key:
+            fallback, fallback_key = number, key
     return (best, True) if best else (fallback, False)
 
 
@@ -289,19 +333,17 @@ def _canvas_override(aggregate, structures, slide_width, slide_height):
         slots = [s for s in structures[number].get("slots") or []
                  if isinstance(s.get("index"), int)]
         dropped = [s for s in slots if s["index"] not in keep]
-        spans = [(s["x"], s["y"], s["x"] + s["width"], s["y"] + s["height"])
-                 for s in dropped
-                 if s["width"] > slide_width / 20 and s["height"] > slide_height / 20]
+        kept = [s for s in slots if s["index"] in keep]
+
+        def rect(s):
+            return (s["x"], s["y"], s["x"] + s["width"], s["y"] + s["height"])
+
         old = structures[number].get("canvas") or {}
         free = old.get("free_box")
-        if spans:
-            x0 = max(0, min(s[0] for s in spans))
-            y0 = max(0, min(s[1] for s in spans))
-            x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
-            if x1 > slide_width:
-                x1 = slide_width - x0
-            if y1 > slide_height:
-                y1 = slide_height - y0
+        box = free_area([rect(s) for s in dropped], [rect(s) for s in kept],
+                        slide_width, slide_height)
+        if box:
+            x0, y0, x1, y1 = box
             free = {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
         structures[number]["canvas"] = {
             "keep": keep,
@@ -450,6 +492,39 @@ def _gaps(rules):
 #: it "section-divider", "section divider" and "divider" interchangeably.
 DIVIDER_TYPES = re.compile(r"section[-_ ]?divider|^divider$", re.I)
 
+#: A decision-table row about the deck's first slide.  Judged rows are worded
+#: freely: "Opening slide of the presentation" missed the old pattern, and the
+#: catalog told every build there was no cover while two designs were covers.
+COVER_ROW = re.compile(
+    r"\bopener\b|\bopening (?:slide|of the)\b|\bfirst slide\b"
+    r"|\btitle slide\b|\bcover\b|\bstart of the (?:deck|presentation)\b"
+    r"|\btitelfolie\b|\bdeckblatt\b"
+    r"|\beröffnung", re.I)
+
+
+def _role_numbers(rules, entries):
+    """``(dividers, cover)``: the designs judged to open a deck or a section."""
+    dividers = sorted(
+        number for number, entry in entries.items()
+        if any(DIVIDER_TYPES.search(str(kind))
+               for kind in entry.get("content_types", ()) or ())
+    )
+    cover = None
+    for rule in rules:
+        when = str(rule.get("when") or rule.get("content") or "")
+        if COVER_ROW.search(when):
+            # Rows are keyed ``use_slide`` by every writer -- the judging
+            # pass, the worksheet import and the recovery script.  Reading
+            # ``design`` here, which none of them writes, reported "no cover
+            # design" on every template that had one.
+            try:
+                cover = int(str(rule.get("use_slide", rule.get("design")))
+                            .strip("`"))
+            except (TypeError, ValueError):
+                cover = None
+            break
+    return dividers, cover
+
 
 def _roles_block(canvas, rules, entries):
     """The three designs the generic documentation needs by role, not number.
@@ -466,25 +541,7 @@ def _roles_block(canvas, rules, entries):
     does with a missing cover is press a divider into service and overrun its
     title budget.
     """
-    dividers = sorted(
-        number for number, entry in entries.items()
-        if any(DIVIDER_TYPES.search(str(kind))
-               for kind in entry.get("content_types", ()) or ())
-    )
-    cover = None
-    for rule in rules:
-        when = str(rule.get("when") or rule.get("content") or "")
-        if re.search(r"\b(deck )?opener|title slide|cover\b", when, re.I):
-            # Rows are keyed ``use_slide`` by every writer -- the judging
-            # pass, the worksheet import and the recovery script.  Reading
-            # ``design`` here, which none of them writes, reported "no cover
-            # design" on every template that had one.
-            try:
-                cover = int(str(rule.get("use_slide", rule.get("design")))
-                            .strip("`"))
-            except (TypeError, ValueError):
-                cover = None
-            break
+    dividers, cover = _role_numbers(rules, entries)
 
     rows = [("canvas", f"`{canvas}`" if canvas else "—",
              "anything the decision table has no row for: a diagram, a chart, "
@@ -526,21 +583,35 @@ def _headline(structure):
     cannot reach an empty shape, so a build writes its headline into whatever
     small label does carry text, and the slide ships with no title.
     """
-    slots = structure.get("slots") or []
-    title = next((s for s in slots if s.get("placeholder") == "title"), None)
+    all_slots = structure.get("slots") or []
+    # A slot under a picture is not on the screen, whatever it holds: one
+    # divider's title placeholder sat under a full-slide image, and "the
+    # placeholder is empty -- set_title" sent every section name into it.
+    slots = [s for s in all_slots if s.get("covered_by") is None]
+    hidden = next((s for s in all_slots if s.get("covered_by") is not None
+                   and _is_title(s)), None)
+    # The title is the title shape, filled or not.  ``placeholder`` is only
+    # set for an empty one, so a filled title used to be passed over for the
+    # largest-type budget -- a 32pt subtitle in the corner, on one cover.
+    title = next((s for s in slots if _is_title(s)), None)
+    note = (f" — the title placeholder `[{hidden['index']}]` is hidden under "
+            f"picture `[{hidden['covered_by']}]`: never `set_title` here"
+            if hidden is not None and title is None else "")
     if title is not None and title.get("empty"):
         return "`set_title(page, …)` — the placeholder is empty"
     if title is not None:
         key = _key_at(structure, title.get("index"))
         if key:
             return f'retext `"{key[:30]}"`'
+    visible = {s.get("index") for s in slots}
     budgets = [b for b in structure.get("title_budgets") or []
-               if isinstance(b, dict) and b.get("pt", 0) >= DISPLAY_PT]
+               if isinstance(b, dict) and b.get("pt", 0) >= DISPLAY_PT
+               and b.get("address") in visible]
     if budgets:
         b = budgets[0]
         key = _key_at(structure, b.get("address"))
         where = f'retext `"{key[:30]}"`' if key else f"shape `[{b['address']}]`"
-        return f"{where}, one line of ≤{b['chars_per_line']} characters"
+        return f"{where}, one line of ≤{b['chars_per_line']} characters{note}"
     # No title placeholder: the headline is the largest text in the top third,
     # which is what a designer's eye -- and the audience's -- reads first.
     # A section number ("01") is large too, and is never the headline.
@@ -555,8 +626,32 @@ def _headline(structure):
             (f.get("size") or 0 for f in s.get("fonts") or [{}]), default=0))
         key = _key_at(structure, biggest.get("index"))
         if key:
-            return f'retext `"{key[:30]}"` (the largest text)'
-    return "—"
+            return f'retext `"{key[:30]}"` (the largest text){note}'
+    return "—" + note
+
+
+#: How many unnamed designs ``catalog.md`` spells out before it points at the
+#: index: on a sixty-design template the whole list buries the table.
+UNNAMED_SHOWN = 15
+
+
+def _unnamed_designs(rules, entries, canvas_number):
+    """``[(number, name)]`` of judged designs no decision-table row uses."""
+    used = set()
+    for rule in rules:
+        try:
+            used.add(int(str(rule.get("use_slide")).strip("`")))
+        except (TypeError, ValueError):
+            continue
+    return [(n, entry.get("name") or f"Design {n}")
+            for n, entry in sorted(entries.items())
+            if entry and n not in used and n != canvas_number]
+
+
+def _is_title(slot):
+    """A title slot, whether the template left it empty or filled it."""
+    return (slot.get("placeholder") == "title"
+            or slot.get("type") == "TitleTextShape")
 
 
 def _canvas_leftovers(structure):
@@ -625,8 +720,10 @@ def build(catalog: Path, asset: str, title: str, overrides=None):
     canvas_number, canvas_ok = _canvas_override(
         aggregate, structures, manifest["slide_width"], manifest["slide_height"])
     if canvas_number is None:
+        dividers, cover = _role_numbers(rules, entries)
         canvas_number, canvas_ok = _canvas_design(
-            structures, manifest["slide_width"] * manifest["slide_height"])
+            structures, manifest["slide_width"] * manifest["slide_height"],
+            exclude=set(dividers) | {cover})
     masters = sorted({row["master"] for row in manifest["slides"]})
     judged_by = next((entry.get("written_by") for entry in entries.values()
                       if entry.get("written_by")), None)
@@ -666,6 +763,18 @@ def build(catalog: Path, asset: str, title: str, overrides=None):
         out += ["**The canvas keeps sample text.** Retext it on every canvas "
                 "slide, or it ships: "
                 + ", ".join(f'`[{i}]` "{t[:40]}"' for i, t in leftovers), ""]
+    unnamed = _unnamed_designs(rules, entries, canvas_number) if rules else []
+    if unnamed:
+        # A small builder reads the table and stops there.  One pack's table
+        # had eleven rows for thirty designs, and a workshop deck went 83% to
+        # the canvas while a two-column design, a status table and a six-icon
+        # grid that fitted its slides were never named anywhere it looked.
+        shown = ", ".join(f"`{n}` {name}" for n, name in unnamed[:UNNAMED_SHOWN])
+        if len(unnamed) > UNNAMED_SHOWN:
+            shown += f", and {len(unnamed) - UNNAMED_SHOWN} more in the index"
+        out += ["**No row names these designs** — check their *Content "
+                "shape* in the index before you draw on the canvas: "
+                + shown, ""]
     if variety:
         out += [f"**Variety:** {variety}", ""]
     gaps = _gaps(rules) if rules else []

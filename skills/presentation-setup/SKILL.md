@@ -237,6 +237,8 @@ owns, and given the hex codes it simply agrees.
 3. Are the colours on slide 3 the ones the brand actually uses? *(the user)*
 4. On slide 3, is anything of the template's own furniture showing through
    the drawing, or is the drawing sitting where the design's own title was?
+   And does slide 3 look like the template's *content* slides -- the same
+   title position, footer and page number -- or like a cover?
 
 A *no* to 1, 2 or 3, or a *yes* to 4, is a five-minute fix now:
 
@@ -245,11 +247,12 @@ A *no* to 1, 2 or 3, or a *yes* to 4, is a five-minute fix now:
 - **Leftover wording:** a missed authoring note. Re-run stage 3 with it added.
 - **Wrong colours:** stage 2's roles were mapped wrong. Re-run `make_pack.py`
   with corrected roles; it does not touch the catalog.
-- **Wrong canvas:** the catalog picked the design with the largest free area,
-  and on this template that is the wrong one. Fill the `## Canvas` block at
-  the top of `designs.md` (the design number, and the shape indices to keep,
-  as `probe.py` numbers them), re-run `name_designs.py --import`, and rebuild
-  with `catalog_build.py`. The hand-set canvas survives every rebuild.
+- **Wrong canvas:** the catalog picked the plainest roomy design on the
+  master most designs use, and on this template that is the wrong one. Fill
+  the `## Canvas` block at the top of `designs.md` (the design number, and
+  the shape indices to keep, as `probe.py` numbers them), re-run
+  `name_designs.py --import`, and rebuild with `catalog_build.py`. The
+  hand-set canvas survives every rebuild.
 
 A finding on a shape the template itself drew past the slide edge (some
 generated masters do this) is the template's, not the pack's; note it in

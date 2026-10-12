@@ -240,3 +240,42 @@ def occlusion_issues(page, number, baseline=frozenset()):
             f"was meant to be a band, a cut_* pair came back in the other order"
         )
     return out
+
+
+def _is_picture(shape):
+    try:
+        return shape.ShapeType.endswith("GraphicObjectShape")
+    except Exception:
+        return False
+
+
+def buried_text_issues(page, number):
+    """Text drawn *under* a picture that hides it.
+
+    Overlap, contrast and the vision-agent all missed this one.  A divider's
+    title placeholder sat beneath a full-slide image; the build wrote three
+    section names into it, every check read the words straight out of the
+    file, and the reviewer who said "no headline" was overruled with "the
+    probe shows the title is there".  It was there, and nobody could see it.
+    """
+    out = []
+    tops = list(shapes(page))
+    for below, shape in enumerate(tops):
+        try:
+            text = _norm(shape.getString())
+        except Exception:
+            continue
+        geo = _geometry(shape)
+        if not text or geo is None:
+            continue
+        for above in range(below + 1, len(tops)):
+            pic = _geometry(tops[above])
+            if (pic is not None and _is_picture(tops[above])
+                    and _covers(pic, geo, OCCLUSION)):
+                out.append(
+                    f"slide {number} shape [{below}]: {text[:40]!r} is under "
+                    f"picture [{above}] and does not show -- write the text "
+                    f"into a shape above the picture (on a divider, the "
+                    f"design's own label), never into the one beneath it")
+                break
+    return out

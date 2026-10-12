@@ -139,9 +139,10 @@ def worksheet(catalog: Path):
         "Then: `name_designs.py " + str(catalog) + " --import`", "",
         "## Canvas", "",
         "The design a diagram or a chart is drawn on, stripped back to its "
-        "chrome. Leave both blank and `catalog_build.py` picks the design "
-        "with the largest free area; fill them in when the probe deck shows "
-        "that pick drawing over the design's own furniture. `keep` is the "
+        "chrome. Leave both blank and `catalog_build.py` picks the plainest "
+        "roomy design on the content master; fill them in when the probe "
+        "deck shows that pick drawing over the design's own furniture, or "
+        "looking like a cover rather than a content slide. `keep` is the "
         "shape indices to leave standing -- the title, a topic label -- as "
         "`probe.py` numbers them.", "",
         "- **design**: ",

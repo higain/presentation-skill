@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from probe import probe_data  # noqa: E402
 from office.impress import PRESENTATION_EXTS, SofficeError  # noqa: E402
 from office.rasterize import rasterize  # noqa: E402
-from office.draw import advance_em  # noqa: E402
+from office.draw import advance_em, free_area  # noqa: E402
 
 #: How much of a ``retext`` key to record.  A key is a substring, and a short
 #: distinctive fragment matches more reliably than a whole line -- but it has to
@@ -189,23 +189,27 @@ def _canvas_hint(shape_entries, slide_width, slide_height):
         is_chrome = s["type"] in CHROME_TYPES and share < BODY_SHARE
         (keep if (share < TINY or is_chrome) else dropped).append(s)
 
-    spans = [(s["x"], s["y"], s["x"] + s["width"], s["y"] + s["height"])
-             for s in dropped
-             if s["width"] > slide_width / 20 and s["height"] > slide_height / 20]
+    def rect(s):
+        return (s["x"], s["y"], s["x"] + s["width"], s["y"] + s["height"])
+
+    # The same rule ``draw.canvas`` applies at build time, so the area the
+    # catalog publishes is the one a build gets.
+    box = free_area([rect(s) for s in dropped], [rect(s) for s in keep],
+                    slide_width, slide_height)
     free = None
-    if spans:
-        # Clamped to the slide, as ``draw.canvas`` clamps: a template whose
-        # body boxes overhang the page must not report a free area off it.
-        x0, y0 = max(0, min(s[0] for s in spans)), max(0, min(s[1] for s in spans))
-        x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
-        if x1 > slide_width:                  # overhangs: mirror the left margin
-            x1 = slide_width - x0
-        if y1 > slide_height:
-            y1 = slide_height - y0
+    if box:
+        x0, y0, x1, y1 = box
         free = {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}
+    # How much the strip-back demolishes, group contents included: a grouped
+    # pyramid is one top-level shape and fourteen on the slide, and counted
+    # as one it looked like a single body placeholder to the canvas picker.
+    tops = {str(s["index"]) for s in dropped}
+    demolished = sum(1 for s in shape_entries
+                     if str(s["index"]).split(".")[0] in tops)
     return {
         "keep": [s["index"] for s in keep],
         "drops": [s["index"] for s in dropped],
+        "dropped_shapes": demolished,
         "free_box": free,
     }
 
@@ -218,6 +222,40 @@ def _images(shape_entries):
         for s in shape_entries
         if s["type"] in ("GraphicObjectShape", "MediaShape")
     ]
+
+
+#: Share of a slot a picture drawn above it must cover to hide it.
+COVERED = 0.5
+
+
+def _covered_by(slot, shape_entries):
+    """Index of a picture drawn *above* ``slot`` that hides it, or ``None``.
+
+    Shape order is stacking order.  One template's divider has an empty title
+    placeholder under a full-slide picture: the catalog said "set_title", the
+    build wrote every section name into it, and three dividers shipped as
+    plain blue slides -- the text was in the file and nowhere on the screen.
+    """
+    index = slot.get("index")
+    if index is not None and "." in str(index):
+        return None
+    area = slot["width"] * slot["height"]
+    if area <= 0:
+        return None
+    x0, y0 = slot["x"], slot["y"]
+    x1, y1 = x0 + slot["width"], y0 + slot["height"]
+    for s in shape_entries:
+        # An inherited layout placeholder (no index) lies under every shape
+        # on the slide itself.
+        if ("." in str(s["index"])
+                or (index is not None and s["index"] <= index)
+                or s["type"] not in ("GraphicObjectShape", "MediaShape")):
+            continue
+        w = min(x1, s["x"] + s["width"]) - max(x0, s["x"])
+        h = min(y1, s["y"] + s["height"]) - max(y0, s["y"])
+        if w > 0 and h > 0 and w * h >= COVERED * area:
+            return s["index"]
+    return None
 
 
 def _slots(shape_entries):
@@ -251,6 +289,9 @@ def _slots(shape_entries):
             "sample_text": s.get("text", ""),
             "fonts": [{"font": f, "size": sz} for f, sz in fonts],
         })
+        covered = _covered_by(slots[-1], shape_entries)
+        if covered is not None:
+            slots[-1]["covered_by"] = covered
     return slots
 
 
@@ -297,6 +338,9 @@ def extract(source: Path, outdir: Path, dpi: int) -> dict:
                 "sample_text": "",
                 "fonts": [],
             })
+            covered = _covered_by(slots[-1], entry["shapes"])
+            if covered is not None:
+                slots[-1]["covered_by"] = covered
         shapes_ = entry["shapes"]
         structure = {
             "number": n,

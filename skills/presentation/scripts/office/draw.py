@@ -2192,6 +2192,65 @@ def walk_page(page):
         yield shape
 
 
+def free_area(spans, kept, width, height):
+    """``(x0, y0, x1, y1)`` a canvas may draw in, or ``None``.
+
+    ``spans`` are the rectangles of the shapes a canvas removed, ``kept`` the
+    ones it left standing, all as ``(x0, y0, x1, y1)``.  The union of the
+    removed shapes is the designer's answer to where content goes -- when it
+    is a body placeholder.  When it is a full-bleed photo it runs to the slide
+    edge, and one pack drew every content slide of a deck flush against the
+    left edge because of it.  So the union is pulled back to the margins the
+    kept chrome sits on, which is the one margin this template has drawn:
+
+    - a side that touches the slide edge stops where the kept wide shapes in
+      the upper half (the title) stop;
+    - the bottom stops above kept chrome in the lowest band (slide number,
+      footer) that the area would otherwise run under;
+    - the top starts below a kept wide shape in the upper band it overlaps.
+
+    Shared by ``canvas`` and the catalog, so the area the catalog publishes is
+    the area a build gets.
+    """
+    spans = [s for s in spans
+             if s[2] - s[0] > width / 20 and s[3] - s[1] > height / 20]
+    if not spans:
+        return None
+    # Clamped to the slide: a generated template (PptxGenJS output, for
+    # one) can carry body boxes a few millimetres wider than the page, and
+    # a free area measured off them puts everything drawn in it off the
+    # right edge.  The slide is the outer limit whatever the shapes say.
+    x0 = max(0, min(s[0] for s in spans))
+    y0 = max(0, min(s[1] for s in spans))
+    x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
+    if x1 > width:                        # overhangs: mirror the left margin
+        x1 = width - x0
+    if y1 > height:
+        y1 = height - y0
+
+    edge, gap = width // 100, height // 100
+    kept = [k for k in kept if k[2] - k[0] > width / 200]
+    # The title band sets the margin: a footer is often drawn edge to edge.
+    wide = [k for k in kept
+            if k[2] - k[0] >= width / 4 and k[1] + k[3] < height]
+    if wide:
+        left, right = min(k[0] for k in wide), max(k[2] for k in wide)
+        if x0 <= edge and left > x0:
+            x0 = left
+        if x1 >= width - edge and right < x1:
+            x1 = right
+    for k in wide:
+        if k[3] <= height * 0.4 and k[1] < y0 < k[3]:
+            y0 = k[3]
+    for k in kept:
+        if (k[1] >= height * 0.75 and y0 < k[1] < y1
+                and k[0] < x1 and k[2] > x0):
+            y1 = k[1] - gap
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return x0, y0, x1, y1
+
+
 def canvas(page, keep=(), remove=()):
     """Strip a template slide back to a blank drawing area.
 
@@ -2231,30 +2290,23 @@ def canvas(page, keep=(), remove=()):
     else:
         doomed = [current[i] for i in remove if 0 <= i < len(current)]
 
-    spans = []
-    for shape in doomed:
-        try:
-            pos, size = shape.getPosition(), shape.getSize()
-        except Exception:
-            continue
-        if size.Width > page.Width // 20 and size.Height > page.Height // 20:
-            spans.append((pos.X, pos.Y, pos.X + size.Width, pos.Y + size.Height))
+    def rects(group):
+        out = []
+        for shape in group:
+            try:
+                pos, size = shape.getPosition(), shape.getSize()
+            except Exception:
+                continue
+            out.append((pos.X, pos.Y, pos.X + size.Width, pos.Y + size.Height))
+        return out
 
+    spans = rects(doomed)
     for shape in doomed:
         page.remove(shape)
 
-    if spans:
-        # Clamped to the slide: a generated template (PptxGenJS output, for
-        # one) can carry body boxes a few millimetres wider than the page, and
-        # a free area measured off them puts everything drawn in it off the
-        # right edge.  The slide is the outer limit whatever the shapes say.
-        x0 = max(0, min(s[0] for s in spans))
-        y0 = max(0, min(s[1] for s in spans))
-        x1, y1 = max(s[2] for s in spans), max(s[3] for s in spans)
-        if x1 > page.Width:                   # overhangs: mirror the left margin
-            x1 = page.Width - x0
-        if y1 > page.Height:
-            y1 = page.Height - y0
+    free = free_area(spans, rects(shapes(page)), page.Width, page.Height)
+    if free:
+        x0, y0, x1, y1 = free
         return Box(x0, y0, x1 - x0, y1 - y0)
 
     # Nothing sizeable was removed: fall back to the page, inset by whatever
