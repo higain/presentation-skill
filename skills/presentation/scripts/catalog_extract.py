@@ -295,6 +295,34 @@ def _slots(shape_entries):
     return slots
 
 
+def _title_style(slides):
+    """``{"color", "size", "seen"}`` the template's filled titles share, or ``None``.
+
+    A design whose title placeholder is empty inherits the *master's* title
+    style, and on a designed template that is often not the style the designer
+    set by hand on every filled title: one pack's masters say grey 18pt, its
+    content slides say blue 22pt, and every headline written with
+    ``set_title`` came out in the wrong one.  The most common colour and size
+    among the filled titles is what ``set_title`` gives an empty one.
+    """
+    counts = {}
+    for entry in slides:
+        for shape in entry["shapes"]:
+            if (shape.get("type") != "TitleTextShape"
+                    or not (shape.get("text") or "").strip()):
+                continue
+            first = next((para for para in shape.get("paragraphs") or []
+                          if (para.get("text") or "").strip()), None)
+            if not first or not first.get("color") or not first.get("size"):
+                continue
+            key = (first["color"], round(first["size"], 1))
+            counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return None
+    (color, size), seen = max(counts.items(), key=lambda item: item[1])
+    return {"color": color, "size": size, "seen": seen}
+
+
 def extract(source: Path, outdir: Path, dpi: int) -> dict:
     outdir.mkdir(parents=True, exist_ok=True)
     data = probe_data(source)
@@ -317,6 +345,9 @@ def extract(source: Path, outdir: Path, dpi: int) -> dict:
         "slide_height": data["slide_height"],
         "slides": [],
     }
+    style = _title_style(data["slides"])
+    if style:
+        manifest["title_style"] = style
     for entry in data["slides"]:
         n = entry["number"]
         slide_dir = outdir / f"slide-{n:02d}"

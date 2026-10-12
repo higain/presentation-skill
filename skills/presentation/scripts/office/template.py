@@ -30,13 +30,14 @@ geometry and character formatting of every slide, which is what you need to
 know which ``s[i]`` to write to.
 """
 
+import json
 import re
 import unicodedata
 
 from office.colors import parse_hex as _hex
 from office.impress import (add_slide, notes_text, placeholder, set_notes,
                             shapes)
-from office.pack import active_profile
+from office.pack import active_pack, active_profile, pack_for
 
 # Properties clone_shape must not copy: identity, or geometry it sets itself.
 # Name is copied deliberately -- duplicates are legal and keep probe.py output
@@ -913,22 +914,32 @@ def set_char_color(shape, color):
     Set the colour on each paragraph *and* on its runs: a paragraph's own
     CharColor does not reach runs that carry their own, which is most of them
     in a template deck.
+
+    And clear the run's *theme* colour first.  Text that came from a .pptx
+    carries a theme reference (``schemeClr dk1``) beside its RGB value, and
+    the export writes the reference: the text kept rendering in the old
+    colour however often ``CharColor`` was set, until ``CharColorTheme`` was
+    set to -1.
     """
+    def paint(target):
+        try:
+            target.CharColorTheme = -1
+        except Exception:           # older LibreOffice: no theme colours
+            pass
+        try:
+            target.CharColor = color
+        except Exception:
+            pass
+
     enum = shape.createEnumeration()
     while enum.hasMoreElements():
         para = enum.nextElement()
-        try:
-            para.CharColor = color
-        except Exception:
-            pass
+        paint(para)
         if not hasattr(para, "createEnumeration"):
             continue
         portions = para.createEnumeration()
         while portions.hasMoreElements():
-            try:
-                portions.nextElement().CharColor = color
-            except Exception:
-                pass
+            paint(portions.nextElement())
 
 
 def shape_by_text(page, prefix):
@@ -962,8 +973,39 @@ def set_title(page, *paragraphs):
         raise LookupError(
             f"set_title: {page.Name!r} has no title placeholder. Use the "
             f"retext key the catalog lists for this design's headline.")
+    was_empty = not shape.getString().strip()
     set_text(shape, *paragraphs)
+    # An empty placeholder carries the master's title style, which on a
+    # designed template is not the one its filled titles use (grey 18pt
+    # against blue 22pt on one pack).  The catalog measured the real one.
+    style = title_style() if was_empty else None
+    if style:
+        set_char_color(shape, style[0])
+        cursor = shape.getText().createTextCursor()
+        cursor.gotoStart(False)
+        cursor.gotoEnd(True)
+        cursor.CharHeight = style[1]
     return shape
+
+
+def title_style(template=None):
+    """``(color, size)`` the template's filled titles use, or ``None``.
+
+    Measured by ``catalog_extract.py`` into the pack's ``catalog/manifest.json``.
+    ``None`` for a template with no pack or a catalog extracted before the
+    measurement existed -- then ``set_title`` leaves the master's style alone.
+    """
+    pack = pack_for(template) if template is not None else active_pack()
+    if pack is None:
+        return None
+    try:
+        manifest = json.loads((pack.catalog_dir / "manifest.json")
+                              .read_text(encoding="utf-8"))
+        style = manifest["title_style"]
+        return _hex(style["color"]), float(style["size"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
 
 
 # ------------------------------------------------------- retexting by text

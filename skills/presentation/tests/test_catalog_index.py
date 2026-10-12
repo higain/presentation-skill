@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import catalog_import  # noqa: E402
 from catalog_build import (_canvas_design, _canvas_leftovers,  # noqa: E402
                            _headline, _roles_block, _unnamed_designs)
-from catalog_extract import _canvas_hint, _covered_by  # noqa: E402
+from catalog_extract import _canvas_hint, _covered_by, _title_style  # noqa: E402
 from office import draw as D  # noqa: E402
 from office.template import _fold  # noqa: E402
 
@@ -248,6 +248,43 @@ class RolesTest(unittest.TestCase):
                    14: {"name": "Canvas"}, 24: {"name": "Two columns"}, 25: {}}
         self.assertEqual(_unnamed_designs(rules, entries, 14),
                          [(24, "Two columns")])
+
+
+class TitleStyleTest(unittest.TestCase):
+    """The style filled titles share, for set_title to give an empty one."""
+
+    @staticmethod
+    def _title(text, color, size):
+        return {"type": "TitleTextShape", "text": text,
+                "paragraphs": [{"text": text, "color": color, "size": size}]}
+
+    def test_the_commonest_filled_title_wins(self):
+        slides = [{"shapes": [self._title("A", "#0066CC", 22.0)]},
+                  {"shapes": [self._title("B", "#0066CC", 22.0)]},
+                  {"shapes": [self._title("C", "#5A6367", 18.0)]},
+                  {"shapes": [self._title("", "#5A6367", 18.0)]}]
+        self.assertEqual(_title_style(slides),
+                         {"color": "#0066CC", "size": 22.0, "seen": 2})
+
+    def test_no_filled_title_means_no_style(self):
+        self.assertIsNone(_title_style([{"shapes": [
+            {"type": "OutlinerShape", "text": "Body", "paragraphs": []}]}]))
+
+    def test_set_title_reads_it_from_the_pack(self):
+        import json
+        import tempfile
+        from office.template import title_style
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "template.pptx").write_bytes(b"")
+            (root / "profile.json").write_text("{}")
+            (root / "catalog").mkdir()
+            (root / "catalog" / "manifest.json").write_text(json.dumps(
+                {"title_style": {"color": "#0066CC", "size": 22.0}}))
+            self.assertEqual(title_style(root / "template.pptx"),
+                             (0x0066CC, 22.0))
+            (root / "catalog" / "manifest.json").write_text("{}")
+            self.assertIsNone(title_style(root / "template.pptx"))
 
 
 if __name__ == "__main__":

@@ -135,6 +135,13 @@ with impress_document("brand.pptx", save=False) as doc:
   re-inherits the master's text style; without that the white title on a dark
   divider exports black. Those shapes stop being placeholders, and per-run
   formatting within a paragraph collapses to the paragraph's first run.
+- **`set_title(page, text)` writes an empty title placeholder in the style the
+  template's filled titles use**, measured into the pack's catalog — not the
+  master's style the empty placeholder carries, which on a designed template
+  is often another colour and size (grey 18 pt against blue 22 pt on one pack).
+- **Recolour template text with `set_char_color(shape, color)`**, never
+  `shape.CharColor = …`: text from a `.pptx` carries a theme colour that the
+  export writes instead of the RGB value, and only `set_char_color` clears it.
 - **`set_text(shape, *lines)` — never bare `setString()` on a template shape.**
   `setString` resets font, size, weight, colour and kerning to the shape's
   defaults, which on a designed slide means throwing the design away. One

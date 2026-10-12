@@ -218,7 +218,7 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 | Module | Use it for |
 |---|---|
 | `office.deckbuild` | `build_deck` — the whole deck from a pack |
-| `office.template` | `set_title`, `retext`, `set_text`, `find_shapes`, `set_footer`, `shrink_to_fit` — changing what a design already has |
+| `office.template` | `set_title`, `retext`, `set_text`, `set_char_color`, `find_shapes`, `set_footer`, `shrink_to_fit` — changing what a design already has |
 | `office.draw` | `canvas`, `Box`, `cards`, `steps`, `kpis`, `statement`, `table`, `venn`, `text`, `color`, `series`, `size_for` — drawing new things |
 | `office.impress` | `impress_document`, `save_as`, `slides`, `shapes`, `mm()`, `pt()`, `slide_size` |
 
