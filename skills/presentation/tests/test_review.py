@@ -101,6 +101,15 @@ class ReviewTest(unittest.TestCase):
         self.assertTrue(review.answer_path(self.out, 1).exists())
         self.assertFalse(review.answer_path(self.out, 2).exists())
 
+    def test_zero_padded_renders_of_a_long_deck_verify(self):
+        # pdftoppm pads the number once a deck has ten slides.
+        for n in range(1, 11):
+            png(self.out / f"slide-{n:02d}.png", (n * 20, 0, 0))
+        self.prepare()
+        self.save(3, answer())
+        self.assertEqual(review.verify(self.out, 3)[0], "ok")
+        self.assertEqual(review.verify(self.out, 10)[0], "no-answer")
+
     def test_codes_avoid_letters_a_reader_confuses(self):
         for _ in range(50):
             code = review.new_code()

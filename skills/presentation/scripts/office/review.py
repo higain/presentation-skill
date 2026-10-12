@@ -271,8 +271,11 @@ def verify(outdir: Path, number: int, ledger=None) -> tuple[str, dict]:
     """
     outdir = Path(outdir)
     ledger = load(outdir) if ledger is None else ledger
-    return _check(outdir / f"slide-{number}.png", answer_path(outdir, number),
-                  ledger.get(number))
+    # Through ``renders``: a deck of ten or more slides renders as
+    # ``slide-01.png``, and a path built from the number found no image and
+    # called every answer of a 24-slide deck unbriefed.
+    png = renders(outdir).get(number) or outdir / f"slide-{number}.png"
+    return _check(png, answer_path(outdir, number), ledger.get(number))
 
 
 def _check(png: Path, answer: Path, entry) -> tuple[str, dict]:
