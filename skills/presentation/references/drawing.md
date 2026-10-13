@@ -321,13 +321,13 @@ D.icon(doc, page, box, "lock", backdrop="accent")      # white on a filled circl
 D.icon(doc, page, box, "warning", color="alert")       # any palette name or int
 ```
 
-`D.icon` looks a name up in four places, first match wins: the pack's own
-icons (`templates/<pack>/icons/`, harvested from the template by
+`D.icon` looks a name up in order, first match wins: the pack's own icons
+(`templates/<pack>/icons/`, harvested from the template by
 `presentation-setup`, and listed in the pack's `catalog.md`), the directories
-in `$PRESENTATION_ICONS`, **Element Plus** (`ep`, 293 icons, MIT, shipped with
-the skill in `icons/ep/`), and Bootstrap Icons if installed
-(`apt install bootstrap-icons`, about 2000, MIT). `"ep:lock"` picks a set
-explicitly when the pack has an icon of the same name.
+in `$PRESENTATION_ICONS`, then **Element Plus** (`ep`, 293 icons, MIT,
+shipped with the skill in `icons/ep/`). `"ep:lock"` picks a set explicitly
+when the pack has an icon of the same name. Never install an icon set: when
+nothing fits, pick the closest icon that exists.
 `scripts/icons.py search <word>` lists matches, pack icons first; names are
 English (`lock`, `coffee-cup`, `user`, `monitor`).
 An unknown name raises with the close ones.

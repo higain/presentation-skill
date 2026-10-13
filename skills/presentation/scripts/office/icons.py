@@ -15,11 +15,13 @@ Where an icon comes from, first match wins:
    ``os.pathsep``-separated: an icon set the company licenses.
 3. **Element Plus** (``ep``) -- 293 monochrome icons, MIT, shipped with the
    skill in ``icons/ep/`` (licence beside them).  Always there.
-4. **Bootstrap Icons** -- ``apt install bootstrap-icons``, MIT, about 2000
-   monochrome SVGs under ``/usr/share/bootstrap-icons/svg``, if installed.
+4. **Bootstrap Icons** -- used when the machine happens to have them under
+   ``/usr/share/bootstrap-icons/svg``.  Never suggested to the build agent:
+   asked to install a package it has no rights to, it tried ``sudo apt-get``
+   and stopped to ask the user mid-build.
 
-``"ep:lock"`` or ``"bootstrap:lock"`` picks a set explicitly; a bare name
-takes the first set that has it.
+``"ep:lock"`` picks a set explicitly; a bare name takes the first set that
+has it.
 
 Every icon is drawn in **one palette colour**: the SVG's fills and strokes are
 rewritten to it, so an icon is never in a colour the brand does not use.  An
@@ -53,9 +55,6 @@ BUNDLED_SETS = (
 SYSTEM_SETS = (
     ("bootstrap", Path("/usr/share/bootstrap-icons/svg")),
 )
-
-INSTALL_HINT = ("Bootstrap Icons are not installed: "
-                "`sudo apt install bootstrap-icons` adds about 2000 (MIT).")
 
 
 def _pack_dir(pack):
@@ -155,8 +154,8 @@ def find(name, pack=None):
            ("Close: " + ", ".join(suggest)) if suggest else "Nothing close.",
            ", ".join(labels) or "none",
            "Find one with `scripts/icons.py search <word>` -- English words, "
-           "names like 'lock', 'coffee-cup', 'user'."
-           + ("" if "bootstrap" in labels else "\n  " + INSTALL_HINT)))
+           "names like 'lock', 'coffee-cup', 'user' -- and take the closest "
+           "that exists."))
 
 
 # --------------------------------------------------------------------------

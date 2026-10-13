@@ -7,7 +7,8 @@
 
 Pack icons are listed first: they are the brand's own.  Search in English --
 names like 'lock', 'coffee-cup', 'user'.  A shadowed name is reachable as
-'ep:lock' or 'bootstrap:lock'.
+'ep:lock'.  Nothing fits?  Take the closest icon that exists; never install
+an icon set.
 """
 
 import argparse
@@ -33,8 +34,6 @@ def main():
             count = (len(icons.pack_index(pack)) if label == "pack"
                      else len(list(folder.glob("*.svg"))))
             print(f"{label:10} {count:5}  {folder}")
-        if not any(l == "bootstrap" for l, _ in icons.sources(pack)):
-            print(icons.INSTALL_HINT)
         return 0
     if args.command == "list":
         index = icons.pack_index(pack)
@@ -51,9 +50,8 @@ def main():
         print(f"{name:32} {label}   (\"{label}:{name}\")" if label != "pack"
               else f"{name:32} {label}")
     if not hits:
-        print("nothing found -- try a broader English word")
-    if not hits and not any(l == "bootstrap" for l, _ in icons.sources(pack)):
-        print(icons.INSTALL_HINT)
+        print("nothing found -- try a broader English word, or take the "
+              "closest icon that exists")
     return 0
 
 

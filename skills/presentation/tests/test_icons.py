@@ -115,11 +115,13 @@ class LookupTest(unittest.TestCase):
             icons.find("shield", self.pack)
         self.assertIn("shield-lock", str(caught.exception))
 
-    def test_no_installed_set_says_how_to_get_one(self):
+    def test_a_missing_icon_never_asks_for_an_install(self):
+        # A build agent told to `apt install` an icon set tried sudo mid-build.
         with mock.patch.dict(os.environ, {icons.EXTRA_ENV: ""}):
             with self.assertRaises(ValueError) as caught:
                 icons.find("nothing-like-it", self.pack)
-        self.assertIn("apt install bootstrap-icons", str(caught.exception))
+        self.assertNotIn("install", str(caught.exception))
+        self.assertIn("closest", str(caught.exception))
 
 
 class BundledSetTest(unittest.TestCase):

@@ -46,7 +46,7 @@ cannot see `python3-uno`.
 
 Icons need nothing extra: `D.icon` uses the template pack's own icons and the
 293 Element Plus icons shipped in `skills/presentation/icons/ep/` (MIT).
-Optionally, `sudo apt install bootstrap-icons` adds about 2000 more (MIT).
+A company icon set can be added through `$PRESENTATION_ICONS`.
 
 An optional vision-agent adds the visual half of QA: the build agent delegates
 the rendered slides to it and writes its per-slide verdicts. It is never

@@ -505,7 +505,7 @@ def _icons_block(asset):
             "```", "",
             "Prefer these. For anything else `scripts/icons.py search <word>` "
             "searches, in English, the Element Plus set the skill ships "
-            "(`ep`, 293) and Bootstrap Icons if installed; `\"ep:lock\"` "
+            "(`ep`, 293); `\"ep:lock\"` "
             "picks a set by name. Every icon is drawn in "
             "one palette colour. **Never build an icon out of rectangles and "
             "lines, and never use a Unicode symbol or emoji as one.**", ""]
