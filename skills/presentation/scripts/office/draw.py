@@ -997,28 +997,67 @@ def restyle(shape, **props):
     Setting ``shape.CharHeight`` alone is not enough once a shape holds text:
     the runs carry their own hard formatting and win.  This walks them.
     """
+    for para in _paragraphs(shape):
+        _restyle_paragraph(para, props)
+    return shape
+
+
+def _paragraphs(shape):
+    """The shape's paragraphs, in order; none if it holds no text."""
     try:
         enum = shape.createEnumeration()
     except Exception:
-        return shape
+        return []
+    out = []
     while enum.hasMoreElements():
         para = enum.nextElement()
-        if not hasattr(para, "createEnumeration"):
-            continue
+        if hasattr(para, "createEnumeration"):
+            out.append(para)
+    return out
+
+
+def _restyle_paragraph(para, props):
+    for k, v in props.items():
+        try:
+            setattr(para, k, v)
+        except Exception:
+            pass
+    runs = para.createEnumeration()
+    while runs.hasMoreElements():
+        run = runs.nextElement()
         for k, v in props.items():
             try:
-                setattr(para, k, v)
+                setattr(run, k, v)
             except Exception:
                 pass
-        runs = para.createEnumeration()
-        while runs.hasMoreElements():
-            run = runs.nextElement()
-            for k, v in props.items():
-                try:
-                    setattr(run, k, v)
-                except Exception:
-                    pass
-    return shape
+
+
+class Para(str):
+    """One paragraph of ``text()`` with its own style -- made by :func:`para`."""
+
+    style: dict
+
+    def __new__(cls, text, style):
+        self = super().__new__(cls, text)
+        self.style = style
+        return self
+
+
+def para(text, **style):
+    """A paragraph for ``D.text`` that differs from the box's style.
+
+    ``D.text(doc, page, box, D.para("Risk", weight=D.BOLD, color=red),
+    "Prompt injection through a README", size=14)`` -- the first paragraph
+    bold and red, the second as the box says.  Takes the character keywords
+    of ``text`` (``size``, ``role``, ``color``, ``weight``, ``italic``,
+    ``align``, ``font``, ``strike``, ``underline``); the rest come from the box.
+    One call instead of walking the paragraphs yourself, which is where
+    hand-rolled styling fails: in a ``.pptx`` a per-paragraph colour also
+    needs the theme colour cleared, and an attribute set on an enumerated
+    paragraph does not reach its runs.
+    """
+    _check_kwargs(_char_props, style, label="para", extra=("role",))
+    return Para(text, dict(style))
 
 
 def _char_props(size=14.0, color=BLACK, weight=NORM, align="left",
@@ -1044,11 +1083,25 @@ def _text_height(lines, w, size, weight=NORM, pad=0, line_spacing=1.22):
     estimate is the one ``qa.py`` reports as overflowing, because LibreOffice
     lays the text out slightly differently than this arithmetic predicts.
     """
-    count = 0
+    height = 0.0
     for part in lines:
-        count += len(wrap_words(str(part), max(w - 2 * pad, 1), size, weight))
-    count = max(count, 1)
-    return int((count + 0.25) * size * 35.28 * line_spacing) + 2 * pad
+        p_size, p_weight = size, weight
+        if isinstance(part, Para):
+            p_size = float(_para_size(part.style) or size)
+            p_weight = float(part.style.get("weight", weight))
+        rows = len(wrap_words(str(part), max(w - 2 * pad, 1), p_size, p_weight))
+        height += rows * p_size
+    height = max(height, size)
+    return int((height + 0.25 * size) * 35.28 * line_spacing) + 2 * pad
+
+
+def _para_size(style):
+    """A paragraph style's size in points: ``size`` wins over ``role``."""
+    if style.get("size") is not None:
+        return style["size"]
+    if style.get("role") is not None:
+        return size_for(style["role"])
+    return None
 
 
 @takes_box("x", "y", "w", "h")
@@ -1073,6 +1126,9 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
     the same size on every slide of the deck instead of 9pt here and 12pt three
     slides later.  ``D.size_for(role)`` is the number, for the arithmetic
     around it; an explicit ``size=`` still wins.
+
+    A paragraph that needs its own size, weight or colour is ``D.para("...",
+    weight=D.BOLD)`` in place of the plain string.
 
     Keywords: ``role``, ``size`` (pt), ``color``, ``weight`` (``BOLD``/``NORM``),
     ``align`` (left/center/right/justify), ``valign`` (top/center/bottom),
@@ -1150,6 +1206,16 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
         except Exception:
             pass
     restyle(s, **props)
+    if any(isinstance(part, Para) for part in lines):
+        for part, paragraph in zip(lines, _paragraphs(s)):
+            if isinstance(part, Para):
+                own = {k: v for k, v in part.style.items() if k != "role"}
+                if _para_size(part.style) is not None:
+                    own["size"] = _para_size(part.style)
+                # The theme colour first: a .pptx writes it over CharColor
+                # (template.set_char_color).
+                _restyle_paragraph(paragraph, {"CharColorTheme": -1,
+                                               **_char_props(**{**kw, **own})})
     return s
 
 

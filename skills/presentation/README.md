@@ -335,6 +335,8 @@ machine.
 | `../presentation-setup/scripts/probe_deck.py` | Stage E: three real slides on the new pack | build-time |
 | `scripts/review_renders.py` — *removed* | The per-deck visual reviewer used to send renders to a hosted model; that job is now the vision-agent, which the build agent delegates to. |
 | `scripts/vision_brief.py` | Writes the tested vision-agent brief beside every render or design, and collects the saved answers into the report or the worksheet | runtime + build-time |
+| `scripts/split_source.py` | A long source (a slide spec) as one file per slide, for big decks built from parts (`references/big-decks.md`) | runtime |
+| `scripts/api_ref.py` | The build API from the code; `--write` regenerates `references/api.md` (a test fails when it is stale) | runtime + build-time |
 | `scripts/wireframe.py` | A render as a text ink-map, no model; the fallback when the vision-agent is unavailable | runtime |
 | `references/catalog.example.md` | The generated format, annotated | reference |
 | `templates/README.md` | What a pack is and how one is chosen | reference |

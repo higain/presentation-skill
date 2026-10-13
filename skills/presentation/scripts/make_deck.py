@@ -61,7 +61,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from office.deckbuild import SKIP_QA_ENV, find_template  # noqa: E402
+from office.deckbuild import (PARTS_ENV, SKIP_QA_ENV,  # noqa: E402
+                              find_template, parts_preview)
 from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402
                             SofficeError, parse_slide_spec, shutdown)
 from office.soffice import isolated  # noqa: E402
@@ -75,7 +76,7 @@ BLOCKING_SEVERITY = {"high", "medium"}
 
 
 
-def _build_env() -> dict:
+def _build_env(parts=None) -> dict:
     """The environment a build script runs in.
 
     Two things it cannot arrange for itself:
@@ -95,10 +96,13 @@ def _build_env() -> dict:
     env["PYTHONPATH"] = (str(HERE) + os.pathsep + env["PYTHONPATH"]
                          if env.get("PYTHONPATH") else str(HERE))
     env[SKIP_QA_ENV] = "1"
+    env.pop(PARTS_ENV, None)
+    if parts:
+        env[PARTS_ENV] = parts
     return env
 
 
-def _run_script(script: Path) -> int:
+def _run_script(script: Path, parts=None) -> int:
     """Run a build script in its own interpreter, streaming its output.
 
     Without network, like LibreOffice itself: the script was written by a
@@ -109,7 +113,7 @@ def _run_script(script: Path) -> int:
     """
     print(f"# Building — {script.name}\n", flush=True)
     proc = subprocess.run(isolated([sys.executable, "-P", str(script)]),
-                          cwd=script.parent, env=_build_env())
+                          cwd=script.parent, env=_build_env(parts))
     print(flush=True)
     return proc.returncode
 
@@ -483,6 +487,11 @@ def main():
                                          "re-checks only slides that changed "
                                          "(<deck>-qa-cache.json), and this "
                                          "skips the deck-wide checks")
+    parser.add_argument("--parts", metavar="SLIDES",
+                        help="For a build.py that calls build_parts: build "
+                             "only these slides, e.g. 23,25-27, into "
+                             "<deck>-parts-23_25_27.pptx, and check them. "
+                             "Never touches the deck itself; no renders")
     parser.add_argument("--no-render", action="store_true",
                         help="Skip the renders (you will not be able to review it)")
     parser.add_argument("--skip-qa", action="store_true",
@@ -534,6 +543,22 @@ def main():
             print(f"Error: {e}", file=sys.stderr)
             return 2
 
+    # A parts preview is a few slides out of context: checked, never rendered
+    # or gated, and written beside the deck rather than over it.
+    if args.parts:
+        if script is None:
+            print("Error: --parts needs the build script", file=sys.stderr)
+            return 2
+        try:
+            count = len(parse_slide_spec(args.parts))
+        except ValueError as e:
+            print(f"Error: --parts {e}", file=sys.stderr)
+            return 2
+        deck = parts_preview(deck, args.parts)
+        deck.unlink(missing_ok=True)       # an older preview is no answer
+        args.no_render = True
+        args.slides = f"1-{count}"
+
     # --build-only is shorthand for the tightest loop: no QA, no renders.
     if args.build_only:
         args.skip_qa = True
@@ -556,12 +581,14 @@ def main():
               f"rather than building again.\n", flush=True)
 
     if script is not None:
-        code = _run_script(script)
+        code = _run_script(script, args.parts)
         if code != 0:
             print(f"Build failed (exit {code}) — nothing to check.", file=sys.stderr)
             return 1
     if not deck.exists():
-        print(f"Error: {deck} was not written", file=sys.stderr)
+        hint = (" -- --parts works only with a build.py that calls "
+                "build_parts" if args.parts else "")
+        print(f"Error: {deck} was not written{hint}", file=sys.stderr)
         return 1
 
     failed = False

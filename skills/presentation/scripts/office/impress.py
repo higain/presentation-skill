@@ -362,6 +362,72 @@ def _check_external(path):
             f"{NETWORK_ENV}=allow only for a deck you trust.")
 
 
+def lock_file(path) -> Path:
+    """The lock file LibreOffice writes beside a document it has open."""
+    path = Path(path)
+    return path.with_name(f".~lock.{path.name}#")
+
+
+#: The profile directories this module and ``office.soffice`` create.  A lock
+#: naming one of them was written by a headless LibreOffice of this skill.
+_OWN_PROFILE_RE = re.compile(r"/lo-(?:uno-)?profile-[^/;]+")
+
+
+def _profile_in_use(profile: str) -> bool:
+    """Whether a running process was started with ``profile`` on its command line."""
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return True                            # cannot tell: assume it is
+    needle = profile.encode()
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if needle in (entry / "cmdline").read_bytes():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def check_lock(path) -> None:
+    """Clear a lock a crashed run of this skill left on ``path``; refuse a live one.
+
+    LibreOffice writes ``.~lock.<name>#`` beside every document it opens for
+    editing and deletes it on close.  A LibreOffice that dies mid-build -- a
+    killed process, a lost bridge -- leaves it behind, and from then on every
+    load of that file for editing fails as "could not open ... as a document"
+    after half a minute of retries, while the same build under any other file
+    name works.  A field run lost a quarter of an hour finding that file.
+
+    A lock written by one of this skill's own headless instances (its profile
+    is a ``lo-uno-profile-*`` directory) whose process is gone is stale and is
+    removed.  Any other lock means someone may have the file open -- usually
+    the user, in Impress -- and editing under them would lose one side's work,
+    so that raises with the owner and the way out.
+    """
+    lock = lock_file(path)
+    try:
+        content = lock.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return
+    except OSError:
+        content = ""
+    own = _OWN_PROFILE_RE.search(content)
+    if own and not _profile_in_use(own.group(0)):
+        lock.unlink(missing_ok=True)
+        return
+    fields = content.strip().rstrip(";").split(",")
+    who = fields[1] if len(fields) > 1 and fields[1] else "someone"
+    since = f" since {fields[3]}" if len(fields) > 3 and fields[3] else ""
+    raise SofficeError(
+        f"{Path(path).name} is open in another LibreOffice ({who}{since}; lock "
+        f"file {lock}). Close it there first. If no LibreOffice has it open "
+        f"any more, the lock is left over from a crash: delete {lock} and "
+        f"try again."
+    )
+
+
 def load_document(path, read_only: bool = False, timeout: float = 60.0):
     """Open a presentation and return the UNO document.  Caller must close it."""
     path = Path(path).absolute()
@@ -374,6 +440,8 @@ def load_document(path, read_only: bool = False, timeout: float = 60.0):
             f"{path} is not writable, so it cannot be opened for editing. "
             "Copy it first, or open it with read_only=True."
         )
+    if not read_only:
+        check_lock(path)
 
     _check_external(path)
 

@@ -238,9 +238,10 @@ def _check(path, template, wanted):
                 sparse.append((number, reason))
             if top:
                 add(f"slide {number}: {top}", ("balance", number, "top-heavy"))
+        # A deck-wide note too: on a few slides "100% one design" is no news.
         notes = [note for note in (design_note(recorded_designs(doc),
                                                _catalog_size(template)),)
-                 if note]
+                 if note and not wanted]
         if not wanted:
             for text, key in variety_findings(recorded_designs(doc),
                                               _catalog_size(template)):

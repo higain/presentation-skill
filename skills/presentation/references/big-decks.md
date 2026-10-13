@@ -1,0 +1,147 @@
+# Big decks: one file per slide, built by several agents
+
+**Use this when** the deck has more than about 20 slides, or its source — a
+slide-by-slide specification, a long document — is over about 50 KB
+(`wc -c source.md`). Below that, the single `build.py` of `SKILL.md` is
+simpler.
+
+Why: a 58-slide specification was 288 KB, half of a 200k-token context
+before a line of code. The agent that read it whole lost it again to context
+pruning and re-read pieces at random. It then parsed the specification with
+regular expressions, and one pattern silently left a field empty on all 57
+content slides. Its single build of 58 slides stopped at the first broken
+slide, once per run. The fix is to give every agent only the part it works
+on:
+
+- the **source** is split into one file per slide;
+- the **deck** is one Python file per slide, `slides/s07.py`, written by
+  builder subagents that each read only their own slides;
+- **one** `build_parts` call assembles them in one LibreOffice session.
+
+Never build slides as separate decks and merge the files: a slide cannot be
+moved between documents over UNO, only rebuilt shape by shape, and that loses
+the master, the placeholders and the notes.
+
+## You, the orchestrator
+
+**1. Split the source. Do not read it whole.**
+
+```bash
+scripts/split_source.py source.md --out spec/
+```
+
+It writes `spec/slide-NN.md` (each slide's section, verbatim),
+`spec/_shared.md` (everything that belongs to no single slide: the brief,
+design rules, an overview table) and `spec/index.md` (number, title, size).
+Read `index.md` and `_shared.md`; open a slide file only when you need it.
+If it picks the wrong headings, pass `--heading '^### Folie (\d+)'`.
+
+**2. Decide everything that must be the same on every slide, once.** Read the
+pack's `catalog.md`, then decide which design each kind of slide uses, how
+**every** colour the source uses maps to (its tints and dark text colours
+too, not only the main roles), which icons stand in for the source's, how the
+headline and kicker are written, the pack's smallest type size, and where
+elements go that the source puts in the template's title band or footer (a
+tag beside the kicker, a page badge). A builder who meets an undecided case
+decides it alone, differently on every batch. Write the decisions into **`slides/_common.py`** as
+named constants and small helpers (`rubric(page, text)`,
+`tag(doc, page, box, kind)`, `ROLE = {"risk": D.color("alert"), ...}`). Every
+part imports it as `import deck_common as C`. Builders reuse a helper; they
+do not re-decide it.
+
+**3. Write `build.py` and the first one or two slides yourself.**
+
+```python
+from office.deckbuild import build_parts
+build_parts("acme", "deck.pptx", "slides", footer="Acme · Workshop · 2026")
+```
+
+```python
+# slides/s02.py
+from office import draw as D
+from office.template import set_title
+from office.impress import mm, set_notes
+import deck_common as C
+
+DESIGN = 14                     # the template slide this one starts from
+
+def fill(doc, page):
+    area = C.canvas(page)
+    set_title(page, "Three levers secure the March launch")
+    D.text(doc, page, area.top(mm(20)),
+           D.para("Agenda", weight=D.BOLD), "Risks, then guardrails",
+           size=16)
+    set_notes(page, "Speaker notes, verbatim from the source.")
+```
+
+`page.Visible = False` hides a slide. Check your examples:
+
+```bash
+scripts/make_deck.py build.py deck.pptx --parts 1-2
+```
+
+`--parts` builds only those slides into `deck-parts-1_2.pptx` beside the
+deck and checks them. The deck itself is never touched. Fix the helpers until
+these slides are clean: from here on every builder copies them.
+
+**4. Brief the builders.** Use a general-purpose subagent (opencode:
+`general`; Claude Code: `general-purpose`), not the vision-agent. Give each
+one 4 to 6 consecutive slides, and start as many in parallel as your tool
+allows. Parallel builds are safe: each runs its own LibreOffice and writes
+its own preview file. Send the brief below with the placeholders filled in.
+Keep their reports, not their code: you do not need to read the slide files.
+
+**5. Assemble and gate.** Run `scripts/make_deck.py build.py deck.pptx
+--template acme`, the full gate of `SKILL.md` step 5. If a part raises, the
+build reports **every** failing slide with its file and traceback, not just
+the first. Then do the vision review of step 6, one slide per call, as
+always. For each finding, send the builder of that slide (or a new one) the
+finding, the slide's source file and its part file, or fix it yourself if
+it is one line.
+
+## The builder brief
+
+```text
+You write slides {FIRST}–{LAST} of a presentation, one Python file per slide.
+Skill directory: {SKILL}. Deck directory: {DECK_DIR}.
+
+Read in full before writing:
+- {SKILL}/references/api.md — every function you may call, with signatures
+- {SKILL}/references/drawing.md — how to lay out with Box and the helpers
+- {DECK_DIR}/slides/_common.py — the shared helpers and decisions; use them
+- {DECK_DIR}/slides/{EXAMPLE}.py — a finished slide in this deck's style
+- {DECK_DIR}/spec/_shared.md — the rules that hold for every slide
+- for each of your slides N: {DECK_DIR}/spec/slide-N.md
+- the design files your slides use: {PACK}/designs/design-{D}.md
+
+For each slide N write {DECK_DIR}/slides/sNN.py with `DESIGN = <number>`
+and `def fill(doc, page):`. Transcribe the source by reading it: every text
+verbatim (quotes, dashes, line breaks), every element, the speaker notes with
+office.impress.set_notes. Never write code that parses the source files.
+
+Decisions already made (do not re-decide): {DECISIONS}
+
+Where the source has no content (a placeholder, "TBD", an empty field), put
+"[OFFEN: what is missing]" on the slide. Never invent content.
+Do not edit _common.py, build.py or other slides' files. If you need a helper
+that is missing, write it in your own file and name it in your report.
+
+Check your slides until the command exits 0, with a timeout of at least
+five minutes:
+  python3 {SKILL}/scripts/make_deck.py {DECK_DIR}/build.py {DECK_DIR}/{DECK} --parts {FIRST}-{LAST}
+Every finding it prints for your slides is yours to fix. You cannot see
+images: do not describe how a slide looks.
+
+Report in at most 10 lines: the files written, any decision you had to make
+yourself, every [OFFEN] and why, and helpers you wish were in _common.py.
+Do not paste code.
+```
+
+## Keeping your own context small
+
+- Run commands with `| tail -40`; a 58-slide build prints a lot.
+- Look up a function in `references/api.md` or with `scripts/api_ref.py draw`
+  instead of reading the skill's source with `sed`.
+- Never wrap a slide's code in `try/except: pass` to make a build go through.
+  The error is the information. `build_parts` already reports all of them in
+  one run.

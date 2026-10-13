@@ -29,6 +29,8 @@ import inspect
 import os
 import re
 import shutil
+import sys
+import traceback
 import zipfile
 from pathlib import Path
 
@@ -37,7 +39,8 @@ from .pack import (
 )
 
 from .impress import (
-    load_document, save_as, slides, duplicate_slide, delete_slide,
+    check_lock, load_document, save_as, slides, duplicate_slide, delete_slide,
+    parse_slide_spec,
 )
 from .template import set_footer, strip_annotations
 
@@ -281,6 +284,49 @@ def _call_fill(fill, doc, page, slot, design):
     return fill(doc, page, slot, design) if wants_doc else fill(page, slot, design)
 
 
+class FillError(RuntimeError):
+    """``fill`` raised on one or more slides; each traceback is already printed."""
+
+    def __init__(self, failures):
+        self.failures = failures              # [(slide number, exception)]
+        listed = "; ".join(f"slide {n}: {type(e).__name__}: {e}"
+                           for n, e in failures)
+        super().__init__(
+            f"fill failed on {len(failures)} slide(s) -- {listed}. "
+            f"Every traceback is printed above; fix them all, then build again.")
+
+
+def _bridge_lost(exc) -> bool:
+    """LibreOffice itself is gone: no further slide can be filled."""
+    return (type(exc).__name__ == "DisposedException"
+            or "disposed" in str(exc).lower())
+
+
+def _fill_all(fill, doc, made, designs, numbers=None):
+    """Call ``fill`` on every slide, and report *every* slide that raised.
+
+    Stopping at the first exception made a 58-slide build a loop of one bug
+    per run, each run a full LibreOffice load: a field build died at slide 23
+    on a bug that also sat on slides 20 to 26.  A failing slide is left as it
+    is, the rest are still filled, and the build fails at the end with all of
+    them -- unless LibreOffice itself has gone, which no later slide survives.
+    """
+    failures = []
+    for slot, page in enumerate(made):
+        number = numbers[slot] if numbers else slot + 1
+        try:
+            _call_fill(fill, doc, page, slot, designs[slot])
+        except Exception as exc:
+            if _bridge_lost(exc):
+                raise
+            print(f"\n[build_deck] slide {number} (design {designs[slot]}) "
+                  f"failed:", file=sys.stderr)
+            traceback.print_exc()
+            failures.append((number, exc))
+    if failures:
+        raise FillError(failures)
+
+
 def find_template(template=None) -> Path:
     """Resolve a template: a path, a pack name, or the default pack.
 
@@ -327,7 +373,7 @@ def find_template(template=None) -> Path:
 
 
 def build_deck(template, out, designs, fill=None, qa=True,
-               footer=KEEP) -> Path:
+               footer=KEEP, _numbers=None) -> Path:
     """Write ``out``: one slide per entry of ``designs``, in that order.
 
     ``designs`` holds 1-based slide numbers in ``template`` -- the numbers a
@@ -374,12 +420,15 @@ def build_deck(template, out, designs, fill=None, qa=True,
     if not designs:
         raise ValueError("no designs given")
 
+    # Before the copy: a lock someone else holds means the file is open, and
+    # overwriting it under them is not ours to do.  A stale one goes.
+    check_lock(out)
     shutil.copyfile(template, out)
     try:
         # Everything drawn inside `fill` resolves its colours and type sizes
         # against *this* template, not against whatever pack is installed.
         with active(template):
-            return _build(template, out, designs, fill, qa, footer)
+            return _build(template, out, designs, fill, qa, footer, _numbers)
     except BaseException:
         # The output at this point is a copy of the template -- every design in
         # it, none of your content.  Left on disk it looks like a built deck,
@@ -389,7 +438,8 @@ def build_deck(template, out, designs, fill=None, qa=True,
         raise
 
 
-def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP) -> Path:
+def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP,
+           numbers=None) -> Path:
     """The body of :func:`build_deck`, on an ``out`` that already exists."""
     doc = load_document(out, read_only=False)
     try:
@@ -421,8 +471,7 @@ def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP) -> Path:
                 set_footer(page, footer)
 
         if fill is not None:
-            for slot, page in enumerate(made):
-                _call_fill(fill, doc, page, slot, designs[slot])
+            _fill_all(fill, doc, made, designs, numbers)
 
         # After ``fill``, never before: deleting a shape renumbers every one
         # above it, and the indices ``fill`` uses -- a canvas ``keep`` tuple,
@@ -511,3 +560,173 @@ def _index_of(page, pages):
         if candidate == page:
             return i
     raise RuntimeError("a page went missing between duplicate and save")
+
+
+# --- one file per slide ------------------------------------------------------
+
+#: ``make_deck.py --parts 23,25-27`` sets this around the build script:
+#: ``build_parts`` then builds only those slides, into a preview deck beside
+#: the real one, so the full deck is never overwritten by a partial one.
+PARTS_ENV = "PRESENTATION_PARTS"
+
+#: The shared module of a parts directory, importable from every part as
+#: ``import deck_common``.
+COMMON_FILE, COMMON_MODULE = "_common.py", "deck_common"
+
+_PART_NUMBER_RE = re.compile(r"\d+")
+
+
+class PartsError(ValueError):
+    """The parts directory does not describe a deck; every problem is listed."""
+
+
+def parts_preview(out, spec: str) -> Path:
+    """Where ``build_parts`` writes a build of only the slides in ``spec``."""
+    out = Path(out)
+    tag = re.sub(r"[^0-9]+", "_", spec.strip()).strip("_")
+    return out.with_name(f"{out.stem}-parts-{tag}{out.suffix}")
+
+
+def _load_module(name, path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_parts(directory, wanted=None):
+    """``[(number, path, module)]`` for every slide file in ``directory``, in order.
+
+    A slide file is any ``*.py`` whose name carries its slide number --
+    ``s07.py``, ``07-risks.py`` -- and that defines ``DESIGN`` (the template
+    slide it starts from) and ``fill(doc, page)``.  ``_common.py``, if there,
+    is loaded first and is ``import deck_common`` in every part.
+
+    Files are loaded by path, never through ``sys.path``: ``make_deck.py`` runs
+    the build with ``python3 -P`` so nothing beside the script can stand in
+    for ``office`` or ``uno``, and a ``slides/`` directory keeps that true.
+
+    Every problem in the directory -- a gap in the numbering, a part that does
+    not import, one without ``DESIGN`` -- is collected and raised together.
+    ``wanted`` (slide numbers) loads only those parts and ignores the rest, so
+    one builder can check its slides while another is still writing its own.
+    """
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise PartsError(f"no parts directory at {directory.resolve()}")
+    problems = []
+
+    common = directory / COMMON_FILE
+    if common.exists():
+        try:
+            sys.modules[COMMON_MODULE] = _load_module(COMMON_MODULE, common)
+        except Exception as exc:
+            sys.modules.pop(COMMON_MODULE, None)
+            traceback.print_exc()
+            raise PartsError(f"{common} does not load: "
+                             f"{type(exc).__name__}: {exc}") from exc
+
+    numbered = {}
+    for path in sorted(directory.glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        found = _PART_NUMBER_RE.search(path.stem)
+        if not found:
+            if wanted is None:
+                problems.append(f"{path.name}: no slide number in the file "
+                                f"name")
+            continue
+        number = int(found.group())
+        if number in numbered:
+            if wanted is None or number in wanted:
+                problems.append(f"{path.name} and {numbered[number].name} "
+                                f"are both slide {number}")
+            continue
+        numbered[number] = path
+    if not numbered and not problems:
+        raise PartsError(f"{directory} holds no slide files (s01.py, ...)")
+    if wanted is None:
+        missing = sorted(set(range(1, max(numbered, default=0) + 1))
+                         - set(numbered))
+        if missing:
+            problems.append("no file for slide(s) "
+                            + ", ".join(str(n) for n in missing)
+                            + " -- slides are numbered 1, 2, 3 ... without gaps")
+    else:
+        unknown = sorted(set(wanted) - set(numbered))
+        if unknown:
+            problems.append("no slide file for "
+                            + ", ".join(str(n) for n in unknown))
+        numbered = {n: path for n, path in numbered.items() if n in wanted}
+
+    parts = []
+    for number in sorted(numbered):
+        path = numbered[number]
+        try:
+            module = _load_module(f"deck_part_{number}", path)
+        except Exception as exc:
+            print(f"\n[build_parts] {path} does not load:", file=sys.stderr)
+            traceback.print_exc()
+            problems.append(f"{path.name}: {type(exc).__name__}: {exc}")
+            continue
+        design = getattr(module, "DESIGN", None)
+        if not isinstance(design, int) or isinstance(design, bool):
+            problems.append(f"{path.name}: DESIGN must be the template slide "
+                            f"number it starts from, e.g. DESIGN = 14")
+        if not callable(getattr(module, "fill", None)):
+            problems.append(f"{path.name}: needs def fill(doc, page)")
+        parts.append((number, path, module))
+    if problems:
+        raise PartsError("the parts directory has problems:\n  - "
+                         + "\n  - ".join(problems))
+    return parts
+
+
+def build_parts(template, out, directory="slides", qa=True,
+                footer=KEEP) -> Path:
+    """Build a deck from one Python file per slide -- the way to build a big deck.
+
+    ``directory`` holds ``s01.py``, ``s02.py``, ... (see :func:`load_parts`);
+    each part sets ``DESIGN`` and writes its slide in ``fill(doc, page)``.  A
+    relative ``directory`` is taken from the working directory, which under
+    ``make_deck.py`` is the build script's own.
+
+    One file per slide is what lets a long deck be written by several agents
+    with small contexts: each reads its own slides' source and writes its own
+    files, and one ``build_parts`` call assembles the deck in a single
+    LibreOffice session.  Assembling saved decks instead would lose the
+    masters -- a slide cannot be moved between documents, only rebuilt.
+
+    With ``PRESENTATION_PARTS`` set (``make_deck.py --parts 23,25-27``), only
+    those slides are built, into ``<deck>-parts-23_25_27.pptx`` beside
+    ``out`` -- a quick look at a few slides that never overwrites the deck.
+    """
+    out = Path(out)
+    spec = os.environ.get(PARTS_ENV, "").strip()
+    template = find_template(template)
+    # Under the deck's own pack: ``_common.py`` resolves ``D.color("blue")``
+    # when it is imported, and against whatever pack is the default that is
+    # someone else's palette, or no such colour at all.
+    with active(template):
+        parts = load_parts(directory, parse_slide_spec(spec) if spec else None)
+    if spec:
+        out = parts_preview(out, spec)
+
+    def fill(doc, page, slot, design):
+        number, path, module = parts[slot]
+        try:
+            module.fill(doc, page)
+        except Exception as exc:
+            exc.add_note(f"in {path}")
+            raise
+
+    numbers = [number for number, _, _ in parts]
+    designs = [module.DESIGN for _, _, module in parts]
+    built = build_deck(template, out, designs, fill=fill, qa=qa,
+                       footer=footer, _numbers=numbers)
+    if spec:
+        shown = ", ".join(f"{i} = slide {n}" for i, n in enumerate(numbers, 1))
+        print(f"[build_parts] preview of slides {spec} written to {built} "
+              f"({shown})")
+    return built

@@ -40,6 +40,11 @@ directory** (the one holding this file); scripts run directly
 
 If you would have to invent what the slides say, it is the second row.
 
+**A big deck** — more than about 20 slides, or a source over about 50 KB
+(`wc -c`): do not read the source whole and do not write one `build.py`.
+Follow `references/big-decks.md`: split the source, one file per slide,
+written by builder subagents, assembled by `build_parts`.
+
 ## The recipe
 
 `acme` is the pack name: the one in `templates/default`, or the only directory
@@ -214,6 +219,9 @@ reason. Tell the user about every entry you add. A `vision` entry also needs
 |---|---|
 | `scripts/make_deck.py build.py deck.pptx --template acme` | Build, QA, schema-check, render; writes `<deck>-report.md` and `render/`. `--build-only` for the fast loop, `--require-verdicts` for the final gate |
 | `scripts/vision_brief.py slides\|collect deck.pptx` | One tested vision-agent brief per render; `collect` reads the answers into the report |
+| `scripts/make_deck.py build.py deck.pptx --parts 7-9` | A `build_parts` deck: build and check only those slides, into `<deck>-parts-7_9.pptx` |
+| `scripts/split_source.py source.md --out spec/` | A long source as one file per slide, plus `_shared.md` and `index.md` |
+| `scripts/api_ref.py [draw]` | Every build function with its signature (`references/api.md`) |
 | `scripts/probe.py deck.pptx [--slides 4,7-9]` | Every shape's index, position, size, colours and fonts |
 | `scripts/dump.py deck.pptx` | The deck as markdown: text, tables, notes, empty slots |
 | `scripts/thumbnail.py deck.pptx` | A contact sheet of all slides (for the vision-agent) |
@@ -229,9 +237,9 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 
 | Module | Use it for |
 |---|---|
-| `office.deckbuild` | `build_deck` — the whole deck from a pack |
+| `office.deckbuild` | `build_deck` — the whole deck from a pack; `build_parts` — the same from one file per slide |
 | `office.template` | `set_title`, `retext`, `set_text`, `set_char_color`, `find_shapes`, `set_footer`, `shrink_to_fit` — changing what a design already has |
-| `office.draw` | `canvas`, `Box`, `cards`, `steps`, `kpis`, `statement`, `table`, `venn`, `icon`, `text`, `color`, `series`, `size_for` — drawing new things |
+| `office.draw` | `canvas`, `Box`, `text`, `para` (one paragraph styled apart), `cards`, `steps`, `kpis`, `statement`, `table`, `venn`, `icon`, `color`, `series`, `size_for` — drawing new things |
 | `office.impress` | `impress_document`, `save_as`, `slides`, `shapes`, `mm()`, `pt()`, `slide_size` |
 
 ## References
@@ -239,7 +247,9 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 | File | Read it when |
 |---|---|
 | the pack's `catalog.md`, `designs/design-N.md` | every house-style deck |
+| `references/api.md` | the signature of any build function — instead of reading the source |
 | `references/drawing.md` | drawing anything: `Box`, the helpers, composition |
+| `references/big-decks.md` | over ~20 slides or a long source: parts, builder subagents |
 | `references/language.md` | writing slide text: headlines, banned words |
 | `references/storyline.md` | the deck is a subject, not supplied content |
 | `references/accents.md` | choosing a look and a hero visual |
@@ -260,7 +270,8 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
   namespace (`unshare`, else `bwrap`), so a deck that links an image by URL
   cannot make anything fetch it, and a build script cannot send anything out.
   `build.py` runs with `python3 -P`: import only `office.*` and the standard
-  library, not helper files beside it. Without either tool a warning says so
+  library, not helper files beside it (a `build_parts` deck shares code
+  through `slides/_common.py`, loaded by path). Without either tool a warning says so
   and decks that link remote resources are refused;
   `PRESENTATION_NETWORK=allow` is the explicit way past, for trusted decks.
 - On a slow or shared mount, build into a local directory and copy the
