@@ -81,13 +81,14 @@ def check(path, template=None, wanted=None) -> QAResult:
 
 
 def _fresh_page_checks(page, number, add, deck_texts, leftovers, footers,
-                       base, tpl_strings):
+                       base, design=None):
     """The cheap per-slide reads every run makes, cached slide or not.
 
     They feed the deck-wide checks -- template wording left on several
     slides, the footer, the ghost deck -- which compare slides with each
     other and so can never come out of a per-slide cache.
     """
+    own = base.leftover_strings(design)
     for address, text in _page_texts(page):
         deck_texts.append((number, text))
         hit = PLACEHOLDER.search(text)
@@ -96,7 +97,7 @@ def _fresh_page_checks(page, number, add, deck_texts, leftovers, footers,
                 f"slide {number} shape [{address}]: placeholder text "
                 f"{hit.group(0)!r} in {text[:60]!r}"
             )
-        elif text in tpl_strings:
+        elif text in own:
             leftovers.setdefault(text, []).append((number, address))
 
     # The footer is a page property, so it is not in _page_texts and
@@ -131,6 +132,11 @@ def _check(path, template, wanted):
     designs = []
     try:
         pages = slides(doc)
+        recorded = recorded_designs(doc)
+
+        def _design_of(number):
+            return recorded[number - 1] if number <= len(recorded) else None
+
         if prints and len(prints) != len(pages):
             prints, stored = None, {}
         checked = 0
@@ -144,7 +150,7 @@ def _check(path, template, wanted):
                 for packed in entry["a"]:
                     add(*slide_cache.unpack_finding(number, packed))
                 _fresh_page_checks(page, number, add, deck_texts, leftovers,
-                                   footers, base, tpl_strings)
+                                   footers, base, _design_of(number))
                 for packed in entry["b"]:
                     add(*slide_cache.unpack_finding(number, packed))
                 continue
@@ -192,7 +198,7 @@ def _check(path, template, wanted):
 
             part_a = findings[start:]
             _fresh_page_checks(page, number, add, deck_texts, leftovers,
-                               footers, base, tpl_strings)
+                               footers, base, _design_of(number))
             start = len(findings)
 
             for text in missing_title_issues(page, number):

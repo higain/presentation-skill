@@ -112,6 +112,9 @@ build_deck("acme", "out.pptx", [4, 2], fill=fill,
   `D.venn`, `D.bullets`. Colours by name (`D.color("accent")`, `D.series(3)`),
   sizes by role (`role="body"`). Never hardcode millimetre offsets or hex.
   Details: `references/drawing.md`.
+- **Icons with `D.icon(doc, page, box, "name")`** — the pack's own (listed in
+  `catalog.md`, *Icons*) first; `scripts/icons.py search <word>` finds more.
+  Never build an icon from rectangles and lines or use a Unicode symbol.
 - Never reopen the finished file to add more; everything happens in `fill`.
 
 **5. Build — fast loop first, then the gate.** Give each run a timeout of at
@@ -215,6 +218,7 @@ reason. Tell the user about every entry you add. A `vision` entry also needs
 | `scripts/thumbnail.py deck.pptx` | A contact sheet of all slides (for the vision-agent) |
 | `scripts/render.py deck.pptx` | One PNG per slide |
 | `scripts/qa.py deck.pptx --template acme` | The checks alone, without rendering |
+| `scripts/icons.py search shield` | Icon names for `D.icon`: the pack's own, then the installed set |
 | `scripts/wireframe.py render/slide-3.png` | A render as a text ink grid — the fallback without a vision-agent |
 | `scripts/convert.py in out` | Between `.odp`/`.pptx`/`.otp`/`.potx`/`.ppt`/`.pdf` |
 | `scripts/office/validate.py deck.pptx` | OOXML schema and relationship checks |
@@ -226,7 +230,7 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 |---|---|
 | `office.deckbuild` | `build_deck` — the whole deck from a pack |
 | `office.template` | `set_title`, `retext`, `set_text`, `set_char_color`, `find_shapes`, `set_footer`, `shrink_to_fit` — changing what a design already has |
-| `office.draw` | `canvas`, `Box`, `cards`, `steps`, `kpis`, `statement`, `table`, `venn`, `text`, `color`, `series`, `size_for` — drawing new things |
+| `office.draw` | `canvas`, `Box`, `cards`, `steps`, `kpis`, `statement`, `table`, `venn`, `icon`, `text`, `color`, `series`, `size_for` — drawing new things |
 | `office.impress` | `impress_document`, `save_as`, `slides`, `shapes`, `mm()`, `pt()`, `slide_size` |
 
 ## References

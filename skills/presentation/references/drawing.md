@@ -281,6 +281,7 @@ Patterns worth reaching for, roughly in order of how often they earn their keep:
 - **A table** — when the content really is a matrix, say so with one
 - **Large stat callouts** — 60–72pt numbers with small labels beneath
 - **Icon + text rows** — icon in a filled circle, bold header, description below
+  (`D.icon(..., backdrop="accent")`, see Icons below)
 - **2×2 or 2×3 grid** of content blocks
 - **Two-column** — text left, illustration right
 - **A diagram** — Venn, quadrant, flow, hierarchy; `office.draw` has the parts
@@ -310,3 +311,33 @@ Then:
   bars or stripes** — header/footer bars, sidebar stripes, thin rules along a
   card edge. They are the clearest tell of a generated deck. To set a card apart
   use a background tint or an icon.
+
+
+## Icons
+
+```python
+D.icon(doc, page, box, "checkmark")                    # accent, centred in box
+D.icon(doc, page, box, "lock", backdrop="accent")      # white on a filled circle
+D.icon(doc, page, box, "warning", color="alert")       # any palette name or int
+```
+
+`D.icon` looks a name up in three places, first match wins: the pack's own
+icons (`templates/<pack>/icons/`, harvested from the template by
+`presentation-setup`, and listed in the pack's `catalog.md`), the directories
+in `$PRESENTATION_ICONS`, and Bootstrap Icons (`apt install bootstrap-icons`,
+about 2000, MIT). `scripts/icons.py search <word>` lists matches, pack icons
+first; names are English (`shield-lock`, `cup-hot`, `people`, `terminal`).
+An unknown name raises with the close ones.
+
+- **Every icon is drawn in one palette colour**: its fills and strokes are
+  rewritten. With `backdrop=` the icon turns white or accent, whichever reads.
+  A pack icon marked multi-coloured is placed in its own colours.
+- **Prefer the pack's icons.** They are the brand's style; an installed set is
+  for what the brand has none of. Do not mix two sets on one slide.
+- The box is the icon's space; the icon keeps its proportions inside it. Give
+  it a square box and size it from the layout, as for any other shape.
+- **Never draw an icon out of rectangles and lines, and never use a Unicode
+  symbol or emoji for one.** One run drew 45 that way for a 58-slide deck; on
+  the slide they read as "II", "#" and three dots.
+- In the `.pptx` the icon is an SVG with a PNG fallback, the way PowerPoint
+  stores its own, so it stays sharp and can be recoloured there.

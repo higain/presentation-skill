@@ -882,6 +882,58 @@ def chevron(doc, page, x, y, w, h, fill=None, notch=None, line=None,
     return polygon(doc, page, pts, fill=fill, line=line, line_width=line_width)
 
 
+@takes_box("x", "y", "w", "h")
+def icon(doc, page, x, y, w, h, name, color=None, backdrop=None):
+    """An icon by name, in one palette colour, centred in the box.
+
+    ``name`` is from the pack's own icons or an installed set
+    (``scripts/icons.py search shield``); unknown names raise with the close
+    ones.  ``color`` is a palette name or int, default the accent.
+    ``backdrop`` (a palette name or int) draws a filled circle behind it and
+    sets the icon to whichever of white and the accent reads on it -- the
+    "icon in a circle" of a card row::
+
+        D.icon(doc, page, row.left(mm(14)), "shield-lock", backdrop="accent")
+
+    Never draw an icon out of rectangles and lines, and never use a Unicode
+    symbol for one: they read as noise on the slide.
+    """
+    from . import icons
+    from .impress import add_image
+
+    def paint(value):
+        return globals()["color"](value) if isinstance(value, str) else value
+
+    label, path, entry = icons.find(name)
+    svg = path.read_text(encoding="utf-8")
+    side = min(w, h)
+    if backdrop is not None:
+        fill = paint(backdrop)
+        ellipse(doc, page, x + w // 2, y + h // 2, side // 2, fill=fill)
+        if color is None:
+            color = readable_on(fill, dark=paint("accent"), light=WHITE)
+        side = int(side * 0.58)
+    mono = entry.get("mono", True)
+    if not mono and color is not None and backdrop is None:
+        raise ValueError(
+            f"icon(): {name!r} is a multi-coloured pack icon and is placed in "
+            f"its own colours; drop color=, or pick a one-colour icon")
+    if mono:
+        svg = icons.recolour(svg, paint("accent") if color is None
+                             else paint(color))
+    ratio = icons.aspect(svg)
+    iw, ih = (side, int(side / ratio)) if ratio >= 1 else (int(side * ratio),
+                                                            side)
+    shape = add_image(doc, page, icons.write_temp(svg, name),
+                      x + (w - iw) // 2, y + (h - ih) // 2, iw, ih)
+    try:
+        shape.Name = f"Icon {name}"
+        shape.Description = name
+    except Exception:
+        pass
+    return shape
+
+
 # -------------------------------------------------------------- contrast
 
 def _rel_luminance(color):

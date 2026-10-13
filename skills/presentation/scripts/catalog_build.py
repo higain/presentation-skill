@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from office.draw import contrast_ratio, free_area  # noqa: E402
 from office.pack import SKILL, TEMPLATE_EXTS, pack_for  # noqa: E402
 from office.template import palette, palette_roles, type_scale  # noqa: E402
+from office import icons  # noqa: E402
 
 #: A title box at or above this size is a display slot -- a divider headline
 #: set into master decoration -- where a second line is a defect no check can
@@ -472,6 +473,44 @@ def _palette_block(asset):
     return out
 
 
+def _icons_block(asset):
+    """The pack's own icons by name, and where ``D.icon`` looks beyond them.
+
+    Without this a text-only builder does not know a pictogram can be placed
+    at all: one run drew 45 icons out of rectangles for a 58-slide deck, and
+    on the slide they read as "II" and "#".  Only the pack's own names are
+    listed -- they are few and they are the brand's; the installed set is two
+    thousand names and is searched, not read.  Nothing here depends on what
+    this machine has installed, so ``--check`` stays stable.
+    """
+    pack = pack_for(asset)
+    index = icons.pack_index(pack) if pack else {}
+    out = ["## Icons", ""]
+    if index:
+        out += [f"**The brand's own, {len(index)}:** "
+                + ", ".join(f"`{n}`" for n in sorted(index)) + ".", ""]
+        multi = sorted(n for n, e in index.items() if not e.get("mono", True))
+        if multi:
+            out += ["Placed in their own colours, never recoloured: "
+                    + ", ".join(f"`{n}`" for n in multi) + ".", ""]
+    else:
+        out += ["This pack has no icons of its own.", ""]
+    first, second = (sorted(index) + ["checkmark", "shield-lock"])[:2] \
+        if len(index) != 1 else (sorted(index)[0], sorted(index)[0])
+    out += ["```python",
+            f'D.icon(doc, page, box, "{first}")'
+            "                     # accent colour, centred in box",
+            f'D.icon(doc, page, box, "{second}", backdrop="accent")'
+            "  # white icon in a filled circle",
+            "```", "",
+            "Prefer these. For anything else `scripts/icons.py search <word>` "
+            "searches the installed set (Bootstrap Icons, "
+            "`apt install bootstrap-icons`) in English. Every icon is drawn in "
+            "one palette colour. **Never build an icon out of rectangles and "
+            "lines, and never use a Unicode symbol or emoji as one.**", ""]
+    return out
+
+
 def _gaps(rules):
     """Content situations no rule covers, by keyword.
 
@@ -790,6 +829,7 @@ def build(catalog: Path, asset: str, title: str, overrides=None):
     out += _index_table(manifest, structures, entries, canvas_number) + [""]
 
     out += _palette_block(asset)
+    out += _icons_block(asset)
     if "footer" in blocks:
         out += [blocks.pop("footer"), ""]
     out += ["---", "",

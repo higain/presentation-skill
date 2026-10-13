@@ -28,13 +28,32 @@ class _Baseline:
     """
 
     def __init__(self, strings=(), bleeds=(), contrast=(), occlusion=(),
-                 collisions=(), footers=()):
+                 collisions=(), footers=(), by_design=None):
         self.strings = set(strings)
+        # The same wording, per template slide -- which is per design, since
+        # design N is template slide N.  See ``leftover_strings``.
+        self.by_design = {int(k): set(v) for k, v in (by_design or {}).items()}
         self.bleeds = set(bleeds)
         self.contrast = set(contrast)
         self.occlusion = set(occlusion)
         self.collisions = set(collisions)
         self.footers = set(footers)
+
+    def leftover_strings(self, design=None):
+        """The template wording a slide built on ``design`` can still carry.
+
+        Only its own design's.  Text a build drew itself is content, even when
+        another design happens to hold the same word: one run drew a phase bar
+        ("Design", "Testen", "Bereitstellen") on 28 canvas slides, the words
+        were the sample labels of an unrelated design 18, and 112 findings --
+        each one an allowlist entry -- buried the report.  A label the slide's
+        own design ships is still caught, and that is the defect this check
+        exists for.  No recorded design (a deck edited, not built) falls back
+        to the whole template.
+        """
+        if design is None or design not in self.by_design:
+            return self.strings
+        return self.by_design[design]
 
 
 def _collision_key(reason):
@@ -88,6 +107,7 @@ def _baseline_load(cache_file):
             occlusion={(o[0], o[1]) for o in d["occlusion"]},
             collisions={frozenset(c) for c in d["collisions"]},
             footers=d.get("footers", ()),
+            by_design=d["by_design"],
         )
     except (OSError, ValueError, KeyError, TypeError, IndexError):
         return None                         # a cache we cannot read is a miss
@@ -106,6 +126,8 @@ def _baseline_save(cache_file, base):
             "occlusion": [list(o) for o in base.occlusion],
             "collisions": [sorted(c) for c in base.collisions],
             "footers": sorted(base.footers),
+            "by_design": {str(k): sorted(v)
+                          for k, v in base.by_design.items()},
         }))
         tmp.replace(cache_file)
     except OSError:
@@ -134,11 +156,13 @@ def _template_baseline(path):
     doc = load_document(path, read_only=True)
     try:
         strings, contrast, occlusion, collisions = set(), set(), set(), set()
-        footers = set()
-        for page in slides(doc):
+        footers, by_design = set(), {}
+        for number, page in enumerate(slides(doc), start=1):
+            own = by_design.setdefault(number, set())
             for _, text in _page_texts(page):
                 if len(text) >= MIN_LEFTOVER and any(c.isalpha() for c in text):
                     strings.add(text)
+                    own.add(text)
             foot = footer_text(page)
             if foot.strip():
                 footers.add(foot.strip())
@@ -150,7 +174,7 @@ def _template_baseline(path):
         doc.close(False)
 
     base = _Baseline(strings, offslide_baseline(path), contrast, occlusion,
-                     collisions, footers)
+                     collisions, footers, by_design)
     if cache_file is not None:
         _baseline_save(cache_file, base)
     return base

@@ -45,13 +45,18 @@ They report what a reader would see as broken and nothing else:
 - **a shape drawn past the edge of the slide**;
 - **a title the user approved that reached no slide** — only when a `plan.md` sits beside the deck. See below;
 - wording still shared with the template, and leftover placeholders — down to
-  six characters, and collapsed to one line naming every slide it is on. The
+  six characters, one line per slide it is on. The
   threshold used to be twenty-five, on the theory that only a body paragraph
   could be a real leftover; two runs against a corporate template shipped a
   15-character label off its canvas design on 13 of 15 and 9 of 10
   slides, in German, on finished English decks, and both reports said clean.
   A design's short labels are retext keys like any other — the catalog lists
-  them;
+  them. **Only the slide's own design counts**: a word you drew yourself is
+  content even when another design of the template happens to carry it. A
+  phase bar drawn on 28 canvas slides ("Design", "Testen", "Bereitstellen" —
+  the sample labels of an unrelated design) once produced 112 findings, every
+  one allowlisted; it now produces none. A deck edited rather than built has
+  no recorded designs and is compared against the whole template;
 - **a picture still on the slide that came from the template** — `retext`
   replaces words and never pictures, so a design's stock photo and its process
   diagram survive a deck that reports clean on text, still in the template's

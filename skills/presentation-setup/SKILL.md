@@ -213,7 +213,23 @@ python3 $SETUP/scripts/name_designs.py $SKILL/templates/acme/catalog --import
 ```
 
 A design left blank still builds; the decision table just never picks it for
-the right reason, and the import says which ones. Assemble:
+the right reason, and the import says which ones.
+
+Collect the template's own icons — the pictograms its designs use, usually
+from Office's icon library — into the pack, so decks can place them with
+`D.icon` instead of drawing their own:
+
+```bash
+python3 $SETUP/scripts/harvest_icons.py acme                     # from the template
+python3 $SETUP/scripts/harvest_icons.py acme --from deck.pptx    # and a finished deck
+```
+
+It keeps small, square SVG pictures only and names them from Office's icon
+id or the alt text. **Show the user the list it prints**: an icon it could not
+name is `icon-<slide>-<n>` and gets a real name (and keywords) in
+`templates/acme/icons/index.json`; re-running keeps those edits. Beyond the
+brand's own, builds fall back to Bootstrap Icons if `bootstrap-icons` is
+installed (apt) — the script says whether it is. Assemble:
 
 ```bash
 python3 $SKILL/scripts/catalog_build.py $SKILL/templates/acme/catalog
