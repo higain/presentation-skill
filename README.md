@@ -26,13 +26,27 @@ soffice --version        # 25.2 or newer
 ```
 
 The two font packages are optional but make the overflow check trustworthy
-for Calibri and Cambria. LibreOffice and the generated build scripts run
-without network, inside a network namespace made by `unshare` (util-linux,
-always installed) or `bubblewrap`: an untrusted deck cannot make anything fetch
-the URLs it links to. That needs unprivileged user namespaces, which Debian
-enables by default; where they are off, a warning says so and decks that link
-remote resources are refused. Run the scripts with the system `python3`: a
-virtualenv or conda interpreter cannot see `python3-uno`.
+for Calibri and Cambria. A company template set in its own typeface needs that
+font installed too, or LibreOffice substitutes another and every text
+measurement is off.
+
+LibreOffice and the generated build scripts run without network, inside a
+network namespace made by `unshare` (util-linux 2.38 or newer, installed on
+every Debian 12+) or, where `unshare` cannot be used, `bubblewrap`:
+
+```bash
+sudo apt install bubblewrap   # only if unshare is unavailable, e.g. in some containers
+```
+
+An untrusted deck cannot make anything fetch the URLs it links to. That needs
+unprivileged user namespaces, which Debian enables by default; where they are
+off, a warning says so and decks that link remote resources are refused. Run
+the scripts with the system `python3`: a virtualenv or conda interpreter
+cannot see `python3-uno`.
+
+Icons need nothing extra: `D.icon` uses the template pack's own icons and the
+293 Element Plus icons shipped in `skills/presentation/icons/ep/` (MIT).
+Optionally, `sudo apt install bootstrap-icons` adds about 2000 more (MIT).
 
 An optional vision-agent adds the visual half of QA: the build agent delegates
 the rendered slides to it and writes its per-slide verdicts. It is never
