@@ -504,8 +504,9 @@ def _icons_block(asset):
             "  # white icon in a filled circle",
             "```", "",
             "Prefer these. For anything else `scripts/icons.py search <word>` "
-            "searches the installed set (Bootstrap Icons, "
-            "`apt install bootstrap-icons`) in English. Every icon is drawn in "
+            "searches, in English, the Element Plus set the skill ships "
+            "(`ep`, 293) and Bootstrap Icons if installed; `\"ep:lock\"` "
+            "picks a set by name. Every icon is drawn in "
             "one palette colour. **Never build an icon out of rectangles and "
             "lines, and never use a Unicode symbol or emoji as one.**", ""]
     return out

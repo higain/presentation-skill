@@ -113,7 +113,8 @@ build_deck("acme", "out.pptx", [4, 2], fill=fill,
   sizes by role (`role="body"`). Never hardcode millimetre offsets or hex.
   Details: `references/drawing.md`.
 - **Icons with `D.icon(doc, page, box, "name")`** — the pack's own (listed in
-  `catalog.md`, *Icons*) first; `scripts/icons.py search <word>` finds more.
+  `catalog.md`, *Icons*) first; `scripts/icons.py search <word>` finds more
+  in the shipped Element Plus set (`"ep:name"`).
   Never build an icon from rectangles and lines or use a Unicode symbol.
 - Never reopen the finished file to add more; everything happens in `fill`.
 

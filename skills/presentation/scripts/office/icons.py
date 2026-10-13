@@ -13,8 +13,13 @@ Where an icon comes from, first match wins:
    pictograms and the only ones guaranteed to match its style.
 2. **``$PRESENTATION_ICONS``** -- extra directories of ``.svg`` files,
    ``os.pathsep``-separated: an icon set the company licenses.
-3. **Bootstrap Icons** -- ``apt install bootstrap-icons``, MIT, about 2000
-   monochrome SVGs under ``/usr/share/bootstrap-icons/svg``.
+3. **Element Plus** (``ep``) -- 293 monochrome icons, MIT, shipped with the
+   skill in ``icons/ep/`` (licence beside them).  Always there.
+4. **Bootstrap Icons** -- ``apt install bootstrap-icons``, MIT, about 2000
+   monochrome SVGs under ``/usr/share/bootstrap-icons/svg``, if installed.
+
+``"ep:lock"`` or ``"bootstrap:lock"`` picks a set explicitly; a bare name
+takes the first set that has it.
 
 Every icon is drawn in **one palette colour**: the SVG's fills and strokes are
 rewritten to it, so an icon is never in a colour the brand does not use.  An
@@ -39,12 +44,17 @@ ICON_DIRNAME = "icons"
 INDEX_NAME = "index.json"
 EXTRA_ENV = "PRESENTATION_ICONS"
 
+#: Sets shipped inside the skill, by label.
+BUNDLED_SETS = (
+    ("ep", Path(__file__).resolve().parent.parent.parent / "icons" / "ep"),
+)
+
 #: Installed icon sets, by label.  Debian paths; missing ones are skipped.
 SYSTEM_SETS = (
     ("bootstrap", Path("/usr/share/bootstrap-icons/svg")),
 )
 
-INSTALL_HINT = ("No icon set is installed besides the pack's own: "
+INSTALL_HINT = ("Bootstrap Icons are not installed: "
                 "`sudo apt install bootstrap-icons` adds about 2000 (MIT).")
 
 
@@ -77,39 +87,52 @@ def sources(pack=None):
                               .split(os.pathsep) if p):
         if Path(extra).is_dir():
             out.append((f"extra{i + 1}" if i else "extra", Path(extra)))
-    for label, folder in SYSTEM_SETS:
+    for label, folder in BUNDLED_SETS + SYSTEM_SETS:
         if folder.is_dir():
             out.append((label, folder))
     return out
 
 
-def catalog(pack=None):
+def catalog(pack=None, every=False):
     """``{name: (label, path, entry)}`` -- every icon reachable, first wins.
 
     ``entry`` is the pack index entry (keywords, ``mono``) or ``{}``.
+    ``every=True`` adds each icon under ``"label:name"`` as well, so a name
+    another set shadows can still be reached.
     """
     out = {}
+
+    def put(name, value):
+        out.setdefault(name, value)
+        if every:
+            out[f"{value[0]}:{name}"] = value
+
     index = pack_index(pack)
     for label, folder in sources(pack):
         if label == "pack":
             for name, entry in sorted(index.items()):
                 path = folder / entry.get("file", f"{name}.svg")
                 if path.is_file():
-                    out.setdefault(name, (label, path, entry))
+                    put(name, (label, path, entry))
             continue
         for path in sorted(folder.glob("*.svg")):
-            out.setdefault(path.stem, (label, path, {}))
+            put(path.stem, (label, path, {}))
     return out
 
 
 def search(query, pack=None, limit=40):
     """Icons whose name or keywords contain every word of ``query``.
 
-    Pack icons first: they are the brand's.
+    Pack icons first: they are the brand's.  An icon another set shadows is
+    listed too, with its set: ``("lock", "ep")`` is placed as ``"ep:lock"``.
     """
     words = [w for w in re.split(r"[\s,]+", query.lower()) if w]
-    hits = []
-    for name, (label, path, entry) in catalog(pack).items():
+    hits, seen = [], set()
+    for key, (label, path, entry) in catalog(pack, every=True).items():
+        name = key.split(":", 1)[-1]
+        if (name, label) in seen:
+            continue
+        seen.add((name, label))
         hay = " ".join([name, *entry.get("keywords", ())]).lower()
         if all(w in hay for w in words):
             hits.append((label != "pack", len(name), name, label))
@@ -118,9 +141,10 @@ def search(query, pack=None, limit=40):
 
 def find(name, pack=None):
     """``(label, path, entry)`` for ``name``; raises with suggestions."""
-    found = catalog(pack)
+    found = catalog(pack, every=":" in name)
     if name in found:
         return found[name]
+    found = catalog(pack)
     close = difflib.get_close_matches(name, list(found), n=8, cutoff=0.6)
     partial = [n for n, _ in search(name.replace("-", " "), pack, limit=8)]
     suggest = list(dict.fromkeys(close + partial))[:10]
@@ -131,8 +155,8 @@ def find(name, pack=None):
            ("Close: " + ", ".join(suggest)) if suggest else "Nothing close.",
            ", ".join(labels) or "none",
            "Find one with `scripts/icons.py search <word>` -- English words, "
-           "names like 'shield-lock', 'cup-hot', 'people'."
-           + ("" if any(l != "pack" for l in labels) else "\n  " + INSTALL_HINT)))
+           "names like 'lock', 'coffee-cup', 'user'."
+           + ("" if "bootstrap" in labels else "\n  " + INSTALL_HINT)))
 
 
 # --------------------------------------------------------------------------

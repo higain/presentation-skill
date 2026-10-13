@@ -228,8 +228,8 @@ It keeps small, square SVG pictures only and names them from Office's icon
 id or the alt text. **Show the user the list it prints**: an icon it could not
 name is `icon-<slide>-<n>` and gets a real name (and keywords) in
 `templates/acme/icons/index.json`; re-running keeps those edits. Beyond the
-brand's own, builds fall back to Bootstrap Icons if `bootstrap-icons` is
-installed (apt) — the script says whether it is. Assemble:
+brand's own, builds fall back to the Element Plus set the skill ships and to
+Bootstrap Icons if `bootstrap-icons` is installed (apt). Assemble:
 
 ```bash
 python3 $SKILL/scripts/catalog_build.py $SKILL/templates/acme/catalog

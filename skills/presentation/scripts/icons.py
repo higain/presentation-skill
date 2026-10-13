@@ -6,7 +6,8 @@
     scripts/icons.py sets                     # which icon sets are installed
 
 Pack icons are listed first: they are the brand's own.  Search in English --
-the installed set names its icons 'shield-lock', 'cup-hot', 'people'.
+names like 'lock', 'coffee-cup', 'user'.  A shadowed name is reachable as
+'ep:lock' or 'bootstrap:lock'.
 """
 
 import argparse
@@ -32,7 +33,7 @@ def main():
             count = (len(icons.pack_index(pack)) if label == "pack"
                      else len(list(folder.glob("*.svg"))))
             print(f"{label:10} {count:5}  {folder}")
-        if not any(l != "pack" for l, _ in icons.sources(pack)):
+        if not any(l == "bootstrap" for l, _ in icons.sources(pack)):
             print(icons.INSTALL_HINT)
         return 0
     if args.command == "list":
@@ -47,10 +48,11 @@ def main():
         ap.error("search needs a word")
     hits = icons.search(" ".join(args.words), pack)
     for name, label in hits:
-        print(f"{name:32} {label}")
+        print(f"{name:32} {label}   (\"{label}:{name}\")" if label != "pack"
+              else f"{name:32} {label}")
     if not hits:
         print("nothing found -- try a broader English word")
-    if not any(l != "pack" for l, _ in icons.sources(pack)):
+    if not hits and not any(l == "bootstrap" for l, _ in icons.sources(pack)):
         print(icons.INSTALL_HINT)
     return 0
 

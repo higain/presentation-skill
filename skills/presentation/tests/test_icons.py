@@ -95,6 +95,9 @@ class LookupTest(unittest.TestCase):
         system = mock.patch.object(icons, "SYSTEM_SETS", ())
         system.start()
         self.addCleanup(system.stop)
+        bundled = mock.patch.object(icons, "BUNDLED_SETS", ())
+        bundled.start()
+        self.addCleanup(bundled.stop)
 
     def test_the_pack_wins_over_an_installed_set(self):
         label, path, entry = icons.find("cup", self.pack)
@@ -117,6 +120,37 @@ class LookupTest(unittest.TestCase):
             with self.assertRaises(ValueError) as caught:
                 icons.find("nothing-like-it", self.pack)
         self.assertIn("apt install bootstrap-icons", str(caught.exception))
+
+
+class BundledSetTest(unittest.TestCase):
+    """The Element Plus icons ship with the skill and must stay usable."""
+
+    FOLDER = SKILL / "icons" / "ep"
+
+    def test_the_set_and_its_licence_are_there(self):
+        self.assertGreaterEqual(len(list(self.FOLDER.glob("*.svg"))), 290)
+        self.assertIn("Element Plus", (self.FOLDER / "LICENSE").read_text())
+        self.assertIn("Element Plus",
+                      (SKILL / "THIRD-PARTY.md").read_text())
+
+    def test_every_icon_is_inert_and_one_colour(self):
+        for path in self.FOLDER.glob("*.svg"):
+            svg = path.read_text()
+            self.assertNotRegex(svg, r"(?i)<script|href|\son\w+=", path.name)
+            self.assertLessEqual(len(icons.colours(svg)), 1, path.name)
+
+    def test_a_set_prefix_reaches_an_icon_the_pack_shadows(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        folder = tmp / "acme" / "icons"
+        folder.mkdir(parents=True)
+        (folder / "lock.svg").write_text(OFFICE_ICON)
+        (folder / "index.json").write_text(
+            json.dumps({"icons": {"lock": {"file": "lock.svg"}}}))
+        pack = Pack(tmp / "acme")
+        self.assertEqual(icons.find("lock", pack)[0], "pack")
+        self.assertEqual(icons.find("ep:lock", pack)[0], "ep")
+        self.assertIn(("lock", "ep"), icons.search("lock", pack))
 
 
 class HarvestTest(unittest.TestCase):
