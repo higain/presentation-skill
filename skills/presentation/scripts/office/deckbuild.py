@@ -32,6 +32,7 @@ import shutil
 import sys
 import traceback
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from .pack import (
@@ -302,6 +303,33 @@ def _bridge_lost(exc) -> bool:
             or "disposed" in str(exc).lower())
 
 
+def _annotate(exc, note):
+    """Attach ``note`` to ``exc`` without risking losing the exception.
+
+    Python 3.11+ implements ``BaseException.add_note`` by assigning
+    ``__notes__``, which goes through ``__setattr__``.  uno.py's exception
+    structs override ``__setattr__`` and forward it into the UNO object, so on
+    every UNO bridge exception ``add_note`` raises ``AttributeError: __notes__``
+    *inside the except handler*.  The build then reports that instead of the
+    real error, and ``_bridge_lost`` never sees the ``DisposedException`` that
+    says LibreOffice has gone -- every remaining slide prints a misleading
+    per-slide failure.  Best effort: keep the original exception at all costs.
+    """
+    try:
+        exc.add_note(note)
+    except Exception:
+        pass
+
+
+@contextmanager
+def _suppress():
+    """Context manager that swallows whatever happens inside it."""
+    try:
+        yield
+    except Exception:
+        pass
+
+
 def _fill_all(fill, doc, made, designs, numbers=None):
     """Call ``fill`` on every slide, and report *every* slide that raised.
 
@@ -318,6 +346,13 @@ def _fill_all(fill, doc, made, designs, numbers=None):
             _call_fill(fill, doc, page, slot, designs[slot])
         except Exception as exc:
             if _bridge_lost(exc):
+                print(f"\n[build_deck] slide {number}: the UNO bridge is gone "
+                      f"({type(exc).__name__}) -- LibreOffice itself died "
+                      f"earlier, mid-call.  The traceback above shows where "
+                      f"the dead bridge was noticed, not what killed soffice; "
+                      f"the crash signature is in soffice's stderr "
+                      f"(soffice-stderr-*.log, kept on abnormal exit).",
+                      file=sys.stderr)
                 raise
             print(f"\n[build_deck] slide {number} (design {designs[slot]}) "
                   f"failed:", file=sys.stderr)
@@ -448,10 +483,50 @@ def build_deck(template, out, designs, fill=None, qa=True,
     return out
 
 
+def _undo_lock(doc):
+    """Lock the document's undo stack for the whole mutation phase.
+
+    Every shape a slide builds -- create, retext, char-colour, resize, delete,
+    and the ``duplicate_slide`` + ``delete_slide`` dance up front -- registers
+    an undo action that keeps references to the shape models it touched.  A
+    58-slide, ~2400-shape deck therefore carries up to ``UndoCount`` actions
+    (default 50) that pin disposed slide objects; on top of the memory, an
+    undo stack full of references to removed slides is the classic vector for
+    the ``soffice.bin`` crashes this build was intermittently dying on.
+
+    ``lock()`` makes every attempt to record an undo action, or to open or
+    close an undo context, a silent no-op (``XLockable`` on ``XUndoManager``).
+    Returns a release callable that clears the stacks and lifts the lock, or
+    ``None`` when the document has no undo manager -- every Impress/Draw
+    document here has one, but no-op-ing earns the check.  Best effort
+    throughout: an undo manager that will not lock never stops the build.
+    """
+    try:
+        undo = doc.getUndoManager()
+    except Exception:
+        return None
+    if undo is None:
+        return None
+    with _suppress():
+        undo.lock()
+
+    def release():
+        # clear() while still locked, so a stray context in the middle of the
+        # clear cannot re-arm the lock, then lift it: the save and close that
+        # follow run in a normal, unlocked state.
+        with _suppress():
+            undo.clear()
+        with _suppress():
+            undo.unlock()
+
+    return release
+
+
 def _build(template: Path, out: Path, designs, fill, footer=KEEP,
            numbers=None) -> None:
     """The body of :func:`build_deck`, on an ``out`` that already exists."""
     doc = load_document(out, read_only=False)
+    release_undo = _undo_lock(doc)
     try:
         pages = slides(doc)
         for design in designs:
@@ -496,6 +571,8 @@ def _build(template: Path, out: Path, designs, fill, footer=KEEP,
         _record_designs(doc, designs)
         save_as(doc, out)
     finally:
+        if release_undo is not None:
+            release_undo()
         doc.close(False)
 
     reorder_pptx(out, order)
@@ -725,7 +802,7 @@ def build_parts(template, out, directory="slides", qa=True,
         try:
             module.fill(doc, page)
         except Exception as exc:
-            exc.add_note(f"in {path}")
+            _annotate(exc, f"in {path}")
             raise
 
     numbers = [number for number, _, _ in parts]

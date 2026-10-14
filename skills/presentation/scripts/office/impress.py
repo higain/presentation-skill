@@ -26,6 +26,14 @@ shifts every shape you place on a template that is a fifth wider.
 
 One headless LibreOffice is started on first use and shut down when the process
 ends, so many documents in one script cost one startup.
+
+**Crash capture.**  soffice's stderr -- where ``soffice.bin`` prints "Fatal
+exception: Signal 6", glibc ``corrupted``/``assert`` lines and the stack before
+aborting -- is written to ``soffice.stderr.log`` inside the profile.  When
+soffice does not exit cleanly, that file is copied to
+``./soffice-stderr-<profile>.log`` before the profile is deleted, so a build
+that dies mid-call leaves the real crash signature instead of only the UNO
+bridge "disposed during call" errors.
 """
 
 import atexit
@@ -156,6 +164,8 @@ class _Server:
         self.proc = None
         self.ctx = None
         self.profile = None
+        self._stderr_fh = None
+        self._stderr_log = None
 
     def desktop(self, timeout: float = 60.0):
         if self.ctx is not None and not self._alive():
@@ -195,6 +205,18 @@ class _Server:
         # Its own session, so the whole tree -- the soffice wrapper script,
         # oosplash, soffice.bin -- can be killed as a group.  Killing only the
         # child we spawned leaves soffice.bin running, reparented to init.
+        # soffice.bin's stderr is where a crash says so -- "Fatal exception:
+        # Signal 6", glibc ``corrupted``/``assert`` lines, the stack.  It used
+        # to be thrown away (DEVNULL), which is why a dying build looked like
+        # "the real crash site is invisible": Python only ever sees the URP
+        # bridge go away, and the traceback lands on the *next* trivial call.
+        # Collect stderr in the profile as it happens; _archive_stderr() then
+        # copies it out whenever soffice did not exit cleanly, so a build that
+        # dies at slide 45 leaves the crash signature behind instead of a
+        # handful of DisposedExceptions.
+        stderr_log = Path(self.profile) / "soffice.stderr.log"
+        self._stderr_fh = stderr_log.open("ab")
+        self._stderr_log = stderr_log
         self.proc = subprocess.Popen(
             isolated([
                 exe,
@@ -209,7 +231,7 @@ class _Server:
             ]),
             env=get_soffice_env(),
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=self._stderr_fh,
             start_new_session=True,
         )
         atexit.register(self.stop)
@@ -252,10 +274,38 @@ class _Server:
                 _kill_tree(self.proc)
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     self.proc.wait(timeout=10)
-            self.proc = None
+        self._archive_stderr()
+        self.proc = None
         if self.profile:
             shutil.rmtree(self.profile, ignore_errors=True)
             self.profile = None
+
+    def _archive_stderr(self):
+        """Keep soffice's stderr when it did not exit cleanly.
+
+        A clean ``Desktop.terminate()`` leaves nothing worth keeping.  A
+        process that died mid-call -- crash, abort, outside kill -- is exactly
+        the build mystery the stderr log exists to solve, so it is copied out
+        of the (soon-to-be-deleted) profile as ``soffice-stderr-<profile>.log``
+        in the current directory before the profile goes away.
+        """
+        if self._stderr_fh is not None:
+            with contextlib.suppress(Exception):
+                self._stderr_fh.close()
+            self._stderr_fh = None
+        log, self._stderr_log = self._stderr_log, None
+        if log is None or not log.exists() or log.stat().st_size == 0:
+            return
+        rc = self.proc.returncode if self.proc is not None else None
+        if rc == 0:                       # clean exit: warnings only, drop
+            return
+        dest = Path.cwd() / f"soffice-stderr-{log.parent.name}.log"
+        try:
+            shutil.copy2(log, dest)
+        except OSError:
+            return
+        print(f"[impress] soffice exited abnormally ({rc}); its stderr was "
+              f"captured in {dest}", file=sys.stderr)
 
 
 _SERVER = _Server()
