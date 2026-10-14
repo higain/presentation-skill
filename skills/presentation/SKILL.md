@@ -229,7 +229,7 @@ reason. Tell the user about every entry you add. A `vision` entry also needs
 |---|---|
 | `scripts/make_deck.py build.py deck.pptx --template acme` | Build, QA, schema-check, render; writes `<deck>-report.md` and `render/`. `--build-only` for the fast loop, `--require-verdicts` for the final gate |
 | `scripts/vision_brief.py slides\|collect deck.pptx` | One tested vision-agent brief per render; `collect` reads the answers into the report |
-| `scripts/make_deck.py build.py deck.pptx --parts 7-9` | A `build_parts` deck: build and check only those slides, into `<deck>-parts-7_9.pptx` |
+| `scripts/make_deck.py build.py deck.pptx --parts 7-9 --template acme` | A `build_parts` deck: build and check only those slides, into `<deck>-parts-7_9.pptx` |
 | `scripts/split_source.py source.md --out spec/` | A long source as one file per slide, plus `_shared.md` and `index.md` |
 | `scripts/api_ref.py [draw]` | Every build function with its signature (`references/api.md`) |
 | `scripts/probe.py deck.pptx [--slides 4,7-9]` | Every shape's index, position, size, colours and fonts |

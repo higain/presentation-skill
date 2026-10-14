@@ -77,11 +77,13 @@ def fill(doc, page):
 `page.Visible = False` hides a slide. Check your examples:
 
 ```bash
-scripts/make_deck.py build.py deck.pptx --parts 1-2
+scripts/make_deck.py build.py deck.pptx --parts 1-2 --template acme
 ```
 
 `--parts` builds only those slides into `deck-parts-1_2.pptx` beside the
-deck and checks them. The deck itself is never touched. Fix the helpers until
+deck and checks them. The deck itself is never touched. Always pass
+`--template`: without it the check cannot tell the template's own shapes
+from yours, and reports white text on a blue band as white on white. Fix the helpers until
 these slides are clean: from here on every builder copies them.
 
 Keep this step short: two or three examples, not one of every kind. A finding
@@ -141,7 +143,7 @@ that is missing, write it in your own file and name it in your report.
 
 Check your slides until the command exits 0, with a timeout of at least
 five minutes:
-  python3 {SKILL}/scripts/make_deck.py {DECK_DIR}/build.py {DECK_DIR}/{DECK} --parts {FIRST}-{LAST}
+  python3 {SKILL}/scripts/make_deck.py {DECK_DIR}/build.py {DECK_DIR}/{DECK} --parts {FIRST}-{LAST} --template {PACK_NAME}
 Every finding it prints for your slides is yours to fix. You cannot see
 images: do not describe how a slide looks.
 
