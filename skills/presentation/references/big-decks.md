@@ -139,7 +139,10 @@ Do not paste code.
 
 ## Keeping your own context small
 
-- Run commands with `| tail -40`; a 58-slide build prints a lot.
+- A 58-slide build prints a lot. Send it to a file and keep the exit code,
+  `... > build.log 2>&1; echo "exit $?"`, then read the end of `build.log`.
+  Never pipe it into `grep`, `head` or `tail`: the pipe reports exit 0 for a
+  build that failed, and a filter drops the error.
 - Look up a function in `references/api.md` or with `scripts/api_ref.py draw`
   instead of reading the skill's source with `sed`.
 - Never wrap a slide's code in `try/except: pass` to make a build go through.

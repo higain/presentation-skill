@@ -583,7 +583,11 @@ def main():
     if script is not None:
         code = _run_script(script, args.parts)
         if code != 0:
-            print(f"Build failed (exit {code}) — nothing to check.", file=sys.stderr)
+            kept = (f" {deck.name} on disk is the previous build, not this "
+                    f"one." if deck.exists() and not args.parts else "")
+            print(f"Build FAILED (exit {code}) — nothing to check.{kept} Fix "
+                  f"the error above and run this again; the deck is not done.",
+                  file=sys.stderr)
             return 1
     if not deck.exists():
         hint = (" -- --parts works only with a build.py that calls "
@@ -676,7 +680,9 @@ def main():
                    % ("" if len(result.sparse) == 1 else "s",
                       ", ".join(str(n) for n, _ in result.sparse))
                    if result.sparse else "")
-                + " A blank verdict is a slide nobody has looked at."
+                + " A blank verdict is a slide nobody has looked at. The deck "
+                f"is done only once `make_deck.py {deck} --require-verdicts` "
+                "passes."
             )
         else:
             print(

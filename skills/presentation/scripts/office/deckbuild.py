@@ -423,23 +423,33 @@ def build_deck(template, out, designs, fill=None, qa=True,
     # Before the copy: a lock someone else holds means the file is open, and
     # overwriting it under them is not ours to do.  A stale one goes.
     check_lock(out)
-    shutil.copyfile(template, out)
+    # Built beside the deck and moved over it only once it is whole.  A build
+    # that dies part-way leaves a copy of the template -- every design in it,
+    # none of your content -- and that must never sit at ``out``, where it looks
+    # like a built deck.  It used to be deleted from there, which also deleted
+    # the last good build: a field run's final rebuild died after ten seconds
+    # and left no deck at all.  Now a failure leaves the previous deck as it was.
+    stage = out.with_name(f".{out.stem}.building{out.suffix}")
+    shutil.copyfile(template, stage)
     try:
         # Everything drawn inside `fill` resolves its colours and type sizes
         # against *this* template, not against whatever pack is installed.
         with active(template):
-            return _build(template, out, designs, fill, qa, footer, _numbers)
+            _build(template, stage, designs, fill, footer, _numbers)
+        os.replace(stage, out)
     except BaseException:
-        # The output at this point is a copy of the template -- every design in
-        # it, none of your content.  Left on disk it looks like a built deck,
-        # and the next command to touch it (a bare make_deck.py, a QA run, a
-        # human opening it) is looking at the template and does not know.
-        out.unlink(missing_ok=True)
+        stage.unlink(missing_ok=True)
+        if out.exists():
+            print(f"[build_deck] build FAILED: {out.name} is the previous "
+                  f"build, unchanged -- not this one.", file=sys.stderr)
         raise
+    if qa and not os.environ.get(SKIP_QA_ENV):
+        _report_qa(out, template)
+    return out
 
 
-def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP,
-           numbers=None) -> Path:
+def _build(template: Path, out: Path, designs, fill, footer=KEEP,
+           numbers=None) -> None:
     """The body of :func:`build_deck`, on an ``out`` that already exists."""
     doc = load_document(out, read_only=False)
     try:
@@ -492,9 +502,6 @@ def _build(template: Path, out: Path, designs, fill, qa, footer=KEEP,
     # After the save, because it repairs what the save damaged.
     for line in repair_theme_colours(template, out):
         print(f"[build_deck] {line}")
-    if qa and not os.environ.get(SKIP_QA_ENV):
-        _report_qa(out, template)
-    return out
 
 
 def _record_designs(doc, designs):

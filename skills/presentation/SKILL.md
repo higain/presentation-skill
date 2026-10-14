@@ -133,6 +133,12 @@ scripts/make_deck.py build.py out.pptx --build-only               # fix build er
 scripts/make_deck.py build.py out.pptx --template acme            # the gate: QA, schema, renders
 ```
 
+Never pipe the output into `grep`, `head` or `tail`: its last lines say
+whether the build worked, and a pipe reports exit 0 when it did not. Too long
+to read? `... > build.log 2>&1; echo "exit $?"`, then read the end of the
+log. A failed build leaves the previous deck in place, so a file on disk
+proves nothing.
+
 The gate writes `out-report.md` and `render/` beside the deck and exits 1 on
 any finding. **Fix every finding in `build.py` and run the gate again** until
 it is clean. Leftover template text, a missing title, text off the slide,
@@ -190,7 +196,9 @@ scripts/make_deck.py out.pptx --require-verdicts
 It only reads the report and the saved answers, and exits 1 while any slide
 lacks an answer with its review code, an answer still holds a medium or high
 finding, an overrule awaits the user's approval, or the report belongs to an
-earlier build. The deck is done when this passes; tell the user every
+earlier build. The deck is done when this passes, and not before: never tell
+the user it is built, done or finished until it has printed
+`All N slide(s) seen by the vision-agent` for this build. Tell the user every
 approved overrule it prints.
 No vision-agent available? Run `scripts/wireframe.py render/`, tell the user
 which slides nothing with eyes has seen, and ask the user to look at them: a
