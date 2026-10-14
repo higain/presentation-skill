@@ -31,6 +31,8 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
+from office.slots import acquire as acquire_slot
+
 SOFFICE_MISSING = (
     "soffice not found on PATH; LibreOffice is required "
     "(apt install libreoffice-impress python3-uno)"
@@ -151,6 +153,7 @@ def run_soffice(args: Iterable[str], timeout: int = 120, **kwargs) -> subprocess
     non-root or concurrent run aborts with "User installation could not be
     completed" and converts nothing.
     """
+    acquire_slot()
     args = [str(a) for a in args]
     with contextlib.ExitStack() as stack:
         if not any(a.startswith("-env:UserInstallation") for a in args):

@@ -66,6 +66,7 @@ from office.deckbuild import (PARTS_ENV, SKIP_QA_ENV,  # noqa: E402
 from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402
                             SofficeError, parse_slide_spec, shutdown)
 from office.soffice import isolated  # noqa: E402
+from office.slots import acquire as acquire_slot  # noqa: E402
 from office.qa import QAResult, check, summary, validate_pptx  # noqa: E402
 from office import review  # noqa: E402
 from office.qa.allowlist import AllowlistError, vision_overrules  # noqa: E402
@@ -580,6 +581,9 @@ def main():
               f"# if your shell cut it off anyway, read those two paths "
               f"rather than building again.\n", flush=True)
 
+    # One slot for the whole run: the build, the checks and the renders
+    # inherit it rather than queueing behind each other.
+    acquire_slot()
     if script is not None:
         code = _run_script(script, args.parts)
         if code != 0:

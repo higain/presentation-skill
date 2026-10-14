@@ -84,12 +84,25 @@ scripts/make_deck.py build.py deck.pptx --parts 1-2
 deck and checks them. The deck itself is never touched. Fix the helpers until
 these slides are clean: from here on every builder copies them.
 
+Keep this step short: two or three examples, not one of every kind. A finding
+you think the check gets wrong for this template is not yours to debug: do
+not read the engine's source or test its measurements. Note the finding and
+why you doubt it, and move on; the user decides at the end. A field run spent
+forty minutes of an hour probing the QA code from here.
+
 **4. Brief the builders.** Use a general-purpose subagent (opencode:
 `general`; Claude Code: `general-purpose`), not the vision-agent. Give each
-one 4 to 6 consecutive slides, and start as many in parallel as your tool
-allows. Parallel builds are safe: each runs its own LibreOffice and writes
-its own preview file. Send the brief below with the placeholders filled in.
-Keep their reports, not their code: you do not need to read the slide files.
+one 8 to 10 consecutive slides, and **run at most three at a time**, fewer
+if the user says so. Start the next builder when one reports, not before.
+Every builder runs its own LibreOffice and holds a connection to the model
+server: a field run started ten at once on a 4-core, 8 GB machine, and the
+machine went down with it. The skill also lets only a few LibreOffice runs
+go at once on a machine (`PRESENTATION_MAX_OFFICE`, by default half the
+cores, one per 3 GB of RAM); a build over that limit prints `[office]
+waiting` and waits its turn. More builders than that do not go faster.
+
+Send the brief below with the placeholders filled in. Keep their reports,
+not their code: you do not need to read the slide files.
 
 **5. Assemble and gate.** Run `scripts/make_deck.py build.py deck.pptx
 --template acme`, the full gate of `SKILL.md` step 5. If a part raises, the

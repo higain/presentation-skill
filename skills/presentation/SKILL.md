@@ -274,8 +274,10 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 - Geometry is 1/100 mm: use `mm()`/`pt()`. Values read back (`area.y`,
   `probe.py` output) are already 1/100 mm — never wrap them in `mm()`.
 - `from com.sun.star... import` works only after `import uno`.
-- Each script starts its own headless LibreOffice; parallel runs are safe. Set
-  `PRESENTATION_TMPDIR` if `/tmp` is not writable.
+- Each script starts its own headless LibreOffice; parallel runs are safe,
+  but only a few run at once per machine (`PRESENTATION_MAX_OFFICE`); the
+  rest print `[office] waiting` and wait. Set `PRESENTATION_TMPDIR` if `/tmp`
+  is not writable.
 - **No network for LibreOffice or `build.py`.** Both run in their own network
   namespace (`unshare`, else `bwrap`), so a deck that links an image by URL
   cannot make anything fetch it, and a build script cannot send anything out.

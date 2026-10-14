@@ -54,6 +54,7 @@ except ImportError as exc:                      # pragma: no cover
     ) from exc
 
 from office.external import external_resources
+from office.slots import acquire as acquire_slot
 from office.soffice import (NETWORK_ENV, SOFFICE_MISSING, get_soffice_env,
                             isolated, isolation_prefix, pipe_name, profile_arg,
                             soffice_path, sweep_stale_profiles)
@@ -186,6 +187,7 @@ class _Server:
         except FileNotFoundError:
             raise SofficeError(SOFFICE_MISSING) from None
         sweep_stale_profiles()
+        acquire_slot()
         pipe = pipe_name()
         self.profile = tempfile.mkdtemp(prefix="lo-uno-profile-")
         _install_signal_handlers()
