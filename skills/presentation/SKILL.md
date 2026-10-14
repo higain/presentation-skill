@@ -9,8 +9,10 @@ license: Apache-2.0 (see LICENSE at the repository root; third-party notices in 
 
 The engine is LibreOffice Impress, driven over UNO: it opens the real file and
 saves it in its own format. **Every path below is relative to this skill's
-directory** (the one holding this file); scripts run directly
-(`scripts/dump.py deck.pptx`) or with `python3` in front.
+directory** (the one holding this file, as you were given it). Run a script by
+its full path, `python3 <skill dir>/scripts/dump.py deck.pptx`, from the user's
+folder, never `cd` into the skill and `scripts/...`: permission rules match the
+command as typed, and a relative path can stop the run at a prompt nobody sees.
 
 | Task | How |
 |---|---|

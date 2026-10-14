@@ -318,7 +318,7 @@ def validate_pptx(path, template=None):
     is left is yours.  It does not cover broken relationships or undeclared
     content types -- those are repaired at the source, in ``impress.save_as``.
     """
-    script = Path(__file__).resolve().parent.parent / "validate.py"
+    script = Path(__file__).absolute().parent.parent / "validate.py"
     cmd = [sys.executable, str(script), str(path)]
     if template and Path(template).suffix.lower() in PPTX_EXTS:
         cmd += ["--original", str(template)]

@@ -39,7 +39,7 @@ import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent))
 
 from probe import probe_data  # noqa: E402
 from office.impress import PRESENTATION_EXTS, SofficeError  # noqa: E402

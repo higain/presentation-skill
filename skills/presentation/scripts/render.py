@@ -26,7 +26,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent))
 
 from office.impress import PRESENTATION_EXTS, SofficeError, parse_slide_spec  # noqa: E402
 from office.rasterize import rasterize  # noqa: E402

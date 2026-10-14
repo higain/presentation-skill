@@ -30,7 +30,7 @@ from pathlib import Path
 # work here and nowhere else, which made ``office.validators`` unimportable
 # from a build script and gave two copies of one module to anything that
 # managed both spellings.)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent.parent))
 
 import office  # noqa: E402,F401  -- picks the writable temp dir for the unzip
 from office.helpers import OOXML_FAMILY, rezip, safe_extract  # noqa: E402

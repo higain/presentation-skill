@@ -88,7 +88,7 @@ def _baseline_key(path):
     h.update(Path(path).read_bytes())
     # Every engine module, not a hand-kept list: the baseline also depends on
     # draw.contrast_ratio and impress, and a list is how those were missed.
-    office = Path(__file__).resolve().parent.parent
+    office = Path(__file__).absolute().parent.parent
     for src in sorted(office.rglob("*.py")):
         try:
             h.update(src.read_bytes())

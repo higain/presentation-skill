@@ -39,7 +39,7 @@ def cache_path(deck) -> Path:
 
 def engine_key(template=None) -> str:
     """Hash of the QA code and the template: what every entry is valid for."""
-    here = Path(__file__).resolve().parent.parent
+    here = Path(__file__).absolute().parent.parent
     digest = hashlib.sha256()
     for pattern in _ENGINE:
         for path in sorted(here.glob(pattern)):

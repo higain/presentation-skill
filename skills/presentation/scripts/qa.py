@@ -57,7 +57,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent))
 
 from office.deckbuild import find_template  # noqa: E402
 from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402

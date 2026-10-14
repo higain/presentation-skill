@@ -211,7 +211,7 @@ def main():
 
     wanted = None
     if args.slides:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        sys.path.insert(0, str(Path(__file__).absolute().parent))
         from office.impress import parse_slide_spec
         try:
             wanted = set(parse_slide_spec(args.slides))

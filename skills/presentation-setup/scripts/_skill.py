@@ -13,11 +13,14 @@ has it, that is the whole prerequisite and the message says so.
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+# absolute(), not resolve(): installed skills are often symlinks, and a sandboxed
+# agent may not reach the target that paths in its tracebacks would then name.
+HERE = Path(__file__).absolute().parent.parent
 
 #: Where the presentation skill might be, most specific first.
 CANDIDATES = (
     HERE.parent / "presentation",                      # same skills/ directory
+    HERE.resolve().parent / "presentation",            # beside the symlink's target
     Path.home() / ".claude" / "skills" / "presentation",
     Path("/usr/share/claude/skills/presentation"),
 )

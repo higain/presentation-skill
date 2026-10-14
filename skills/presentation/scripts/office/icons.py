@@ -48,7 +48,7 @@ EXTRA_ENV = "PRESENTATION_ICONS"
 
 #: Sets shipped inside the skill, by label.
 BUNDLED_SETS = (
-    ("ep", Path(__file__).resolve().parent.parent.parent / "icons" / "ep"),
+    ("ep", Path(__file__).absolute().parent.parent.parent / "icons" / "ep"),
 )
 
 #: Installed icon sets, by label.  Debian paths; missing ones are skipped.

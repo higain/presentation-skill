@@ -58,7 +58,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).absolute().parent
 sys.path.insert(0, str(HERE))
 
 from office.deckbuild import (PARTS_ENV, SKIP_QA_ENV,  # noqa: E402

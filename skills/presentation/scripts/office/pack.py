@@ -34,8 +34,10 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 
-#: The skill root -- ``scripts/office/pack.py`` is three levels down.
-SKILL = Path(__file__).resolve().parent.parent.parent
+#: The skill root -- ``scripts/office/pack.py`` is three levels down.  Not
+#: resolve(): through a symlinked install the agent must keep seeing the path
+#: it was given, which its sandbox allows; the target may be outside it.
+SKILL = Path(__file__).absolute().parent.parent.parent
 TEMPLATES = SKILL / "templates"
 
 #: A pack's template file, whatever format the company works in.

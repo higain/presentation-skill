@@ -34,7 +34,7 @@ import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent))
 from _skill import engine, presentation_skill, templates_dir  # noqa: E402
 
 engine()

@@ -35,12 +35,18 @@ runs on your own infrastructure.
 **Work in the user's folder, where the template file is** — never inside a
 skill directory. Contact sheets, the probe deck and its renders are written to
 the working directory, and they are the company's slides: they must not land in
-a skill that may be committed or shared. Set two variables once:
+a skill that may be committed or shared. In the commands below, `$SETUP` and
+`$SKILL` stand for two directories:
 
 ```bash
-SETUP=<path to>/presentation-setup     # this skill
-SKILL=<path to>/presentation           # the presentation skill, usually beside it
+$SETUP = <path to>/presentation-setup     # this skill
+$SKILL = <path to>/presentation           # the presentation skill, usually beside it
 ```
+
+Write both out in full in every command, as you were given them, rather than
+setting shell variables: each command may run in a fresh shell, and permission
+rules match the command as typed. A `$SKILL/...` or a relative path can stop the
+run at a prompt nobody sees.
 
 Every script here finds the presentation skill by itself and stops with a
 message if it cannot.

@@ -29,7 +29,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent))
 
 # The palette block below reads the same profile the engine reads, through the
 # same accessors, so the catalog cannot document a palette the build would not

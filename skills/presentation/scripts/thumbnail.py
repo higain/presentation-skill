@@ -24,7 +24,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).absolute().parent))
 
 from office.impress import PRESENTATION_EXTS, load_document, slides as doc_slides
 from office.rasterize import existing_images, rasterize
