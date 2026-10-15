@@ -102,6 +102,9 @@ machine went down with it. The skill also lets only a few LibreOffice runs
 go at once on a machine (`PRESENTATION_MAX_OFFICE`, by default half the
 cores, one per 3 GB of RAM); a build over that limit prints `[office]
 waiting` and waits its turn. More builders than that do not go faster.
+For a shape-heavy deck, prefer short sessions with `--parts` over one long
+continuous run: the engine's intermittent crashes grow likelier the longer a
+single session runs (SKILL.md step 5).
 
 Send the brief below with the placeholders filled in. Keep their reports,
 not their code: you do not need to read the slide files.
@@ -113,6 +116,12 @@ the first. Then do the vision review of step 6, one slide per call, as
 always. For each finding, send the builder of that slide (or a new one) the
 finding, the slide's source file and its part file, or fix it yourself if
 it is one line.
+
+If the assembly dies with `Binary URP bridge disposed` or `soffice exited
+abnormally`, that is soffice crashing, not a slide: read the
+`soffice-stderr-<profile>.log` the run leaves and re-run once (probabilistic);
+die again at a different slide, build in halves with `--parts`; after three
+different-slide failures, tell the user before retrying (SKILL.md step 5).
 
 ## The builder brief
 
@@ -142,7 +151,10 @@ Do not edit _common.py, build.py or other slides' files. If you need a helper
 that is missing, write it in your own file and name it in your report.
 
 Check your slides until the command exits 0, with a timeout of at least
-five minutes:
+five minutes. If it dies with `Binary URP bridge disposed` or `soffice exited
+abnormally`, that is soffice crashing, not a slide: read the
+`soffice-stderr-<profile>.log` it leaves and run the same command again
+(SKILL.md step 5):
   python3 {SKILL}/scripts/make_deck.py {DECK_DIR}/build.py {DECK_DIR}/{DECK} --parts {FIRST}-{LAST} --template {PACK_NAME}
 Every finding it prints for your slides is yours to fix. You cannot see
 images: do not describe how a slide looks.

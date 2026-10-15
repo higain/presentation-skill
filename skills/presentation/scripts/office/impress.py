@@ -92,7 +92,13 @@ PRESENTATION_SERVICE = "com.sun.star.presentation.PresentationDocument"
 
 
 class SofficeError(RuntimeError):
-    pass
+    """soffice.bin failed to start or died during the run -- a process
+    failure, not a finding about the deck. Read ``soffice-stderr-<profile>.log``
+    in the working directory (the engine copies it out after an abnormal exit)
+    for the real signature, then simply build again: every run starts a fresh
+    headless LibreOffice. Such crashes are probabilistic; two crashes at
+    *different* slides point at session length or LibreOffice itself, not at
+    ``build.py`` (SKILL.md step 5)."""
 
 
 #: No slide is a metre across -- a 16:9 brand template is about 320 mm.  A

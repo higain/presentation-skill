@@ -148,7 +148,7 @@ Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150
 
 Constants: `NETWORK_ENV`='PRESENTATION_NETWORK', `SOFFICE_MISSING`='soffice not found on PATH; LibreOffice is required (apt install libreoffice-impress python3-uno)', `PRESENTATION_SERVICE`='com.sun.star.presentation.PresentationDocument', `MAX_MM`=1000
 
-- **class `SofficeError(...)`** -- Unspecified run-time error.
+- **class `SofficeError(...)`** -- soffice.bin failed to start or died during the run -- a process failure, not a finding about the deck. Read ``soffice-stderr-<profile>.log`` in the working directory (the engine copies it out after an abnormal exit) for the real signature, then simply build again: every run starts a fresh headless LibreOffice.
 - **`mm(value: float) -> int`** -- Millimetres to UNO's 1/100 mm.
 - **`pt(value: float) -> int`** -- Points to UNO's 1/100 mm (1 pt = 1/72 inch).
 - **`parse_slide_spec(spec: str) -> list[int]`** -- ``'3,7-9'`` -> ``[3, 7, 8, 9]``. The ``--slides`` argument, once.

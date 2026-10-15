@@ -126,7 +126,8 @@ build_deck("acme", "out.pptx", [4, 2], fill=fill,
 - Never reopen the finished file to add more; everything happens in `fill`.
 
 **5. Build — fast loop first, then the gate.** Give each run a timeout of at
-least five minutes.
+least five minutes; a large deck's full gate (build + QA + render) takes
+about ten minutes cold, so budget the whole run, not one command.
 
 ```bash
 scripts/make_deck.py build.py out.pptx --build-only               # fix build errors (instant)
@@ -138,6 +139,22 @@ whether the build worked, and a pipe reports exit 0 when it did not. Too long
 to read? `... > build.log 2>&1; echo "exit $?"`, then read the end of the
 log. A failed build leaves the previous deck in place, so a file on disk
 proves nothing.
+
+If a build dies part-way and the only error is `Binary URP bridge disposed
+during call` (or `... already disposed`, a `DisposedException`), that is
+soffice itself crashing — the bridge error is what Python sees on the *next*
+call after `soffice.bin` died, so the traceback shows neither the slide nor
+the real cause. The engine keeps soffice's stderr, and after a crash the
+build prints `[impress] soffice exited abnormally (rc); its stderr was
+captured in soffice-stderr-<profile>.log`. Read that file first: it holds
+the actual signature (an abort, `free(): invalid pointer`, a stack). Then
+simply re-run the same command — these crashes are probabilistic and one
+retry often goes through. If it dies again *at a different slide*, build in
+halves (`--parts`, never get the user to merge separate decks) instead of
+re-running the whole deck. After three full-deck failures at different
+slides, tell the user (a LibreOffice version pin or a split session may be
+needed) before a fourth retry. Never `try/except: pass` over it in
+`build.py`: the error is the information.
 
 The gate writes `out-report.md` and `render/` beside the deck and exits 1 on
 any finding. **Fix every finding in `build.py` and run the gate again** until
@@ -277,7 +294,9 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
 - Each script starts its own headless LibreOffice; parallel runs are safe,
   but only a few run at once per machine (`PRESENTATION_MAX_OFFICE`); the
   rest print `[office] waiting` and wait. Set `PRESENTATION_TMPDIR` if `/tmp`
-  is not writable.
+  is not writable. When soffice dies mid-run, its stderr is kept as
+  `soffice-stderr-<profile>.log` beside your deck (the crash signature);
+  clean runs leave none.
 - **No network for LibreOffice or `build.py`.** Both run in their own network
   namespace (`unshare`, else `bwrap`), so a deck that links an image by URL
   cannot make anything fetch it, and a build script cannot send anything out.
