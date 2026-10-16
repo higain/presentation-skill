@@ -42,7 +42,7 @@ from .template import (  # noqa: F401
     move, palette, palette_roles, resize, set_text, text_width, type_scale,
     walk_shapes,
 )
-from .template import _is_group, _walk as _template_walk
+from .template import _is_group, _walk as _template_walk, body_font
 from .textenum import enumerate_text
 
 # Enums and structs are resolved by name rather than imported: a
@@ -111,7 +111,15 @@ GREY_BD = 0xC8C8C8    # borders and rules
 GREY_MD = 0xDCDCDC
 GREY_LT = 0xF2F2F2    # zebra rows, panel fills
 
+#: The font when nothing says otherwise.  With a pack in force, text is set in
+#: the font the template sets its own text in (``template.body_font``,
+#: measured by ``catalog_extract.py``); this is only the fallback.
 DEFAULT_FONT = "Arial"
+
+
+def _font(font):
+    """``font``, else the pack's measured body font, else Arial."""
+    return font or body_font() or DEFAULT_FONT
 
 # Ceilings for labels a diagram sizes for itself.  These are typographic, not
 # geometric: a label scaled to the figure's radius reads as a second title on a
@@ -720,10 +728,39 @@ def _check_kwargs(fn, kw, label=None, extra=()):
                             if n not in ("doc", "page")))))
 
 
+#: Every shape this module draws is named after what made it: ``D:cards``
+#: when a composition helper laid it out, ``D:rect`` or ``D:text`` when a
+#: build script placed it by hand.  The name travels into the saved file, and
+#: it is how QA tells a slide laid out from a ``Box`` from one built of fifty
+#: hand-placed primitives -- the slides where text prints over text.
+ORIGIN = "D:"
+_COMPOSING = []
+
+
+def _composite(fn):
+    """Mark ``fn`` as a composition helper: what it draws is laid out."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kw):
+        _COMPOSING.append(fn.__name__)
+        try:
+            return fn(*args, **kw)
+        finally:
+            _COMPOSING.pop()
+    return wrapper
+
+
+def _origin(shape, kind):
+    try:
+        shape.Name = ORIGIN + (_COMPOSING[0] if _COMPOSING else kind)
+    except Exception:
+        pass
+
+
 def _new(doc, page, kind, x, y, w, h):
     x, y, w, h = _xywh(kind[:-5].lower(), x, y, w, h)
     shape = doc.createInstance("com.sun.star.drawing." + kind)
     page.add(shape)
+    _origin(shape, kind[:-5].lower())
     shape.setPosition(Point(x, y))
     shape.setSize(Size(w, h))
     return shape
@@ -856,6 +893,7 @@ def polygon(doc, page, points, fill=None, line=None, line_width=0):
     """A closed polygon through ``[(x, y), ...]`` in 1/100 mm."""
     s = doc.createInstance("com.sun.star.drawing.PolyPolygonShape")
     page.add(s)
+    _origin(s, "polygon")
     s.PolyPolygon = (tuple(Point(px, py) for px, py in points),)
     return style_fill(s, fill, 0, line, line_width)
 
@@ -1055,9 +1093,9 @@ def para(text, **style):
 
 
 def _char_props(size=14.0, color=BLACK, weight=NORM, align="left",
-                italic=False, strike=False, font=DEFAULT_FONT, underline=None):
+                italic=False, strike=False, font=None, underline=None):
     props = {
-        "CharFontName": font,
+        "CharFontName": _font(font),
         "CharHeight": float(size),
         "CharColor": int(color),
         "CharWeight": float(weight),
@@ -1224,10 +1262,11 @@ def chip(doc, page, x, y, w, h, fill, label="", color=WHITE, size=10.0,
     return box
 
 
+@_composite
 @takes_box("x", "y", "w")
 def bullets(doc, page, x, y, w, items, size=12.5, color=BLACK,
             marker_color=None, marker=None, gap=420, line_h=None,
-            marker_size=170, font=DEFAULT_FONT):
+            marker_size=170, font=None):
     """A bulleted list, one text box per item, with a square marker.
 
     Drawn rather than typed so each item can be positioned and coloured.
@@ -1406,13 +1445,14 @@ def _column_widths(widths, box, x, page):
     return widths
 
 
+@_composite
 @takes_box("x", "y", "w", "h")
 def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
           row_h=None, header_h=None,
           head_fill=GREY_DK, head_color=WHITE, size=12.0, head_size=12.0,
           zebra=GREY_LT, body_fill=WHITE, align=None, pad=200,
           cell_colors=None, cell_weights=None, row_heights=None,
-          rule=GREY_BD, font=DEFAULT_FONT, box=None, **kw):
+          rule=GREY_BD, font=None, box=None, **kw):
     """Draw a table out of rectangles and text.  ``rows[0]`` is the header.
 
     A drawn table rather than a real ``TableShape``: it survives a .pptx
@@ -1670,6 +1710,7 @@ def _draw_card(doc, page, box, item, fill, accent, number, title_size, size,
     return box
 
 
+@_composite
 @takes_box("x", "y", "w", "h")
 def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
           accent=None, numbered=False, height="auto", size=None,
@@ -1790,6 +1831,7 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
     return out
 
 
+@_composite
 @takes_box("x", "y", "w", "h")
 def steps(doc, page, x, y, w, h, items, captions=None, numbered=True,
           accent=None, fill=GREY_LT, gap=None, size=None, title_size=None,
@@ -1857,6 +1899,7 @@ def steps(doc, page, x, y, w, h, items, captions=None, numbered=True,
     return boxes
 
 
+@_composite
 @takes_box("x", "y", "w", "h")
 def kpis(doc, page, x, y, w, h, items, color=None, caption_color=GREY_DK,
          gap=None, max_size=54.0, caption_size=None, align="center"):
@@ -1932,10 +1975,11 @@ def balance_lines(s, width, size, weight=NORM, max_lines=None):
     return wrap_words(s, high, size, weight)
 
 
+@_composite
 @takes_box("x", "y", "w", "h")
 def statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None,
               max_size=44.0, min_size=16.0, weight=BOLD, color=None,
-              align="center", valign="center", font=DEFAULT_FONT):
+              align="center", valign="center", font=None):
     """One sentence, as large as it fits, broken where it reads.  The shape.
 
     For the slide that is a single line of type::
@@ -2136,6 +2180,7 @@ def _centre_fit(parts, fixed, box):
     return min(widest, tall, CENTRE_MAX_PT), list(parts)
 
 
+@_composite
 def venn(doc, page, cx=None, cy=None, r=None, colors=(), labels=None,
          transparence=76, line_width=45, label_size=None, label_color=None,
          centre=None, centre_color=None, centre_text=None, centre_size=None,

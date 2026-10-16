@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import catalog_import  # noqa: E402
 from catalog_build import (_canvas_design, _canvas_leftovers,  # noqa: E402
                            _headline, _roles_block, _unnamed_designs)
-from catalog_extract import _canvas_hint, _covered_by, _title_style  # noqa: E402
+from catalog_extract import (_body_font, _canvas_hint, _covered_by,  # noqa: E402
+                             _title_style)
 from office import draw as D  # noqa: E402
 from office.template import _fold  # noqa: E402
 
@@ -265,6 +266,38 @@ class TitleStyleTest(unittest.TestCase):
                   {"shapes": [self._title("", "#5A6367", 18.0)]}]
         self.assertEqual(_title_style(slides),
                          {"color": "#0066CC", "size": 22.0, "seen": 2})
+
+    def test_font_and_alignment_are_measured_too(self):
+        def title(text, font, align):
+            return {"type": "TitleTextShape", "text": text, "paragraphs": [
+                {"text": text, "color": "#0066CC", "size": 22.0,
+                 "font": font, "align": align}]}
+        slides = [{"shapes": [title("A", "Ubuntu Light", "left")]},
+                  {"shapes": [title("B", "Ubuntu Light", "left")]},
+                  {"shapes": [title("C", "Arial", "center")]}]
+        style = _title_style(slides)
+        self.assertEqual((style["font"], style["align"]), ("Ubuntu Light", "left"))
+
+    def test_body_font_is_counted_by_characters_not_titles(self):
+        def shape(kind, text, font):
+            return {"type": kind, "text": text,
+                    "paragraphs": [{"text": text, "font": font}]}
+        slides = [{"shapes": [
+            shape("TitleTextShape", "A very long title in a display face " * 9, "Display"),
+            shape("OutlinerShape", "Body copy set in the house face", "Ubuntu Light"),
+            shape("ooxml-rect", "Label", "Arial")]}]
+        self.assertEqual(_body_font(slides),
+                         {"font": "Ubuntu Light", "chars": 31})
+        self.assertIsNone(_body_font([{"shapes": []}]))
+
+    def test_draw_falls_back_to_arial_without_a_pack(self):
+        from office import draw
+        from unittest import mock
+        with mock.patch.object(draw, "body_font", lambda: None):
+            self.assertEqual(draw._font(None), "Arial")
+        with mock.patch.object(draw, "body_font", lambda: "Ubuntu Light"):
+            self.assertEqual(draw._font(None), "Ubuntu Light")
+            self.assertEqual(draw._font("Courier"), "Courier")
 
     def test_no_filled_title_means_no_style(self):
         self.assertIsNone(_title_style([{"shapes": [

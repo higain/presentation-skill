@@ -35,6 +35,8 @@ import re
 import unicodedata
 from contextlib import contextmanager
 
+import uno
+
 from office.colors import parse_hex as _hex
 from office.impress import (add_slide, notes_text, placeholder, set_notes,
                             shapes)
@@ -1054,7 +1056,54 @@ def set_title(page, *paragraphs):
         cursor.gotoStart(False)
         cursor.gotoEnd(True)
         cursor.CharHeight = style[1]
+        extra = _manifest().get("title_style") or {}
+        if extra.get("font"):
+            cursor.CharFontName = extra["font"]
+        align = _PARA_ADJUST.get(extra.get("align"))
+        if align is not None:
+            for para in enumerate_text(shape):
+                para.ParaAdjust = align
     return shape
+
+
+#: ``probe.py``'s alignment names, back to ``ParagraphAdjust`` values.
+_PARA_ADJUST = {name: uno.Enum("com.sun.star.style.ParagraphAdjust", value)
+                for name, value in (("left", "LEFT"), ("right", "RIGHT"),
+                                    ("block", "BLOCK"), ("center", "CENTER"))}
+
+
+def _manifest(template=None):
+    """The pack's ``catalog/manifest.json``, or ``{}``."""
+    pack = pack_for(template) if template is not None else active_pack()
+    if pack is None:
+        return {}
+    path = pack.catalog_dir / "manifest.json"
+    try:
+        stamp = path.stat().st_mtime_ns
+    except OSError:
+        return {}
+    hit = _MANIFESTS.get(str(path))
+    if hit is None or hit[0] != stamp:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        hit = _MANIFESTS[str(path)] = (stamp, data if isinstance(data, dict) else {})
+    return hit[1]
+
+
+_MANIFESTS = {}
+
+
+def body_font(template=None):
+    """The font the template sets its text in, or ``None``.
+
+    Measured by ``catalog_extract.py`` into the pack's manifest.  ``None``
+    without a pack, or for a catalog extracted before the measurement
+    existed; ``office.draw`` then falls back to Arial.
+    """
+    found = _manifest(template).get("body_font") or {}
+    return found.get("font") or None
 
 
 def title_style(template=None):

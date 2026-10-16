@@ -26,8 +26,9 @@ from . import cache as slide_cache
 from .allowlist import _acknowledged, load_allowlist, stale_acknowledgements
 from .baseline import _collision_key, _template_baseline
 from .colour import buried_text_issues, contrast_issues, occlusion_issues
-from .layout import (_catalog_size, balance_findings, design_note,
-                     sparse_slides, stray_template_images, variety_findings)
+from .layout import (_catalog_size, alignment_issues, balance_findings,
+                     design_note, hand_placed_note, sparse_slides,
+                     stray_template_images, variety_findings)
 from .prose import lost_plan_titles, prose_findings
 from .text import (PLACEHOLDER, _page_texts, emoji_issues, markdown_issues,
                    missing_title_issues, tiny_type_issues)
@@ -130,6 +131,7 @@ def _check(path, template, wanted):
 
     doc = load_document(path, read_only=True)
     designs = []
+    hand = {}                # slide -> reason it was drawn shape by shape
     try:
         pages = slides(doc)
         recorded = recorded_designs(doc)
@@ -147,6 +149,7 @@ def _check(path, template, wanted):
             print_ = prints[number - 1] if prints else None
             entry = stored.get(print_) if print_ else None
             if entry is not None:
+                hand[number] = entry.get("hand")
                 for packed in entry["a"]:
                     add(*slide_cache.unpack_finding(number, packed))
                 _fresh_page_checks(page, number, add, deck_texts, leftovers,
@@ -210,12 +213,16 @@ def _check(path, template, wanted):
                          + occlusion_issues(page, number, base.occlusion)
                          + buried_text_issues(page, number)):
                 add(text)
+            for text, key in alignment_issues(page, number):
+                add(text, key)
+            hand[number] = hand_placed_note(page)
             if print_:
                 packs = [[slide_cache.pack_finding(number, text, key)
                           for text, key in part]
                          for part in (part_a, findings[start:])]
                 if all(pack is not None for part in packs for pack in part):
-                    fresh[print_] = {"a": packs[0], "b": packs[1], "n": number}
+                    fresh[print_] = {"a": packs[0], "b": packs[1], "n": number,
+                                     "hand": hand.get(number)}
 
         # The paint metrics are per slide too: measured for the slides that
         # changed, read back for the rest.
@@ -234,6 +241,9 @@ def _check(path, template, wanted):
                 reason, top = new_sparse.get(number), new_balance.get(number)
                 if prints and prints[number - 1] in fresh:
                     fresh[prints[number - 1]].update(sparse=reason, balance=top)
+            # Advisory like a sparse slide: a reason to look first, which
+            # the report's verdict table hands the vision-agent.
+            reason = "; ".join(r for r in (reason, hand.get(number)) if r)
             if reason:
                 sparse.append((number, reason))
             if top:
@@ -348,7 +358,8 @@ def summary(result: QAResult, prefix: str = "", ghost: bool = True) -> list:
     if result.sparse:
         out += ["", f"## {len(result.sparse)} slide(s) to look at", ""]
         out += [f"- slide {n}: {reason}" for n, reason in result.sparse]
-        out += ["", "Not findings -- a statement slide is sparse on purpose. "
+        out += ["", "Not findings -- a statement slide is sparse on purpose, and a "
+                "diagram no helper draws is placed by hand. "
                 "Have the vision-agent look at these first."]
     if ghost and result.titles:
         out += ["", "## The ghost deck", ""]

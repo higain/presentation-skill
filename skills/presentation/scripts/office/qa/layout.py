@@ -197,6 +197,166 @@ def balance_findings(doc, wanted=None):
     return out
 
 
+#: A slide with more hand-placed shapes than this, and nothing from a
+#: composition helper, is worth a look first.  Not a defect: a custom diagram
+#: no helper draws is laid out from ``Box.grid`` with primitives, exactly as
+#: ``drawing.md`` says, and looks the same in the file as a slide placed by
+#: page arithmetic.  What actually goes wrong with the second kind -- edges
+#: that almost line up, gaps that almost match -- is measured below and
+#: fails; the count only points the vision-agent at the slide.
+HAND_PLACED = 12
+#: Shape names ``office.draw`` gives what a build script placed one by one.
+PRIMITIVES = {"rectangle", "text", "ellipse", "line", "polygon", "connector",
+              "polyline"}
+
+#: Two edges closer than this are aligned (rounding, a line's width).
+ALIGNED = 30
+#: Two edges this far apart, and no closer, were meant to line up and do not:
+#: 0.6 mm is visible on a projected slide, past 3 mm the offset is a choice.
+NEAR_MISS = (60, 300)
+#: Peers: same kind, and sizes within this share of each other -- the cells
+#: of one row, the cards of one column.
+PEER_SIZE = 0.10
+
+
+def _drawn(page):
+    """``[(address, kind, x, y, w, h)]`` -- the shapes a build placed by hand."""
+    out = []
+    for address, shape in walk_shapes(page):
+        name = getattr(shape, "Name", "") or ""
+        if not name.startswith("D:") or name[2:] not in PRIMITIVES:
+            continue
+        try:
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        out.append((address, name[2:], pos.X, pos.Y, size.Width, size.Height))
+    return out
+
+
+def hand_placed_note(page):
+    """A reason to look at the slide first, or ``None``.  Never a finding."""
+    hand, laid_out = 0, 0
+    for _, shape in walk_shapes(page):
+        name = getattr(shape, "Name", "") or ""
+        if not name.startswith("D:"):
+            continue
+        if name[2:] in PRIMITIVES:
+            hand += 1
+        else:
+            laid_out += 1
+    if hand <= HAND_PLACED or laid_out:
+        return None
+    return (f"{hand} shapes placed one by one, no layout helper: check that "
+            f"rows and columns line up")
+
+
+def _peers(a, b):
+    if a[1] != b[1]:
+        return False
+    for i in (4, 5):
+        big = max(a[i], b[i])
+        if big and abs(a[i] - b[i]) > PEER_SIZE * big:
+            return False
+    return True
+
+
+def _inside(a, b):
+    """``a`` sits within ``b`` (an inset label), or the other way round."""
+    def within(p, q):
+        return (p[2] >= q[2] - ALIGNED and p[3] >= q[3] - ALIGNED
+                and p[2] + p[4] <= q[2] + q[4] + ALIGNED
+                and p[3] + p[5] <= q[3] + q[5] + ALIGNED)
+    return within(a, b) or within(b, a)
+
+
+def _edges(item, axis):
+    x, y, w, h = item[2:]
+    return (x, x + w / 2, x + w) if axis == "x" else (y, y + h / 2, y + h)
+
+
+def misalignments(items):
+    """``[text]`` -- peers that almost line up, and rows that almost space evenly.
+
+    ``items`` are ``(address, kind, x, y, w, h)`` in 1/100 mm.  Pure, so it is
+    tested without LibreOffice.
+    """
+    misses = []
+    for i, a in enumerate(items):
+        for b in items[i + 1:]:
+            if not _peers(a, b) or _inside(a, b):
+                continue
+            for axis, other in (("x", "y"), ("y", "x")):
+                # Compare left edges of shapes stacked in a column, top edges
+                # of shapes side by side in a row.
+                ea, eb = _edges(a, axis), _edges(b, axis)
+                diffs = [abs(p - q) for p, q in zip(ea, eb)]
+                if min(diffs) <= ALIGNED:
+                    continue
+                miss = min(diffs)
+                if NEAR_MISS[0] <= miss <= NEAR_MISS[1]:
+                    misses.append((a[0], b[0], axis, miss))
+    out = []
+    if misses:
+        # One drift moves many shapes; say how many, and show one pair.
+        shapes = {m[0] for m in misses} | {m[1] for m in misses}
+        lo = min(m[3] for m in misses) / 100
+        hi = max(m[3] for m in misses) / 100
+        first = misses[0]
+        edge = "left/centre/right" if first[2] == "x" else "top/middle/bottom"
+        span = f"{lo:.1f} mm" if lo == hi else f"{lo:.1f}-{hi:.1f} mm"
+        out.append(f"{len(shapes)} shapes miss a peer's edge by {span}, e.g. "
+                   f"[{first[0]}] and [{first[1]}] ({edge}) by "
+                   f"{first[3] / 100:.1f} mm")
+    out += _uneven_gaps(items)
+    return out
+
+
+def _uneven_gaps(items):
+    """Runs of three or more peers in a line whose gaps differ slightly."""
+    out = []
+    for axis in ("x", "y"):
+        lane = 3 if axis == "x" else 2           # same row: equal y; column: equal x
+        pos = 2 if axis == "x" else 3
+        size = 4 if axis == "x" else 5
+        groups = {}
+        for item in items:
+            key = (item[1], round(item[lane] / ALIGNED), round(item[size] / 100))
+            groups.setdefault(key, []).append(item)
+        for run in groups.values():
+            if len(run) < 3:
+                continue
+            run = sorted(run, key=lambda it: it[pos])
+            gaps = [b[pos] - (a[pos] + a[size]) for a, b in zip(run, run[1:])]
+            if min(gaps) < 0:
+                continue
+            spread = max(gaps) - min(gaps)
+            if NEAR_MISS[0] <= spread <= NEAR_MISS[1]:
+                out.append(
+                    f"the {'row' if axis == 'x' else 'column'} "
+                    f"[{run[0][0]}] … [{run[-1][0]}] is spaced "
+                    + ", ".join(f"{g / 100:.1f}" for g in gaps)
+                    + " mm apart -- almost even")
+    return out
+
+
+def alignment_issues(page, number):
+    """``[(text, key)]`` -- hand-placed peers that almost line up.
+
+    The defect a slide placed by page arithmetic actually has: rows a
+    millimetre off, gaps that differ by two.  A custom diagram laid out from
+    a ``Box`` lines up exactly and passes however many shapes it has.
+    """
+    misses = misalignments(_drawn(page))
+    if not misses:
+        return []
+    return [(f"slide {number}: drawn shapes almost line up but do not -- "
+             + "; ".join(misses)
+             + ". Lay them out from one `Box` (`grid`, `cut_*`) so peers share "
+               "their edges and gaps exactly (`references/drawing.md`)",
+             ("alignment", number, "near-miss"))]
+
+
 #: Above this share of the deck on a single design, the variety note says so
 #: outright.  Four separate agent runs against the house template built
 #: ``[8] * N`` -- 100%, 100%, 100% and 94% -- so the number is not a warning

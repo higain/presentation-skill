@@ -341,8 +341,11 @@ def probe_data(path: Path, slide_spec=None) -> dict:
                             "bold": (cprops.get("CharWeight") or 100) > 110,
                             "color": (_hex(cprops["CharColor"])
                                       if "CharColor" in cprops else None),
+                            "align": (ADJUST.get(int(pprops["ParaAdjust"]))
+                                      if pprops.get("ParaAdjust") is not None
+                                      else None),
                         }
-                        for text, cprops, _ in paras
+                        for text, cprops, pprops in paras
                     ],
                 })
             wide, columns = _columns(page, width)

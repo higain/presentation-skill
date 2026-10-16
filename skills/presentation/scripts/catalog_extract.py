@@ -305,7 +305,7 @@ def _title_style(slides):
     ``set_title`` came out in the wrong one.  The most common colour and size
     among the filled titles is what ``set_title`` gives an empty one.
     """
-    counts = {}
+    counts, fonts, aligns = {}, {}, {}
     for entry in slides:
         for shape in entry["shapes"]:
             if (shape.get("type") != "TitleTextShape"
@@ -317,10 +317,46 @@ def _title_style(slides):
                 continue
             key = (first["color"], round(first["size"], 1))
             counts[key] = counts.get(key, 0) + 1
+            # Font and alignment too: LibreOffice's own master title style
+            # is centred, and an empty placeholder on a left-aligned
+            # template came out centred while every retexted title beside
+            # it stayed left.
+            if first.get("font"):
+                fonts[first["font"]] = fonts.get(first["font"], 0) + 1
+            if first.get("align"):
+                aligns[first["align"]] = aligns.get(first["align"], 0) + 1
     if not counts:
         return None
     (color, size), seen = max(counts.items(), key=lambda item: item[1])
-    return {"color": color, "size": size, "seen": seen}
+    style = {"color": color, "size": size, "seen": seen}
+    if fonts:
+        style["font"] = max(fonts, key=fonts.get)
+    if aligns:
+        style["align"] = max(aligns, key=aligns.get)
+    return style
+
+
+def _body_font(slides):
+    """``{"font", "chars"}`` the template sets its text in, or ``None``.
+
+    Counted by characters over every paragraph that is not a title, so a
+    template's body face wins over a display face used on two covers.
+    ``office.draw`` sets what a build draws in it; without it every drawn
+    word was Arial beside the template's own type.
+    """
+    chars = {}
+    for entry in slides:
+        for shape in entry["shapes"]:
+            if shape.get("type") == "TitleTextShape":
+                continue
+            for para in shape.get("paragraphs") or []:
+                text = (para.get("text") or "").strip()
+                if text and para.get("font"):
+                    chars[para["font"]] = chars.get(para["font"], 0) + len(text)
+    if not chars:
+        return None
+    font = max(chars, key=chars.get)
+    return {"font": font, "chars": chars[font]}
 
 
 def extract(source: Path, outdir: Path, dpi: int) -> dict:
@@ -348,6 +384,9 @@ def extract(source: Path, outdir: Path, dpi: int) -> dict:
     style = _title_style(data["slides"])
     if style:
         manifest["title_style"] = style
+    body = _body_font(data["slides"])
+    if body:
+        manifest["body_font"] = body
     for entry in data["slides"]:
         n = entry["number"]
         slide_dir = outdir / f"slide-{n:02d}"

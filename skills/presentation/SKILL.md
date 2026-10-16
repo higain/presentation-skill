@@ -64,8 +64,10 @@ if you write the slide text yourself.
 |---|---|---|---|
 
 Rules for the plan:
-- Match each slide's content to a design's *content shape*; respect its item
-  limit — split a slide rather than overfill it.
+- **Count the pieces before you pick the design.** Three risks, two options,
+  five steps: write the count in the row. Match it to a design's *content
+  shape* and item limit; two items do not go into a three-column design, and
+  seven do not go into a four-card one — split the slide instead.
 - **Vary the designs.** QA fails a deck of six or more slides where one
   design — the canvas included — carries more than half of them.
 - Content no design fits (a diagram, chart, comparison, timeline you draw)
@@ -73,6 +75,9 @@ Rules for the plan:
 - Every content slide needs one thing to look at — a diagram, chart, big
   number, table, image — not only text (`references/drawing.md`, Composition).
 - A headline states the slide's conclusion as a sentence, not a topic label.
+- **Read the finished plan once more.** A row that would look the same in any
+  other deck on this template (title, bullets, nothing to look at) gets a
+  different design or a drawing before any code is written.
 
 **3. Read `templates/acme/designs/design-N.md` for every design in the plan.**
 It lists the design's **retext keys** (the exact template wording to replace),
@@ -160,7 +165,12 @@ needed) before a fourth retry. Never `try/except: pass` over it in
 The gate writes `out-report.md` and `render/` beside the deck and exits 1 on
 any finding. **Fix every finding in `build.py` and run the gate again** until
 it is clean. Leftover template text, a missing title, text off the slide,
-low contrast and top-heavy slides are defects, not noise.
+low contrast, top-heavy slides and drawn shapes that almost line up are
+defects, not noise.
+
+**Assume the first build has problems.** It always does. A deck is not done
+after one gate run, however clean it reports: it is done after at least one
+round of fix, rebuild and look again (steps 5 to 7).
 
 Re-running the gate is cheap: it keeps each slide's findings in
 `out-qa-cache.json` and re-measures only the slides whose content changed, so
@@ -237,7 +247,7 @@ deck, never by distorting the content:
 ```
 
 `kind` is `leftover-wording`, `stray-image`, `footer`, `balance`, `no-title`,
-`variety` or `vision`; each entry must match a real finding and carry a
+`variety`, `alignment` or `vision`; each entry must match a real finding and carry a
 reason. Tell the user about every entry you add. A `vision` entry also needs
 `"approved_by"`, which only the user writes.
 

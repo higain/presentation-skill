@@ -7,7 +7,7 @@ the format they arrived in, with nothing rewritten by hand.
 
 | Skill | What it does |
 |---|---|
-| [`skills/presentation`](skills/presentation/SKILL.md) | Build a deck from a brief or an outline on the installed template pack, edit an existing deck, extract text and notes, convert formats, render slides to PNG, and run the QA that finds overflow, leftover template wording, bad contrast and occlusion. |
+| [`skills/presentation`](skills/presentation/SKILL.md) | Build a deck from a brief or an outline on the installed template pack, edit an existing deck, extract text and notes, convert formats, render slides to PNG, and run the QA that finds overflow, leftover template wording, bad contrast, occlusion and drawn shapes that almost line up. |
 | [`skills/presentation-setup`](skills/presentation-setup/SKILL.md) | Teach the first skill your template: an interactive, five-stage walkthrough that counts the palette and type scale off the file, asks you the four questions only a person can answer, and writes a **template pack**. Twenty minutes, once. Later, it adds the custom slides from your finished project decks to the pack as new designs. |
 
 The skills ship **no template**. A deck is only ever built on a pack you

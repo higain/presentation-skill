@@ -52,6 +52,7 @@ Constants: `COLLISION`=0.25, `MIN_COLLISION_CHARS`=4
 - **`set_char_color(shape, color, paragraph=None)`** -- Recolour every run in a shape -- for flipping a card to a dark fill.
 - **`shape_by_text(page, prefix)`** -- The first shape on ``page`` whose text starts with ``prefix``.
 - **`set_title(page, *paragraphs)`** -- Write the slide's title placeholder, empty or not.
+- **`body_font(template=None)`** -- The font the template sets its text in, or ``None``.
 - **`title_style(template=None)`** -- ``(color, size)`` the template's filled titles use, or ``None``.
 - **`find_shapes(page, pattern, regex=False)`** -- Every ``(address, shape)`` on ``page`` whose text matches ``pattern``.
 - **`retext(page, mapping, **kw)`** -- Retext a slide by the text its shapes already carry, not by index.
@@ -69,7 +70,7 @@ Constants: `COLLISION`=0.25, `MIN_COLLISION_CHARS`=4
 
 `from office import draw as D`
 
-Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150, `BLACK`=0, `WHITE`=16777215, `GREY_DK`=4868682, `GREY`=9079434, `GREY_BD`=13158600, `GREY_MD`=14474460, `GREY_LT`=15921906, `DEFAULT_FONT`='Arial', `LABEL_MAX_PT`=18, `CENTRE_MAX_PT`=16, `MIN_READABLE_PT`=9, `MIN_COL_W`=800, `CARD_PAD`=500, `CARD_GAP`=600, `MIN_ACCENT_CONTRAST`=3, `WRAP_SLACK`=0.94, `CARD_FILL`=0.6, `CARD_TEXT_SHARE`=0.75, `CARD_MIN_SHARE`=0.5, `VENN_LABEL_GAP`=0.08
+Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150, `BLACK`=0, `WHITE`=16777215, `GREY_DK`=4868682, `GREY`=9079434, `GREY_BD`=13158600, `GREY_MD`=14474460, `GREY_LT`=15921906, `DEFAULT_FONT`='Arial', `LABEL_MAX_PT`=18, `CENTRE_MAX_PT`=16, `MIN_READABLE_PT`=9, `ORIGIN`='D:', `MIN_COL_W`=800, `CARD_PAD`=500, `CARD_GAP`=600, `MIN_ACCENT_CONTRAST`=3, `WRAP_SLACK`=0.94, `CARD_FILL`=0.6, `CARD_TEXT_SHARE`=0.75, `CARD_MIN_SHARE`=0.5, `VENN_LABEL_GAP`=0.08
 
 - **`Point(x, y)`** -- (undocumented)
 - **`Size(w, h)`** -- (undocumented)
@@ -119,19 +120,19 @@ Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150
 - **`para(text, **style)`** -- A paragraph for ``D.text`` that differs from the box's style.
 - **`text(doc, page, x, y, w, h=None, *lines, **kw)`** -- A styled text box. One positional string per paragraph. Keywords: ``role``, ``size`` (pt), ``color``, ``weight`` (``BOLD``/``NORM``), ``align`` (left/center/right/justify), ``valign`` (top/center/bottom), ``font``, ``italic``, ``strike``, ``underline``, ``pad`` (inner margin), ``wrap``, ``grow`` (autogrow height), and the ``fill``/``line``/ ``transparence``/``line_width``/``radius`` of ``rect()`` for a boxed label.
 - **`chip(doc, page, x, y, w, h, fill, label='', color=16777215, size=10.0, weight=150.0, radius=None, line=None)`** -- A small filled block with a centred label -- legend keys, badges, tags.
-- **`bullets(doc, page, x, y, w, items, size=12.5, color=0, marker_color=None, marker=None, gap=420, line_h=None, marker_size=170, font='Arial')`** -- A bulleted list, one text box per item, with a square marker.
+- **`bullets(doc, page, x, y, w, items, size=12.5, color=0, marker_color=None, marker=None, gap=420, line_h=None, marker_size=170, font=None)`** -- A bulleted list, one text box per item, with a square marker.
 - **`advance_em(s, weight=100.0)`** -- Mean glyph advance of ``s``, in em, for Arial at ``weight``.
 - **`text_width_est(s, size, weight=100.0)`** -- Estimated rendered width of ``s`` at ``size`` pt, in 1/100 mm.
 - **`fit_size(s, width, weight=100.0, max_size=44.0, min_size=7.0, slack=0.94)`** -- Largest point size at which ``s`` fits ``width`` on one line.
 - **`wrap_words(s, width, size, weight=100.0)`** -- Greedy word wrap of ``s`` to ``width`` at ``size`` pt. ``[line, ...]``.
 - **`fit_lines(s, width, height, weight=100.0, max_size=44.0, min_size=7.0, line_spacing=1.22)`** -- Size ``s`` to fill ``width`` x ``height``, wrapping on spaces.
 - **`est_lines(s, width, size, font_factor=None)`** -- Rough wrapped-line count, for laying out a list before the document can measure it. ``office.template.text_overflow`` measures for real -- use that to check. ``font_factor`` overrides the per-character estimate.
-- **`table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(), row_h=None, header_h=None, head_fill=4868682, head_color=16777215, size=12.0, head_size=12.0, zebra=15921906, body_fill=16777215, align=None, pad=200, cell_colors=None, cell_weights=None, row_heights=None, rule=13158600, font='Arial', box=None, **kw)`** -- Draw a table out of rectangles and text. ``rows[0]`` is the header.
+- **`table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(), row_h=None, header_h=None, head_fill=4868682, head_color=16777215, size=12.0, head_size=12.0, zebra=15921906, body_fill=16777215, align=None, pad=200, cell_colors=None, cell_weights=None, row_heights=None, rule=13158600, font=None, box=None, **kw)`** -- Draw a table out of rectangles and text. ``rows[0]`` is the header.
 - **`cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=15921906, accent=None, numbered=False, height='auto', size=None, title_size=None, note_size=None, pad=None, radius=None, color=None, title_color=None, note_color=9079434, line=None)`** -- A row (or grid) of cards, all built the same way. Returns their boxes.
 - **`steps(doc, page, x, y, w, h, items, captions=None, numbered=True, accent=None, fill=15921906, gap=None, size=None, title_size=None, caption_size=None, arrow_color=None, pad=None, radius=None)`** -- A left-to-right flow: equal tiles, real arrows between them, captions under them. Returns the tile boxes.
 - **`kpis(doc, page, x, y, w, h, items, color=None, caption_color=4868682, gap=None, max_size=54.0, caption_size=None, align='center')`** -- A row of big numbers with captions under them. Returns their boxes.
 - **`balance_lines(s, width, size, weight=100.0, max_lines=None)`** -- Wrap ``s`` to ``width`` with the lines evened up. ``[line, ...]``.
-- **`statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None, max_size=44.0, min_size=16.0, weight=150.0, color=None, align='center', valign='center', font='Arial')`** -- One sentence, as large as it fits, broken where it reads. The shape.
+- **`statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None, max_size=44.0, min_size=16.0, weight=150.0, color=None, align='center', valign='center', font=None)`** -- One sentence, as large as it fits, broken where it reads. The shape.
 - **`venn_geometry(cx, cy, r, n=3)`** -- Circle centres for a symmetric Venn of radius ``r`` about ``(cx, cy)``.
 - **`venn_bounds(cx, cy, r, n=3, labels=None, label_size=None)`** -- The ``Box`` a ``venn`` would actually occupy, labels included.
 - **`venn_fit(box, n=3, labels=None, label_size=None)`** -- ``(cx, cy, r)`` for the largest ``venn`` whose labels still fit ``box``.

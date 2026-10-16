@@ -240,6 +240,15 @@ hand-rolled versions come out different every time, and the difference is always
 in the rhythm — a note floating under one card and inside the next, arrows too
 small for their gap, one title in the accent colour and two in black.
 
+**QA watches this.** Every shape `office.draw` makes is named after what made
+it. A slide of more than twelve shapes placed one by one (`D.text`, `D.rect`,
+...) with nothing from a composition helper goes to the vision-agent first,
+and hand-placed peers whose edges or gaps miss by 0.6 to 3 mm fail the gate
+(`references/qa.md` §Hand-placed slides). A diagram no helper draws is fine
+when its shapes come from one `Box` — `grid`, `cut_*` — because then they line
+up exactly. One field run placed 570 shapes by page percentage instead, and
+its rows drifted on slide after slide.
+
 ```python
 D.cards(doc, page, area, [
     ("Inventory", "Classify every agent against A / B / C.",
@@ -279,6 +288,9 @@ Patterns worth reaching for, roughly in order of how often they earn their keep:
 - **Comparison columns** — before/after, pros/cons, option A vs B
 - **Timeline or process flow** — numbered steps, chevrons, arrows
 - **A table** — when the content really is a matrix, say so with one
+- **A chart or a table takes half the slide or all of it** — beside the text
+  (about 40/60) or alone on the slide, never squeezed into a band under a
+  paragraph
 - **Large stat callouts** — 60–72pt numbers with small labels beneath
 - **Icon + text rows** — icon in a filled circle, bold header, description below
   (`D.icon(..., backdrop="accent")`, see Icons below)

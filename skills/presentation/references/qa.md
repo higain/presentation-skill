@@ -167,6 +167,33 @@ fix is to lay out from the `Box` `D.canvas` returns so the content fills the
 slide (`references/drawing.md` §Composition). The only legitimate way past it
 is the allowlist, with a reason — see below.
 
+### Hand-placed slides: looked at first, and checked for alignment
+
+Every shape `office.draw` creates is named after what made it — `D:cards`,
+`D:steps`, `D:table` when a composition helper laid it out, `D:rectangle`,
+`D:text`, `D:ellipse` when the build placed it by hand — and the name
+survives the save. The template's own shapes are never counted. Two things
+read those names:
+
+- **A slide to look at, not a finding.** A slide with more than twelve
+  hand-placed shapes and none from a helper is listed under *slides to look
+  at*, and its row in the verdict table tells the vision-agent so. A custom
+  diagram no helper draws is legitimately built that way, so the count alone
+  never fails a build.
+- **Near-misses are a finding.** Among the hand-placed shapes, *peers* — same
+  kind, sizes within 10 %, like the cells of one row or the cards of one
+  column — must share their edges exactly. Two peers whose closest edges miss
+  by 0.6 to 3 mm, or a run of three or more whose gaps differ by 0.6 to 3 mm,
+  fail the gate. That is the defect layouts worked out by page percentage
+  have: a DeepSeek run placed 570 rectangles and text boxes that way and
+  drifted on slide after slide. A label inside a box is an inset, not a miss;
+  offsets over 3 mm are a choice.
+
+The fix is to lay the shapes out from one `Box` (`grid`, `cut_*`), so peers
+share edges and gaps by construction (`references/drawing.md`). An offset that
+is meant — a staggered row — is acknowledged as kind `alignment`, content
+`near-miss`, with a reason.
+
 ### The allowlist: how correct content gets a clean report
 
 A finding is a defect this build introduced. **Correct content that merely
@@ -188,7 +215,7 @@ whole transcripts re-litigating it.
 ```
 
 - `kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`,
-  `no-title`, `variety` or `vision`. A `vision` entry overrules the
+  `no-title`, `variety`, `alignment` or `vision`. A `vision` entry overrules the
   vision-agent and counts only with the user's `"approved_by"` (see *Visual
   QA* below); it is matched by the gate, not by `qa.py`, so it is never
   reported as stale.

@@ -49,6 +49,19 @@ named constants and small helpers (`rubric(page, text)`,
 part imports it as `import deck_common as C`. Builders reuse a helper; they
 do not re-decide it.
 
+**A specification that gives positions and sizes** (`[x 10 %, y 23 %, B 58 %]`,
+"14 pt") describes the original's *arrangement*, not coordinates for this
+template. Decide here which helper draws each recurring arrangement: a row of
+cards is `D.cards`, a flow is `D.steps`, numbers are `D.kpis`, a grid of rows
+is `D.table`. Put that mapping in `_common.py`. **Never put page-percentage
+helpers (`pct_x(sw, 28)`) in it**: a field run did, its builders placed 570
+shapes by percentage, and 18 slides printed text over text. QA now fails
+hand-placed shapes that almost line up (`references/qa.md` §Hand-placed
+slides). Type
+sizes come from the pack's roles (`role="body"`, `role="caption"`), never
+from the specification's point sizes: a spec's 10 pt kicker is under the
+pack's floor and fails the gate.
+
 **3. Write `build.py` and the first one or two slides yourself.**
 
 ```python
@@ -142,6 +155,14 @@ For each slide N write {DECK_DIR}/slides/sNN.py with `DESIGN = <number>`
 and `def fill(doc, page):`. Transcribe the source by reading it: every text
 verbatim (quotes, dashes, line breaks), every element, the speaker notes with
 office.impress.set_notes. Never write code that parses the source files.
+
+Lay every slide out from the Box that D.canvas returns, with the composition
+helpers (D.cards, D.steps, D.kpis, D.table, D.bullets, D.statement) and the
+helpers in _common.py. The source's percentages and point sizes describe the
+arrangement, not coordinates: never compute a position from a page percentage
+and never copy a point size; take sizes from role=. A diagram no helper draws
+is laid out from one Box (grid, cut_*): the check fails shapes that should
+line up and miss by a millimetre or two.
 
 Decisions already made (do not re-decide): {DECISIONS}
 
