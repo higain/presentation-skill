@@ -26,12 +26,14 @@ templates/acme/
   catalog.md           which design carries which content    (generated)
   designs/             one file per design: keys, slots      (generated)
   overrides.md         the prose no script can measure        (hand-written)
+  history/             the template before each add_designs.py append
   catalog/
     manifest.json      one row per design                     (catalog_extract.py)
     slide-NN/          render.png + structure.json per design (catalog_extract.py)
     entries/*.json     what each design is for                (judged: model or person)
     decision_table.json  content situation -> design         (judged)
     designs.md         the worksheet, if you filled one       (name_designs.py)
+    added.json         designs appended from project decks     (add_designs.py)
 ```
 
 Two halves feed the catalog, and keeping them apart is the point:
@@ -147,7 +149,11 @@ python3 $SETUP/name_designs.py templates/acme/catalog --import   # -> entries/, 
 
 Every measured field is pre-filled; only judgement is asked for. Twenty
 designs is about five minutes with the contact sheet open, and a person does
-this better than a 31B model did. The worksheet's `## Canvas` block lets you
+this better than a 31B model did. A design imported before comes back with
+what was approved, not with the vision-agent's proposal. `--only 32,33` writes
+the worksheet for those designs alone, and the import then leaves every other
+entry exactly as it was. The optional `table_row` field gives a design its own
+row at the top of the decision table (stage D). The worksheet's `## Canvas` block lets you
 name the canvas design and its `keep` tuple by hand when the measured pick is
 wrong (stage E shows you).
 
@@ -192,6 +198,13 @@ display-title budgets, palette and type scale, and one entry per design. It
 flags rather than hides what went wrong: a row citing a design the template
 does not have gets a ⚠, a design with no judged entry reads *(not
 catalogued)*, an override anchor that does not land is listed at the foot.
+
+The decision table has two kinds of row. Designs with a `table_row` come
+**first**, one row each, because first match wins and a specific row ("a live
+demo, step by step with commands") must be read before the generic one that
+would also match. Then one generic row per content situation picks one design
+and lists the others as alternatives **with their content shape**, so a builder
+can choose between them without opening every design file.
 
 **Then review it against the renders.** Every capacity figure and every
 decision-table row. Capacity is what a model overstates most.
@@ -281,6 +294,49 @@ machine.
 
 ---
 
+## Stage F: add designs from project decks
+
+A pack can grow after setup. Custom slides that people built on the company
+master for one project become designs of the pack, numbered after the last
+one, so no existing number moves. `.pptx`/`.potx` packs only.
+
+```bash
+python3 $SETUP/add_designs.py candidates acme project1.pptx project2.pptx
+python3 $SETUP/add_designs.py texts acme project1.pptx --slides 21,8
+# fill every "new" in add-designs/project1.texts.json with neutral sample text
+python3 $SETUP/add_designs.py append acme add-designs/project1.texts.json
+python3 scripts/catalog_extract.py templates/acme/template.pptx -o templates/acme/catalog
+python3 scripts/vision_brief.py designs templates/acme/catalog --only 32,33
+python3 $SETUP/name_designs.py templates/acme/catalog --only 32,33
+python3 $SETUP/name_designs.py templates/acme/catalog --import
+python3 scripts/catalog_build.py templates/acme/catalog
+```
+
+- **`candidates`** compares where each slide's top-level shapes sit with every
+  design of the pack. It reads XML only, takes about a second, and calls no
+  model. It writes `add-designs/candidates.md`: slides no design matches,
+  grouped when they look alike; slides that are a design already; slides on
+  another master, which cannot be added. A person picks one slide per
+  candidate.
+- **`texts`** lists every paragraph of the chosen slides with a blank `new`.
+  The project's wording would become the retext keys and the budgets of every
+  later deck, so it is replaced with sample text of about the same length.
+  Footer, date and slide-number placeholders are left alone. Pictures, chart
+  data and embedded objects travel as they are, and the command lists them.
+- **`append`** copies the slides into `template.pptx` at the `.pptx` level,
+  with their media, charts and embedded objects, and rebinds each to the
+  template's layout of the same name. Notes and comments are dropped.
+  LibreOffice never saves the template, because every `.pptx` save through it
+  adds one more master. The template before is kept in `history/`, and
+  `catalog/added.json` records each design's origin. `append` refuses:
+  - an unfilled `new`;
+  - sample text that makes two different originals equal or one a substring
+    of the other, since a retext key is a substring;
+  - a deck that changed since `texts`;
+  - a slide that is a design already.
+
+---
+
 ## Privacy and git
 
 - `templates/*` is gitignored (`templates/README.md` excepted). The template,
@@ -308,6 +364,9 @@ machine.
 | `--asset: no template found beside …` | The catalog directory is not inside a pack. Pass `--asset path/to/template.pptx`. |
 | `make_pack.py` refuses a colour | It is not on any slide of the template. Take it from `count_style.py`; `--allow-unseen` for a colour that lives only in the master. |
 | The vision-agent's judgement is generic, or praises a broken slide | It is not seeing the renders, or is a text-only model. Confirm it actually reads the `render.png` you delegate to it. |
+| `add_designs.py` lists slides of a deck you know is on the master under *Not on this master* | Their layout name is not in the template: the deck was built on another copy of the master, with layouts renamed. Rename the layout in the deck, or add the slide to a pack built on that copy. |
+| `add_designs.py append` refuses with "now collides" | Two paragraphs got sample text where one is inside the other. A retext key is a substring, so it would hit both. Give each its own wording. |
+| `vision_brief.py designs` lists every design after adding two | A re-extraction re-renders everything, and LibreOffice renders do not always come out byte-identical. Pass `--only` with the new design numbers. |
 | A vision finding looks wrong and the string it names is nowhere in the file | Check *how* you looked. A footer is a page property, not a shape, so a shape search cannot see one. `wireframe.py` and `probe.py` settle most of the rest; a finding nothing can settle stands. |
 | No vision-agent is available for the visual half of QA | `wireframe.py` over `render/` is the fallback; say which slides nothing with eyes has seen. |
 | `no per-layout entries` on `--aggregate` | Run `name_designs.py --import` first; aggregate reads `catalog/entries/*.json`. |
@@ -333,7 +392,9 @@ machine.
 | `scripts/catalog_gemma.py` — *removed* | Used to judge dossiers with a hosted vision model; that job is now the vision-agent filling the `name_designs.py` worksheet | build-time |
 | `scripts/catalog_build.py` | Stage D: both halves plus overrides to `catalog.md` (the index) and `designs/design-N.md` (one per design); `--check` for drift | build-time |
 | `scripts/catalog_import.py` | Recovery: a hand-written catalog to the entries it never kept | once, if needed |
+| `../presentation-setup/scripts/harvest_icons.py` | Stage C: the template's own icons into the pack's `icons/` | build-time |
 | `../presentation-setup/scripts/probe_deck.py` | Stage E: three real slides on the new pack | build-time |
+| `../presentation-setup/scripts/add_designs.py` | Stage F: custom slides from project decks become designs (`candidates`, `texts`, `append`) | build-time |
 | `scripts/review_renders.py` — *removed* | The per-deck visual reviewer used to send renders to a hosted model; that job is now the vision-agent, which the build agent delegates to. |
 | `scripts/vision_brief.py` | Writes the tested vision-agent brief beside every render or design, and collects the saved answers into the report or the worksheet | runtime + build-time |
 | `scripts/split_source.py` | A long source (a slide spec) as one file per slide, for big decks built from parts (`references/big-decks.md`) | runtime |

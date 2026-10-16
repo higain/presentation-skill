@@ -197,6 +197,15 @@ def _entry_block(number, entry, structure, extra=None):
                    f"{b['pt']:g}pt (box {b['width']} wide). Over that it wraps, "
                    f"and a display title wraps into the master's own decoration")
 
+    if entry.get("table_row"):
+        out.append(f"- **Made for:** {entry['table_row']} — its own row at "
+                   f"the top of the decision table")
+    source = entry.get("source") or {}
+    if source.get("deck"):
+        out.append(f"- **Origin:** added from a project deck "
+                   f"(`{source['deck']}`, slide {source.get('slide')}); its "
+                   f"wording is neutral sample text, and any picture is the "
+                   f"project's — replace or delete it")
     out.append(f"- **Use when:** {entry.get('use_when', '_(not catalogued)_')}")
     out.append(f"- **Avoid when:** {entry.get('avoid_when', '_(not catalogued)_')}")
     if entry.get("looks_best"):

@@ -143,6 +143,9 @@ each with a 1-2 word label and a 1-sentence explanation'>",
  "avoid_when": "<one sentence: content that breaks this design, with a number, \
 e.g. 'more than 4 steps' or 'labels longer than 3 words'>",
  "max_items": <integer: how many repeated items it holds, or 1>,
+ "table_row": "<the specific content this design was made for, as a planner \
+would name it in a decision table, e.g. 'risks, each paired with its \
+countermeasure' or 'a phase of a process with its goal and a real case'>",
  "looks_best": "<one tip that keeps it looking designed when filled, e.g. \
 'keep each label to one line'>",
  "imagery": [{{"depicts": "<what the picture concretely shows>", "role": \

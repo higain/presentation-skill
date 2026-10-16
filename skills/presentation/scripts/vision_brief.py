@@ -114,7 +114,7 @@ def collect(deck: Path, outdir: Path) -> tuple[int, dict]:
     return filled, problems
 
 
-def write_design_briefs(catalog: Path) -> list:
+def write_design_briefs(catalog: Path, only=None) -> list:
     """A brief in every design folder; returns those still needing an answer.
 
     A design whose render has not changed since its answer was saved keeps
@@ -125,7 +125,8 @@ def write_design_briefs(catalog: Path) -> list:
         raise SystemExit(f"No manifest.json in {catalog}. Point this at the "
                          f"directory catalog_extract.py wrote.")
     numbers = [row["number"] for row in
-               json.loads(manifest.read_text())["slides"]]
+               json.loads(manifest.read_text())["slides"]
+               if not only or row["number"] in only]
     images = review.prepare_designs(catalog, numbers)
     written = []
     for number, (image, _fresh) in images.items():
@@ -171,10 +172,14 @@ def main() -> int:
     coll.add_argument("--outdir", type=Path)
     designs = sub.add_parser("designs", help="one brief per template design")
     designs.add_argument("catalog", type=Path)
+    designs.add_argument("--only", default="",
+                         help="brief these designs only, e.g. 32,33 -- the "
+                              "ones add_designs.py just appended")
     args = ap.parse_args()
 
     if args.cmd == "designs":
-        briefs = write_design_briefs(args.catalog)
+        only = {int(n) for n in re.findall(r"\d+", args.only)}
+        briefs = write_design_briefs(args.catalog, only)
         if not briefs:
             print("Every design already has an answer for its current "
                   "render -- nothing to send.")

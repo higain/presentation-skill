@@ -42,7 +42,31 @@ from office.vision import CONTENT_TYPES  # noqa: E402
 #: text-only builder can act on: "3 numbers, each with a short label" matches
 #: content, "a KPI dashboard" does not.
 JUDGED = ("name", "content_types", "purpose", "use_when", "avoid_when",
-          "content_shape", "max_items", "looks_best")
+          "content_shape", "max_items", "looks_best", "table_row")
+
+
+def read_added(catalog: Path) -> dict:
+    """``{design: ledger row}`` for designs ``add_designs.py`` appended."""
+    path = catalog / "added.json"
+    if not path.is_file():
+        return {}
+    rows = json.loads(path.read_text(encoding="utf-8")).get("added") or []
+    return {row["design"]: row for row in rows}
+
+
+def read_entry(catalog: Path, number: int) -> dict:
+    """The imported entry for one design -- what a person approved -- or ``{}``."""
+    path = catalog / "entries" / f"slide-{number:02d}.json"
+    if not path.is_file():
+        return {}
+    entry = json.loads(path.read_text(encoding="utf-8"))
+    out = {key: entry.get(key) for key in JUDGED if entry.get(key)}
+    if isinstance(out.get("content_types"), list):
+        out["content_types"] = ", ".join(out["content_types"])
+    items = (entry.get("capacity") or {}).get("max_items")
+    if items:
+        out["max_items"] = str(items)
+    return out
 
 
 def read_answer(catalog: Path, number: int) -> dict:
@@ -125,9 +149,17 @@ CANVAS_BLOCK = re.compile(r"^##\s*Canvas\s*$(.*?)(?=^##\s|\Z)", re.M | re.S)
 FIELD = re.compile(r"^-\s*\*\*(?P<key>[a-z_ ]+)\*\*\s*:\s*(?P<value>.*)$", re.M)
 
 
-def worksheet(catalog: Path):
-    """Write ``designs.md``: measured facts filled, judgement blank."""
+def worksheet(catalog: Path, only=None):
+    """Write ``designs.md``: measured facts filled, judgement blank.
+
+    A design imported before keeps what the person approved: the entry wins
+    over a vision answer, which wins over the guess.  ``only`` limits the
+    worksheet to those designs -- the ones just added -- and the import then
+    leaves every other entry as it is.
+    """
     manifest = json.loads((catalog / "manifest.json").read_text())
+    added = read_added(catalog)
+    canvas = _saved_canvas(catalog)
     lines = [
         f"# Designs — {manifest['file']}", "",
         "One block per design. **The measured lines are already right — do not "
@@ -139,6 +171,11 @@ def worksheet(catalog: Path):
         "`name` is what the decision table will call it. `content_types` is a "
         "comma-separated list from: " + ", ".join(CONTENT_TYPES) + ". "
         "Anything else is fine; the table just repeats it.", "",
+        "`table_row` gives a design its own row at the top of the decision "
+        "table: the specific content it was made for, as a planner would say "
+        "it (\"risks, each paired with its countermeasure\"). Fill it for "
+        "designs added from project decks; leave it blank for a generic design, "
+        "which the table lists under its content type.", "",
         "Then: `name_designs.py " + str(catalog) + " --import`", "",
         "## Canvas", "",
         "The design a diagram or a chart is drawn on, stripped back to its "
@@ -148,22 +185,34 @@ def worksheet(catalog: Path):
         "looking like a cover rather than a content slide. `keep` is the "
         "shape indices to leave standing -- the title, a topic label -- as "
         "`probe.py` numbers them.", "",
-        "- **design**: ",
-        "- **keep**: ", "",
+        f"- **design**: {canvas.get('design', '') if canvas else ''}",
+        f"- **keep**: "
+        f"{', '.join(map(str, canvas.get('keep') or [])) if canvas else ''}",
+        "",
     ]
     for row in manifest["slides"]:
         number = row["number"]
+        if only and number not in only:
+            continue
         structure = json.loads(
             (catalog / f"slide-{number:02d}" / "structure.json").read_text())
         name, kinds = _guess(structure)
         capacity = _capacity(structure)
-        answer = read_answer(catalog, number)
+        approved = read_entry(catalog, number)
+        answer = {**read_answer(catalog, number), **approved}
+        if number not in added and not approved.get("table_row"):
+            # A specific row is for a design made for one job.  The vision
+            # agent proposes one for every design, and a table of sixty
+            # specific rows is no table.
+            answer.pop("table_row", None)
         render = catalog / f"slide-{number:02d}" / "render.png"
         keys = structure.get("retext_keys") or []
         budgets = structure.get("title_budgets") or []
         lines += [
             f"## Design {number}", "",
             f"![render]({render.relative_to(catalog)})", "",
+            *([f"*Added from `{added[number]['deck']}`, slide "
+               f"{added[number]['slide']}.*", ""] if number in added else []),
             *(["*Proposed by the vision-agent — review.*", ""] if answer
               else []),
             f"- **name**: {answer.get('name') or name}",
@@ -202,6 +251,17 @@ def read_worksheet(catalog: Path):
     return out
 
 
+def _saved_canvas(catalog: Path):
+    """The canvas block the last import wrote, so a worksheet keeps it."""
+    path = catalog / "decision_table.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("canvas")
+    except ValueError:
+        return None
+
+
 def read_canvas(catalog: Path):
     """``{"design": N, "keep": [...]}`` from the worksheet, or ``None``."""
     text = (catalog / "designs.md").read_text(encoding="utf-8")
@@ -225,10 +285,16 @@ def write_entries(catalog: Path, filled):
     manifest = json.loads((catalog / "manifest.json").read_text())
     entries_dir = catalog / "entries"
     entries_dir.mkdir(exist_ok=True)
+    added = read_added(catalog)
     written, blank = 0, []
     rows = []
     for row in manifest["slides"]:
         number = row["number"]
+        path = entries_dir / f"slide-{number:02d}.json"
+        if number not in filled and path.is_file():
+            # Not on this worksheet (``--only``): what was approved stands.
+            rows.append((number, json.loads(path.read_text(encoding="utf-8"))))
+            continue
         structure = json.loads(
             (catalog / f"slide-{number:02d}" / "structure.json").read_text())
         guess_name, guess_kinds = _guess(structure)
@@ -252,12 +318,18 @@ def write_entries(catalog: Path, filled):
             "capacity": _capacity(structure),
             "imagery": answer.get("imagery") or [],
         }
+        if fields.get("table_row"):
+            entry["table_row"] = fields["table_row"]
+        if number in added:
+            entry["source"] = {k: added[number][k]
+                               for k in ("deck", "slide", "added")
+                               if k in added[number]}
         items = re.findall(r"\d+", fields.get("max_items") or "")
         if items:
             entry["capacity"]["max_items"] = int(items[0])
         if not entry["purpose"] or not entry["use_when"]:
             blank.append(number)
-        (entries_dir / f"slide-{number:02d}.json").write_text(
+        (path).write_text(
             json.dumps(entry, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
         written += 1
@@ -290,14 +362,46 @@ TABLE_ORDER = [
 ]
 
 
+#: How much of a design's content shape an alternative carries in the table.
+SHAPE_CHARS = 70
+#: Alternatives listed per row; the rest are in the index.
+MAX_ALTERNATIVES = 6
+
+
+def _alternative(number, entry):
+    shape = (entry.get("content_shape") or "").strip()
+    if len(shape) > SHAPE_CHARS:
+        shape = shape[:SHAPE_CHARS - 1].rstrip() + "…"
+    return f"{number} ({shape})" if shape else str(number)
+
+
 def write_decision_table(catalog: Path, rows, canvas=None):
-    """A table derived from what each design says it carries."""
+    """A table derived from what each design says it carries.
+
+    Designs with a ``table_row`` -- made for one specific kind of content --
+    come first, one row each: first match wins, and a specific row has to be
+    read before the generic one that would also match.  The generic rows then
+    pick one design per content type and list the others *with their content
+    shape*, so a builder can choose between them without opening each file.
+    """
+    entries = dict(rows)
     by_kind = {}
     for number, entry in rows:
         for kind in entry["content_types"]:
             by_kind.setdefault(kind, []).append((number, entry["name"]))
 
     table, used = [], set()
+    for number, entry in sorted(rows):
+        if entry.get("table_row"):
+            used.add(number)
+            table.append({
+                "when": entry["table_row"],
+                "use_slide": number,
+                "because": f"{entry['name']} — "
+                           + (entry.get("content_shape") or entry.get("use_when")
+                              or "made for this content."),
+                "specific": True,
+            })
     for when, kinds in TABLE_ORDER:
         kind = next((k for k in kinds if by_kind.get(k)), kinds[0])
         options = by_kind.get(kind) or []
@@ -307,13 +411,17 @@ def write_decision_table(catalog: Path, rows, canvas=None):
         if pick is None:
             continue
         used.add(pick[0])
+        others = [n for n, _ in options if n != pick[0]]
+        listed = others[:MAX_ALTERNATIVES]
         table.append({
             "when": when,
             "use_slide": pick[0],
             "because": f"{pick[1]} — carries {kind}."
-                       + (f" Alternatives: "
-                          + ", ".join(str(n) for n, _ in options if n != pick[0])
-                          if len(options) > 1 else ""),
+                       + (" Alternatives: "
+                          + "; ".join(_alternative(n, entries[n]) for n in listed)
+                          + (f"; {len(others) - len(listed)} more in the index"
+                             if len(others) > len(listed) else "")
+                          if others else ""),
         })
 
     spread = sorted({number for number, _ in rows})
@@ -337,17 +445,23 @@ def main():
                     help="The directory catalog_extract.py wrote")
     ap.add_argument("--import", dest="do_import", action="store_true",
                     help="Read a filled designs.md into entries/")
+    ap.add_argument("--only", default="",
+                    help="Worksheet for these designs only, e.g. 63,64 -- the "
+                         "ones add_designs.py appended; every other entry "
+                         "is kept as imported")
     args = ap.parse_args()
+    only = {int(n) for n in re.findall(r"\d+", args.only)}
 
     if not (args.catalog / "manifest.json").is_file():
         ap.error(f"no manifest.json in {args.catalog} — point this at the "
                  f"directory catalog_extract.py wrote")
 
     if not args.do_import:
-        out = worksheet(args.catalog)
+        out = worksheet(args.catalog, only)
         print(f"Wrote {out}")
         numbers = [row["number"] for row in json.loads(
-            (args.catalog / "manifest.json").read_text())["slides"]]
+            (args.catalog / "manifest.json").read_text())["slides"]
+            if not only or row["number"] in only]
         status = {n: review.verify_design(args.catalog, n)[0] for n in numbers}
         answered = sum(1 for s in status.values() if s == "ok")
         rejected = [n for n, s in status.items()

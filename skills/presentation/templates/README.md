@@ -13,6 +13,7 @@ templates/
     catalog.md         which design carries which content  (generated)
     designs/           one file per design: keys, slots    (generated)
     overrides.md       the prose no script can measure     (hand-written)
+    history/           the template before each design was added from a project deck
     catalog/           extraction dossiers and the judged entries
 ```
 

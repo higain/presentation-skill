@@ -1,6 +1,6 @@
 ---
 name: presentation-setup
-description: "Teach the presentation skill a company template: turn a .pptx/.potx/.odp/.otp master into a template pack. Use when someone brings a master or corporate design to 'set up', 'onboard', 'install' or 'teach' the tooling, when no template pack is installed yet, when D.color() raises because a deck has no palette, or when an existing pack must be rebuilt after the template changed. Triggers on 'set up the presentation skill', 'Firmentemplate einrichten', 'Folienmaster einlesen', 'install a brand template', 'no pack installed'. Not for building or editing a deck on a template that is already installed -- that is the presentation skill alone, even when the request says 'im Firmentemplate' or 'in our corporate design'."
+description: "Teach the presentation skill a company template: turn a .pptx/.potx/.odp/.otp master into a template pack. Use when someone brings a master or corporate design to 'set up', 'onboard', 'install' or 'teach' the tooling, when no template pack is installed yet, when D.color() raises because a deck has no palette, when an existing pack must be rebuilt after the template changed, or when custom slides from finished project decks on the company master should become designs of the catalog ('add these slides to the catalog', 'neue Designs aufnehmen'). Triggers on 'set up the presentation skill', 'Firmentemplate einrichten', 'Folienmaster einlesen', 'install a brand template', 'no pack installed'. Not for building or editing a deck on a template that is already installed -- that is the presentation skill alone, even when the request says 'im Firmentemplate' or 'in our corporate design'."
 license: Apache-2.0
 compatibility: "Needs the `presentation` skill installed beside this one (same skills/ directory or ~/.claude/skills/), and its dependencies: LibreOffice Impress 25.2+ with python3-uno, python3-lxml, python3-defusedxml, python3-pil, poppler-utils, Python 3.11+. All from apt, never pip or npm. Works offline. Judging each design's render is done by the vision-agent (or a person) and never sends a render anywhere."
 ---
@@ -291,6 +291,89 @@ Then run the probe again and look again — through the vision-agent.
 is done — do not skip it.** Do not report a pack as finished on the strength
 of a clean QA run. QA cannot see a title crossing a decoration, and that is
 precisely what this stage is for.
+
+## Adding designs from project decks  ·  **ask the user**
+
+A master holds what the brand team drew. The best designs are often in
+project decks: a risk-to-countermeasure mapping someone built once, on the
+company master, that the catalog never saw. This adds such slides to an
+installed pack as new designs, numbered after the last one, so nothing
+existing moves. `.pptx`/`.potx` packs only.
+
+**1. Find the candidates.**
+
+```bash
+python3 $SETUP/scripts/add_designs.py candidates acme project1.pptx project2.pptx
+```
+
+It writes `add-designs/candidates.md` in the working directory. It reads XML
+only, and compares where each slide's shapes sit with every design of the pack:
+
+- **candidates**: slides no design matches. Slides that look alike are
+  grouped, so six phase slides of one workshop make one candidate.
+- **already a design**: a design copied and retexted.
+- **not on this master**: their layout is not in the template; they cannot be
+  added.
+
+A candidate whose *nearest design* scores 50–75 % is probably that design,
+reworked. **Show the table to the user** and let them pick **one slide per
+candidate** (the fullest, cleanest example), or skip it. Never add every
+candidate: a catalog of sixty one-off slides is no catalog.
+
+**2. Neutralise the wording.**
+
+```bash
+python3 $SETUP/scripts/add_designs.py texts acme project1.pptx --slides 21,8
+```
+
+`add-designs/project1.texts.json` lists every paragraph of those slides with
+a blank `new`. The wording is the customer's, and the pack's wording becomes
+the retext keys and the budgets of every later deck. So fill each `new` with
+sample text:
+
+- in the same language, about the same length (`chars`);
+- generic: no customer, product, person or project number;
+- **distinct per paragraph**. `append` refuses text that makes two different
+  originals equal or one a substring of the other, because a retext key is a
+  substring.
+
+Footers, dates and page numbers are left alone. Alt texts are prefilled; check
+them. The command prints what else the slide carries: pictures, chart data,
+embedded objects. They travel as they are, so a customer photo or logo has to
+be replaced in the project deck first. **Show the user the filled file** before
+appending.
+
+**3. Append.**
+
+```bash
+python3 $SETUP/scripts/add_designs.py append acme add-designs/project1.texts.json
+```
+
+It copies the slides into the pack's template at the `.pptx` level, with their
+pictures, charts and embedded objects, and rebinds each to the template's
+layout of the same name. Speaker notes and comments are dropped. The template
+as it was is kept in `templates/acme/history/`, and `catalog/added.json`
+records where each design came from. Adding the same slide twice is refused.
+
+**4. Catalogue only the new designs**, as in stage 4 but with `--only`:
+
+```bash
+python3 $SKILL/scripts/catalog_extract.py $SKILL/templates/acme/template.pptx -o $SKILL/templates/acme/catalog
+python3 $SKILL/scripts/vision_brief.py designs $SKILL/templates/acme/catalog --only 32,33
+python3 $SETUP/scripts/name_designs.py $SKILL/templates/acme/catalog --only 32,33
+python3 $SETUP/scripts/name_designs.py $SKILL/templates/acme/catalog --import
+python3 $SKILL/scripts/catalog_build.py $SKILL/templates/acme/catalog
+```
+
+The worksheet has one extra field for an added design, **`table_row`**: the
+specific content it was made for, as a planner would say it ("risks, each
+paired with its countermeasure"). A design with a `table_row` gets its own row
+at the **top** of the decision table, above the generic rows, because first
+match wins. Review it with the user like every other judged field.
+
+`--import` leaves every design that was not on the worksheet exactly as it was
+approved. Then run the stage 5 probe on one new design: build a slide on it
+and have the vision-agent look at the render.
 
 ## Afterwards
 

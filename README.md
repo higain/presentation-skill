@@ -8,7 +8,7 @@ the format they arrived in, with nothing rewritten by hand.
 | Skill | What it does |
 |---|---|
 | [`skills/presentation`](skills/presentation/SKILL.md) | Build a deck from a brief or an outline on the installed template pack, edit an existing deck, extract text and notes, convert formats, render slides to PNG, and run the QA that finds overflow, leftover template wording, bad contrast and occlusion. |
-| [`skills/presentation-setup`](skills/presentation-setup/SKILL.md) | Teach the first skill your template: an interactive, five-stage walkthrough that counts the palette and type scale off the file, asks you the four questions only a person can answer, and writes a **template pack**. Twenty minutes, once. |
+| [`skills/presentation-setup`](skills/presentation-setup/SKILL.md) | Teach the first skill your template: an interactive, five-stage walkthrough that counts the palette and type scale off the file, asks you the four questions only a person can answer, and writes a **template pack**. Twenty minutes, once. Later, it adds the custom slides from your finished project decks to the pack as new designs. |
 
 The skills ship **no template**. A deck is only ever built on a pack you
 installed, in colours and sizes counted off your own master, and the drawing
@@ -101,6 +101,16 @@ skill runs five stages and stops four times to ask you something:
    look at — through the vision-agent. Anything wrong is a five-minute fix at
    this point.
 
+**Later: add your project slides.** The best designs are often not in the
+master but in finished project decks built on it. *"Add these slides to the
+catalog"* runs `add_designs.py`. It finds the slides no design of the pack
+matches, groups the ones that look alike, and has you pick one per group.
+Their project wording is replaced with neutral sample text you approve, and
+they are appended to the pack's template as new designs. Each one can get its
+own row at the top of the decision table ("risks, each paired with their
+countermeasure"). See *Adding designs from project decks* in
+`skills/presentation-setup/SKILL.md`.
+
 To try it without a template of your own, use the synthetic demo master in
 `skills/presentation/tests/fixtures/kite-brand-master.pptx`. It was generated
 for testing and belongs to nobody.
@@ -150,7 +160,7 @@ gitignored, so a company template cannot be committed by forgetting a step.
 skills/presentation/          the skill: SKILL.md, scripts/, references/, tests/
   scripts/office/             the engine: UNO document handling, drawing, template editing, QA
   templates/                  packs live here (gitignored except its README)
-skills/presentation-setup/    the setup skill: SKILL.md and its five scripts
+skills/presentation-setup/    the setup skill: SKILL.md and its scripts
 ```
 
 ## Licence
