@@ -44,8 +44,11 @@ headline and kicker are written, the pack's smallest type size, and where
 elements go that the source puts in the template's title band or footer (a
 tag beside the kicker, a page badge). A builder who meets an undecided case
 decides it alone, differently on every batch. Write the decisions into **`slides/_common.py`** as
-named constants and small helpers (`rubric(page, text)`,
-`tag(doc, page, box, kind)`, `ROLE = {"risk": D.color("alert"), ...}`). Every
+named constants and small helpers. Start with a **slide frame** that every
+content slide calls: kicker, title, phase tracker, the canvas area,
+`frame(page, kicker, title, phase=2) -> area`. Then the furniture is
+identical on every slide by construction. Add the other decisions beside it
+(`tag(doc, page, box, kind)`, `ROLE = {"risk": D.color("alert"), ...}`). Every
 part imports it as `import deck_common as C`. Builders reuse a helper; they
 do not re-decide it.
 

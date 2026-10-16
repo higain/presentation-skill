@@ -358,6 +358,14 @@ D.cards(doc, page, area, [
 ], height="equal")
 ```
 
+- **`D.emphasize(shape, phrase)`** sets one phrase in bold inside a text:
+  the "Grundlage:" before a list of references, a key figure inside a
+  sentence. `D.bullets` items can be `(lead, rest)` pairs, with the lead in
+  bold, the way consulting decks open a point.
+- **Adapt a design before drawing over it.** A design with roughly the right
+  structure, such as three columns or four steps, is often closer than a
+  canvas. Retext it, `move` and `resize` its shapes, and add icons. Its
+  own decoration then stays the template's.
 - **`D.tint(name, share)`** is a pale tint of a palette colour: the panel
   fill consulting decks use, one hue family plus its tint. It is derived
   from the palette, not invented.
@@ -413,8 +421,9 @@ D.chart_with_comment(doc, page, area, "Review-Zeit je Pull Request",
 - **`D.source`** puts footnotes and the source line small and grey at the
   bottom left of an area, and returns the area above it. Every slide with
   figures needs one. QA lists a slide with three or more figures and no
-  source line. When the design keeps a source line of its own (the catalog
-  warns about it), retext that one instead.
+  source line. When the design has a source line of its own under the area
+  (the canvas usually keeps it), `D.source` writes into that one, so its
+  sample text never ships.
 - **`D.table`** draws the consulting table by default:
   - a solid header row;
   - a hairline under every body row, no zebra stripes, no vertical rules;

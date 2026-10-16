@@ -508,10 +508,10 @@ def main():
                              "with a full run (no flags) before calling the "
                              "deck done.")
     parser.add_argument("--pin-text-proxies", action="store_true",
-                        help="Work around a LibreOffice crash (free(): invalid "
-                             "pointer) on unpatched 25.2.x: never release text "
-                             "proxies while soffice runs. Same as "
-                             f"{PIN_ENV}=1")
+                        help="Kept for old scripts: pinning text proxies is "
+                             "the default now (it stops LibreOffice 25.2's "
+                             f"free(): invalid pointer crash); {PIN_ENV}=0 "
+                             "switches it off")
     parser.add_argument("--require-verdicts", action="store_true",
                         help="Read the report only (no build, no QA, no "
                              "render) and exit 1 unless every slide has a "

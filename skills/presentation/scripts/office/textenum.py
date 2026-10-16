@@ -23,7 +23,12 @@ _PINS = []
 
 
 def pinning() -> bool:
-    return os.environ.get(PIN_ENV, "").lower() in ("1", "true", "yes", "on")
+    """On unless ``PRESENTATION_PIN_TEXT_PROXIES=0``.
+
+    Measured 2026-10-16 on one deck: 2 of 6 builds crashed with free():
+    invalid pointer unpinned, 0 of 4 pinned.  A few MB per deck is cheap.
+    """
+    return os.environ.get(PIN_ENV, "").lower() not in ("0", "false", "no", "off")
 
 
 def pin(obj):

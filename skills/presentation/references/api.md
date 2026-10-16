@@ -121,6 +121,7 @@ Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150
 - **`text(doc, page, x, y, w, h=None, *lines, **kw)`** -- A styled text box. One positional string per paragraph. Keywords: ``role``, ``size`` (pt), ``color``, ``weight`` (``BOLD``/``NORM``), ``align`` (left/center/right/justify), ``valign`` (top/center/bottom), ``font``, ``italic``, ``strike``, ``underline``, ``pad`` (inner margin), ``wrap``, ``grow`` (autogrow height), and the ``fill``/``line``/ ``transparence``/``line_width``/``radius`` of ``rect()`` for a boxed label.
 - **`chip(doc, page, x, y, w, h, fill, label='', color=16777215, size=10.0, weight=150.0, radius=None, line=None)`** -- A small filled block with a centred label -- legend keys, badges, tags.
 - **`bullets(doc, page, x, y, w, items, size=12.5, color=0, marker_color=None, marker=None, gap=420, line_h=None, marker_size=170, font=None)`** -- A bulleted list, one text box per item, with a square marker.
+- **`emphasize(shape, phrase, color=None, weight=150.0)`** -- Set ``phrase`` inside a shape's text in bold (and ``color``).
 - **`calibrate(doc, page, font=None)`** -- Measure how wide ``font`` (default: the pack's body font) really sets.
 - **`advance_em(s, weight=100.0)`** -- Mean glyph advance of ``s``, in em, for Arial at ``weight``, scaled to the font the deck really renders in (:func:`calibrate`).
 - **`text_width_est(s, size, weight=100.0)`** -- Estimated rendered width of ``s`` at ``size`` pt, in 1/100 mm.

@@ -44,7 +44,7 @@ class EnumerateTextTest(unittest.TestCase):
         self.addCleanup(release_pins)
 
     def test_off_yields_everything_and_pins_nothing(self):
-        with mock.patch.dict(os.environ, {PIN_ENV: ""}):
+        with mock.patch.dict(os.environ, {PIN_ENV: "0"}):
             self.assertEqual(list(enumerate_text(_Text("a", "b", "c"))),
                              ["a", "b", "c"])
         self.assertEqual(textenum._PINS, [])
@@ -59,8 +59,8 @@ class EnumerateTextTest(unittest.TestCase):
         self.assertEqual(textenum._PINS, [])
 
     def test_the_variable_is_read_on_every_call(self):
-        for value, pinned in (("true", True), ("on", True), ("0", False),
-                              ("no", False)):
+        for value, pinned in (("true", True), ("on", True), ("", True),
+                              ("0", False), ("no", False)):
             with mock.patch.dict(os.environ, {PIN_ENV: value}):
                 self.assertEqual(textenum.pinning(), pinned, value)
 

@@ -1281,11 +1281,19 @@ def bullets(doc, page, x, y, w, items, size=12.5, color=BLACK,
 
     Drawn rather than typed so each item can be positioned and coloured.
     Returns the y just past the last item, so lists can be stacked.
+
+    An item may be a ``(lead, rest)`` pair: the lead is set in bold at the
+    start of the line -- "**Kosten:** sinken um 8 %" -- the way consulting
+    decks open a point with the phrase that carries it.
     """
     line_h = line_h or int(size * 41)
     marker_color = BLACK if marker_color is None else marker_color
     cy = y
     for item in items:
+        lead = None
+        if isinstance(item, (tuple, list)):
+            lead, rest = (tuple(item) + ("",))[:2]
+            item = f"{lead} {rest}".strip()
         rows = est_lines(str(item), w - 800, size)
         bh = line_h * rows
         if marker:
@@ -1295,10 +1303,39 @@ def bullets(doc, page, x, y, w, items, size=12.5, color=BLACK,
         else:
             rect(doc, page, x, cy + int(size * 15), marker_size, marker_size,
                  fill=marker_color)
-        text(doc, page, x + 500, cy, w - 500, bh + 200, str(item),
-             size=size, color=color, valign="top", font=font)
+        shape = text(doc, page, x + 500, cy, w - 500, bh + 200, str(item),
+                     size=size, color=color, valign="top", font=font)
+        if lead:
+            emphasize(shape, lead)
+        # The next item starts where this one really ends: estimated line
+        # counts left one gap a line wider than the others.
         cy += bh + gap
     return cy
+
+
+def emphasize(shape, phrase, color=None, weight=BOLD):
+    """Set ``phrase`` inside a shape's text in bold (and ``color``).
+
+    For the lead phrase of a point, a key figure inside a sentence, the
+    "Grundlage:" before a list of references: one run styled apart, the
+    rest of the paragraph untouched.  Raises when the phrase is not there.
+    """
+    full = shape.getString()
+    at = full.find(phrase)
+    if at < 0:
+        raise ValueError("emphasize(): %r is not in %r" % (phrase, full[:60]))
+    cursor = shape.getText().createTextCursor()
+    cursor.gotoStart(False)
+    cursor.goRight(at, False)
+    cursor.goRight(len(phrase), True)
+    cursor.setPropertyValue("CharWeight", float(weight))
+    if color is not None:
+        try:
+            cursor.setPropertyValue("CharColorTheme", -1)
+        except Exception:
+            pass
+        cursor.setPropertyValue("CharColor", int(color))
+    return shape
 
 
 # Mean glyph advance in em, by character class.  A single 0.52 average is right
@@ -2811,11 +2848,44 @@ def source(doc, page, x, y, w, h, line, notes=()):
     area = Box(x, y, w, h)
     size = _role_size("footnote", "caption")
     lines = list(notes) + [line]
+    own = _template_source_line(page, area)
+    if own is not None:
+        # The design has a source line of its own under the area -- the one
+        # a canvas keeps.  Writing there keeps the template's position, and
+        # drawing a second one beside it is what leaves its sample text on
+        # the slide.
+        set_text(own, *lines)
+        restyle(own, CharHeight=float(size), CharColor=_quiet(),
+                CharWeight=NORM)
+        return area
     band = _text_height(lines, area.w, size) + int(size * 35.28 * 0.5)
     rest, foot = area.cut_bottom(band, gap=CARD_GAP)
     text(doc, page, foot, *lines, size=size, color=_quiet(),
          valign="bottom", pad=0)
     return rest
+
+
+def _template_source_line(page, area):
+    """The design's own wide, low text placeholder just under ``area``."""
+    try:
+        floor = page.Height * 0.96
+    except Exception:
+        return None
+    best = None
+    for _, shape in walk_shapes(page):
+        if (getattr(shape, "Name", "") or "").startswith(ORIGIN):
+            continue
+        if not hasattr(shape, "setString"):
+            continue
+        try:
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if (pos.Y >= area.y2 - 200 and pos.Y + size.Height <= floor
+                and size.Width >= area.w * 0.5 and size.Height <= 1500):
+            if best is None or pos.Y < best[0]:
+                best = (pos.Y, shape)
+    return best[1] if best else None
 
 
 def venn_geometry(cx, cy, r, n=3):
