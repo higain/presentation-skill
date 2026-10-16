@@ -167,7 +167,9 @@ needed) before a fourth retry. Never `try/except: pass` over it in
 `build.py`: the error is the information.
 
 The gate writes `out-report.md` and `render/` beside the deck and exits 1 on
-any finding. **Fix every finding in `build.py` and run the gate again** until
+any finding, and **3 when the checks are clean but slides have not been seen
+yet**: that is not done, go on to step 6. It exits 0 only once every slide
+is clean and seen. **Fix every finding in `build.py` and run the gate again** until
 it is clean. Leftover template text, a missing title, text off the slide,
 low contrast, top-heavy slides and drawn shapes that almost line up are
 defects, not noise.
@@ -251,7 +253,7 @@ deck, never by distorting the content:
 ```
 
 `kind` is `leftover-wording`, `stray-image`, `footer`, `balance`, `no-title`,
-`variety`, `alignment` or `vision`; each entry must match a real finding and carry a
+`variety`, `alignment`, `straddle` or `vision`; each entry must match a real finding and carry a
 reason. Tell the user about every entry you add. A `vision` entry also needs
 `"approved_by"`, which only the user writes.
 

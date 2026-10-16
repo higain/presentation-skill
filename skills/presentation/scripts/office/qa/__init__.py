@@ -27,10 +27,11 @@ from .allowlist import _acknowledged, load_allowlist, stale_acknowledgements
 from .baseline import _collision_key, _template_baseline
 from .colour import buried_text_issues, contrast_issues, occlusion_issues
 from .layout import (_catalog_size, alignment_issues, balance_findings,
-                     design_note, look_notes, sparse_slides,
+                     design_note, look_notes, sparse_slides, straddle_issues,
                      stray_template_images, variety_findings)
 from .prose import lost_plan_titles, prose_findings
-from .text import (PLACEHOLDER, _page_texts, emoji_issues, markdown_issues,
+from .text import (PLACEHOLDER, _page_texts, emoji_issues,
+                   headline_rival_issues, markdown_issues,
                    missing_title_issues, tiny_type_issues)
 
 
@@ -211,8 +212,11 @@ def _check(path, template, wanted):
                          + tiny_type_issues(page, number, tpl_strings)
                          + contrast_issues(page, number, base.contrast)
                          + occlusion_issues(page, number, base.occlusion)
-                         + buried_text_issues(page, number)):
+                         + buried_text_issues(page, number)
+                         + headline_rival_issues(page, number)):
                 add(text)
+            for text, key in straddle_issues(doc, page, number):
+                add(text, key)
             for text, key in alignment_issues(page, number):
                 add(text, key)
             hand[number] = look_notes(page, _page_texts(page))

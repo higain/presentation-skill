@@ -194,6 +194,37 @@ share edges and gaps by construction (`references/drawing.md`). An offset that
 is meant — a staggered row — is acknowledged as kind `alignment`, content
 `near-miss`, with a reason.
 
+### Defects a glance shows, measured
+
+A field run drew ten slides whose report said "no findings". Seven of them
+had defects a glance shows. These checks now catch them:
+
+- **Text on a translucent panel:**
+  - a panel at 85 % transparence is still a panel;
+  - its colour is blended with what lies under it before contrast is
+    measured;
+  - white on a pale tint is reported as the near-invisible text it is.
+- **A word wider than its box:** "Wirkung →" in a box 6 mm wide breaks
+  letter by letter. Each paragraph's longest word is measured in that
+  paragraph's own format.
+- **A box far shorter than its text:** a label given 0.01 mm of height
+  paints a full line, centred on the box, into the heading above it. It is
+  measured as that line.
+- **Text across panels** (kind `straddle`): a line lying across two or more
+  drawn panels, such as a source line in a box the height of the content
+  area. Text belongs inside one panel or outside all of them.
+- **A rival headline:** text above the title, or in the footer band, set as
+  large as the title. Typically a kicker written into an empty placeholder,
+  which takes the master's body style. Use `D.kicker`.
+
+### Clean is not done
+
+`make_deck.py` exits **3** when every automated check is clean but slides
+have not been seen by the vision-agent, and prints `NOT DONE: …`. A run
+that stopped at a clean gate and reported a finished deck had shown its
+slides to nothing. Exit 0 means clean *and* seen. `--parts` and `--slides`
+runs are partial and keep exit 0.
+
 ### Chart placeholders and unsourced figures
 
 Two more lines can appear under *slides to look at*. Neither fails a build:
@@ -226,7 +257,7 @@ whole transcripts re-litigating it.
 ```
 
 - `kind` is one of `leftover-wording`, `stray-image`, `footer`, `balance`,
-  `no-title`, `variety`, `alignment` or `vision`. A `vision` entry overrules the
+  `no-title`, `variety`, `alignment`, `straddle` or `vision`. A `vision` entry overrules the
   vision-agent and counts only with the user's `"approved_by"` (see *Visual
   QA* below); it is matched by the gate, not by `qa.py`, so it is never
   reported as stale.

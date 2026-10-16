@@ -205,3 +205,48 @@ def missing_title_issues(page, number):
             f"shows no headline. Write it with "
             f"`office.template.set_title(page, '...')` -- `retext` cannot "
             f"reach an empty shape"]
+
+
+def headline_rival_issues(page, number):
+    """Text as large as the title, above it or down in the footer band.
+
+    The small line over a title -- a section name, a phase -- written into an
+    empty placeholder takes the master's body style and comes out larger than
+    the headline it introduces.  One field run did that on four slides, and
+    once in the footer.  The reader then has two headlines and no hierarchy.
+    """
+    title = placeholder(page, "Title")
+    if title is None:
+        return []
+    sizes = _text_sizes(title)
+    if not sizes:
+        return []
+    tsize = max(sizes)
+    try:
+        top = title.getPosition().Y
+        floor = page.Height * 0.85
+    except Exception:
+        return []
+    out = []
+    for address, shape in walk_shapes(page):
+        if shape is title:
+            continue
+        try:
+            text = " ".join(shape.getString().split())
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if not text:
+            continue
+        above = pos.Y + size.Height <= top + 50
+        footer = pos.Y >= floor
+        if not (above or footer):
+            continue
+        own = _text_sizes(shape)
+        if own and max(own) >= tsize * 0.95:
+            where = "above the title" if above else "in the footer band"
+            out.append(f"slide {number} shape [{address}]: {text[:30]!r} is "
+                       f"set at {max(own):g} pt {where}, as large as the "
+                       f"{tsize:g} pt title -- a kicker or label there is small "
+                       f"(`D.kicker`)")
+    return out

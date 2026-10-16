@@ -21,7 +21,7 @@ ALLOWLIST_SUFFIX = "-allowlist.json"
 #: The finding kinds an allowlist entry can name.  Kept explicit so a typo in a
 #: deck's allowlist is a hard error rather than a silent no-op.
 ALLOWLIST_KINDS = {"leftover-wording", "stray-image", "footer", "balance",
-                   "no-title", "variety", "alignment", "vision"}
+                   "no-title", "variety", "alignment", "straddle", "vision"}
 
 
 class AllowlistError(ValueError):

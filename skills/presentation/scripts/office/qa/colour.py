@@ -54,6 +54,33 @@ def _solid_fill(shape, max_transparence=40):
         return None
 
 
+def _fill_layer(shape):
+    """``(colour, opacity)`` of a shape's solid fill, or ``None``.
+
+    Opacity is ``1 - transparence``.  A tinted panel at 85 % transparence is
+    still a panel: white text on it reads as white on near-white, and treating
+    the fill as absent compared the text with the slide instead.
+    """
+    try:
+        if not _is_solid(shape.FillStyle):
+            return None
+        alpha = 1 - int(shape.FillTransparence) / 100
+        if alpha <= 0.02:
+            return None
+        return int(shape.FillColor) & 0xFFFFFF, alpha
+    except Exception:
+        return None
+
+
+def _blend(top, alpha, under):
+    """``top`` at ``alpha`` over ``under``, both ints."""
+    out = 0
+    for shift in (16, 8, 0):
+        t, u = (top >> shift) & 255, (under >> shift) & 255
+        out |= int(round(t * alpha + u * (1 - alpha))) << shift
+    return out
+
+
 def _page_bg(page):
     """The colour behind everything on this page.
 
@@ -129,7 +156,7 @@ def _contrast_findings(page):
     out = []
     slide_bg = _page_bg(page)
     tops = list(shapes(page))
-    boxes = [(_geometry(s), _solid_fill(s)) for s in tops]
+    boxes = [(_geometry(s), _fill_layer(s)) for s in tops]
 
     for address, shape in walk_shapes(page):
         colors = _text_colors(shape)
@@ -137,19 +164,21 @@ def _contrast_findings(page):
         if not colors or geometry is None:
             continue
 
-        backdrop = _solid_fill(shape)
-        if backdrop is None:
-            cx = geometry[0] + geometry[2] // 2
-            cy = geometry[1] + geometry[3] // 2
-            head = str(address).split(".")[0]
-            index = int(head) if head.isdigit() else len(tops)
-            for i in range(min(index, len(boxes)) - 1, -1, -1):
-                other, fill = boxes[i]
-                if fill is not None and other and _contains(other, cx, cy):
-                    backdrop = fill
-                    break
-        if backdrop is None:
-            backdrop = slide_bg
+        # The colour under the text's centre: the slide, then every filled
+        # shape below the text in z-order, translucent ones blended in.
+        cx = geometry[0] + geometry[2] // 2
+        cy = geometry[1] + geometry[3] // 2
+        head = str(address).split(".")[0]
+        index = int(head) if head.isdigit() else len(tops)
+        backdrop = slide_bg
+        for other, layer in boxes[:min(index, len(boxes))]:
+            if layer is not None and other and _contains(other, cx, cy):
+                backdrop = _blend(layer[0], layer[1], backdrop) \
+                    if backdrop is not None else layer[0]
+        own = _fill_layer(shape)
+        if own is not None:
+            backdrop = _blend(own[0], own[1], backdrop) \
+                if backdrop is not None else own[0]
         if backdrop is None:
             continue
 

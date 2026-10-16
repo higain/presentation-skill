@@ -414,6 +414,42 @@ def _text_overflow(doc, page, shape):
         page.remove(tmp)
 
 
+def _widest_word(doc, page, shape, box_width):
+    """The first word wider than ``box_width`` in its own paragraph's format,
+    or ``None``.  Each paragraph's longest word, measured as that paragraph
+    sets it: a KPI box's 44 pt figure says nothing about its 18 pt label."""
+    try:
+        paras = read_text(shape)
+    except Exception:
+        return None
+    room = box_width - (getattr(shape, "TextLeftDistance", 0) or 0) \
+        - (getattr(shape, "TextRightDistance", 0) or 0)
+    tmp = doc.createInstance("com.sun.star.drawing.TextShape")
+    page.add(tmp)
+    try:
+        tmp.TextWordWrap = False
+        tmp.TextAutoGrowWidth = True
+        tmp.TextLeftDistance = tmp.TextRightDistance = 0
+        for text, cprops, pprops in paras:
+            words = text.split()
+            if not words:
+                continue
+            word = max(words, key=len)
+            if len(word) < 4:
+                continue
+            write_text(tmp, [(word, cprops, pprops)])
+            if tmp.getSize().Width > room * 1.02:
+                return word
+        return None
+    except Exception:
+        return None
+    finally:
+        try:
+            page.remove(tmp)
+        except Exception:
+            pass
+
+
 def overflowing(doc, page):
     """``[(address, reason)]`` for every shape whose text is visibly broken.
 
@@ -488,6 +524,18 @@ def overflowing(doc, page):
                 f"lines mid-word -- widen the shape or shorten the label"
             ))
             continue
+        # A label with spaces can still break mid-word: "Wirkung →" in a box
+        # 6 mm wide wraps letter by letter.  Its longest word, laid out alone,
+        # is wider than the box.
+        if wrapped and text:
+            word = _widest_word(doc, page, shape, size.Width)
+            if word:
+                out.append((
+                    i,
+                    f"{word[:24]!r} in {text[:24]!r} is wider than its box and "
+                    f"breaks mid-word -- widen the shape or shorten the label"
+                ))
+                continue
 
         # Height defects.  A single line cannot be clipped: there is no second
         # line to lose, and a box set to its text's cap height measures short on
@@ -563,7 +611,13 @@ def _ink_box(doc, page, shape):
         # being wrong -- and a drawn table is a column of those, so trusting the
         # raw number reports every pair of adjacent cells as a collision.  Same
         # threshold `overflowing` uses, for the same reason.
-        height = (needed if needed > line * 1.4 else min(needed, available))
+        # And a box much shorter than one line of its own text -- a build
+        # that gave a label 0.01 mm of height -- paints the full line, centred
+        # on the box: that line is what reaches into the heading above it.
+        # (A box half a line tall is normal -- a label sized to its cap
+        # height -- so only a box under a quarter of a line counts.)
+        height = (needed if needed > line * 1.4 or available < line * 0.25
+                  else min(needed, available))
 
     width = _ink_width(doc, page, shape, size.Width)
 
@@ -1059,7 +1113,7 @@ def set_title(page, *paragraphs):
         extra = _manifest().get("title_style") or {}
         if extra.get("font"):
             cursor.CharFontName = extra["font"]
-        align = _PARA_ADJUST.get(extra.get("align"))
+        align = _TITLE_ADJUST.get(extra.get("align"))
         if align is not None:
             for para in enumerate_text(shape):
                 para.ParaAdjust = align
@@ -1067,7 +1121,9 @@ def set_title(page, *paragraphs):
 
 
 #: ``probe.py``'s alignment names, back to ``ParagraphAdjust`` values.
-_PARA_ADJUST = {name: uno.Enum("com.sun.star.style.ParagraphAdjust", value)
+#: (Not ``_PARA_ADJUST``: that name is the ink measurement's table above, and
+#: shadowing it put every centred label's ink at the left edge.)
+_TITLE_ADJUST = {name: uno.Enum("com.sun.star.style.ParagraphAdjust", value)
                 for name, value in (("left", "LEFT"), ("right", "RIGHT"),
                                     ("block", "BLOCK"), ("center", "CENTER"))}
 

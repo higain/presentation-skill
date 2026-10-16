@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..impress import PPTX_EXTS, slides
 from ..template import ink_box, walk_shapes
+from .colour import _is_solid
 
 # A template graphic smaller than this share of the slide is chrome -- a rule,
 # a bullet marker, a corner mark.  Above it, it is a picture the design chose
@@ -392,6 +393,90 @@ def alignment_issues(page, number):
              + ". Lay them out from one `Box` (`grid`, `cut_*`) so peers share "
                "their edges and gaps exactly (`references/drawing.md`)",
              ("alignment", number, "near-miss"))]
+
+
+#: A panel is a drawn rectangle at least this share of the slide.
+MIN_PANEL = 0.01
+
+
+def _is_rectangle(shape):
+    """A rectangle as drawn, or as it reads back from a .pptx (a custom
+    shape of type ``ooxml-rect`` / ``ooxml-roundRect``)."""
+    kind = shape.getShapeType()
+    if kind.endswith("RectangleShape"):
+        return True
+    if not kind.endswith("CustomShape"):
+        return False
+    try:
+        for prop in shape.CustomShapeGeometry:
+            if prop.Name == "Type":
+                return str(prop.Value) in ("ooxml-rect", "ooxml-roundRect",
+                                           "rectangle", "round-rectangle")
+    except Exception:
+        pass
+    return False
+
+
+def straddle_issues(doc, page, number):
+    """``[(text, key)]`` -- text lying across several drawn panels.
+
+    A source line placed in a box the height of the content area, centred,
+    prints across the middle of four coloured columns; nothing overflows and
+    no text touches other text, so every other check passes.  Text belongs
+    inside one panel or outside all of them.  Only rectangles the build drew
+    count as panels: a Venn label over two circles is how a Venn is labelled,
+    and a template's own design is not this build's to fix.
+    """
+    try:
+        area = page.Width * page.Height
+    except Exception:
+        return []
+    panels = []
+    for _, shape in walk_shapes(page):
+        name = getattr(shape, "Name", "") or ""
+        if not name.startswith("D:"):
+            continue
+        try:
+            if not _is_rectangle(shape):
+                continue
+            if " ".join(shape.getString().split()):
+                continue
+            if not _is_solid(shape.FillStyle):
+                continue
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if size.Width * size.Height >= MIN_PANEL * area:
+            panels.append((pos.X, pos.Y, size.Width, size.Height))
+    if len(panels) < 2:
+        return []
+    out = []
+    for address, shape in walk_shapes(page):
+        try:
+            if not " ".join(shape.getString().split()):
+                continue
+        except Exception:
+            continue
+        ink = ink_box(doc, page, shape)
+        if ink is None:
+            continue
+        x, y, w, h = ink[:4]
+        crossed = 0
+        for px, py, pw, ph in panels:
+            meets = (min(x + w, px + pw) > max(x, px)
+                     and min(y + h, py + ph) > max(y, py))
+            inside = (x >= px - 100 and y >= py - 100
+                      and x + w <= px + pw + 100 and y + h <= py + ph + 100)
+            if meets and not inside:
+                crossed += 1
+        if crossed >= 2:
+            out.append((f"slide {number} shape [{address}]: {ink[4][:40]!r} "
+                        f"lies across {crossed} panels -- put it inside one, "
+                        f"or outside all of them (a source line goes at the "
+                        f"bottom: `D.source`)",
+                        ("straddle", number, str(address))))
+            break
+    return out
 
 
 #: Above this share of the deck on a single design, the variety note says so

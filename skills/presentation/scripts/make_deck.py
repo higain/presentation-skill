@@ -711,8 +711,28 @@ def main():
     if not args.skip_qa and report.exists():
         print(f"\nfindings: {report}")
 
+    # Clean is not done.  A field run reached a clean gate, read the vision
+    # step as advisory, and reported a finished deck whose slides nobody had
+    # looked at -- seven of ten with defects a glance shows.  Exit 0 now
+    # means the same thing everywhere: every slide is QA-clean *and* seen.
+    unseen_exit = False
+    if (not failed and not args.skip_qa and not args.no_render
+            and not args.parts and not args.slides):
+        state = review_state(deck, result.checked)
+        waiting = sorted(set(state["unseen"]) | set(state["open"]))
+        if waiting:
+            unseen_exit = True
+            print(f"\nNOT DONE: {len(state['unseen'])} of {result.checked} "
+                  f"slide(s) not yet seen by the vision-agent"
+                  + (f", {len(state['open'])} with an open finding"
+                     if state["open"] else "")
+                  + f". The automated checks are clean; the deck is not "
+                  f"finished until step 6 is: `vision_brief.py slides {deck}`,"
+                  f" one vision-agent call per slide, then `make_deck.py "
+                  f"{deck} --require-verdicts`. (exit 3)")
+
     shutdown()
-    return 1 if failed else 0
+    return 1 if failed else (3 if unseen_exit else 0)
 
 
 if __name__ == "__main__":
