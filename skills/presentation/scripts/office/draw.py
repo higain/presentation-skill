@@ -742,6 +742,11 @@ def _composite(fn):
     """Mark ``fn`` as a composition helper: what it draws is laid out."""
     @functools.wraps(fn)
     def wrapper(*args, **kw):
+        if not _COMPOSING and len(args) >= 2:
+            try:                              # sizes are fitted from here on
+                calibrate(args[0], args[1])
+            except Exception:
+                pass
         _COMPOSING.append(fn.__name__)
         try:
             return fn(*args, **kw)
@@ -1169,6 +1174,10 @@ def text(doc, page, x, y, w, h=None, *lines, **kw):
     ``wrap``, ``grow`` (autogrow height), and the ``fill``/``line``/
     ``transparence``/``line_width``/``radius`` of ``rect()`` for a boxed label.
     """
+    try:
+        calibrate(doc, page)
+    except Exception:
+        pass
     # `D.text(doc, page, x, y, w, "the text")` -- h omitted, first line in its
     # place.  Without this the signature error names `h`, which sends the
     # caller looking for a missing number instead of a missing height.
@@ -1305,8 +1314,60 @@ _WIDE = set("mwMW@%")
 _EM = {"—": 1.0, "–": 0.5, "…": 1.0}
 
 
+#: ``{font name: rendered width / Arial estimate}``, measured once per font
+#: by :func:`calibrate`.  Every size estimate here is Arial arithmetic; a
+#: template in another face -- or one LibreOffice substitutes, as it does a
+#: brand font that is not installed -- renders wider or narrower, and every
+#: label fitted to one line then breaks mid-word or leaves air.
+_FONT_FACTOR = {}
+CALIBRATION_TEXT = ("Planung Implementierung Verantwortlich Zurückstellen "
+                    "Threat Model 0123456789 % – Agent")
+
+
+def _font_factor(weight=NORM):
+    font = _font(None)
+    key = (font, "bold") if weight > 110 else font
+    return _FONT_FACTOR.get(key, _FONT_FACTOR.get(font, 1.0))
+
+
+def calibrate(doc, page, font=None):
+    """Measure how wide ``font`` (default: the pack's body font) really sets.
+
+    Lays a sample out on a throwaway shape and compares it with the Arial
+    estimate; the ratio then scales every estimate in this module.  Runs once
+    per font and is called by ``text`` itself, so a build never has to.
+    """
+    font = font or _font(None)
+    if font in _FONT_FACTOR:
+        return _FONT_FACTOR[font]
+    for key, weight in ((font, NORM), ((font, "bold"), BOLD)):
+        _FONT_FACTOR[key] = 1.0               # while measuring: plain Arial
+        tmp = doc.createInstance("com.sun.star.drawing.TextShape")
+        page.add(tmp)
+        try:
+            tmp.TextWordWrap = False
+            tmp.TextAutoGrowWidth = True
+            tmp.TextLeftDistance = tmp.TextRightDistance = 0
+            tmp.setString(CALIBRATION_TEXT)
+            for para in _paragraphs(tmp):
+                _restyle_paragraph(para, {"CharFontName": font,
+                                          "CharHeight": 20.0,
+                                          "CharWeight": weight})
+            real = tmp.Size.Width
+        except Exception:
+            real = 0
+        finally:
+            page.remove(tmp)
+        est = text_width_est(CALIBRATION_TEXT, 20.0, weight)
+        factor = real / est if real and est else 1.0
+        # A bound, not a guess: outside it the measurement went wrong.
+        _FONT_FACTOR[key] = min(max(factor, 0.8), 1.4)
+    return _FONT_FACTOR[font]
+
+
 def advance_em(s, weight=NORM):
-    """Mean glyph advance of ``s``, in em, for Arial at ``weight``.
+    """Mean glyph advance of ``s``, in em, for Arial at ``weight``,
+    scaled to the font the deck really renders in (:func:`calibrate`).
 
     Used to size a label to its box.  Accurate to a few percent on the short
     strings diagrams carry, which is what matters -- for a paragraph the error
@@ -1330,7 +1391,7 @@ def advance_em(s, weight=NORM):
             total += 0.56
         else:
             total += 0.52
-    return total / len(s)
+    return _font_factor(weight) * (total / len(s))
 
 
 def text_width_est(s, size, weight=NORM):
@@ -1511,6 +1572,7 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
             "D.table(doc, page, area, widths=[3, 2, 2], rows=rows) -- or an "
             "x and y with absolute widths.")
     widths = _column_widths(widths, box, x, page)
+    widths = _fit_header_widths(widths, rows[0], head_size, pad)
     if row_h is None and row_heights is None:
         if box is None:
             raise TypeError(
@@ -1521,6 +1583,14 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
         # band underneath is the commonest composition defect in a built deck.
         row_h = box.h / max(len(rows), 1)
     align = align or _column_alignment(rows, len(widths))
+    # One header size, small enough that every header word fits its column:
+    # "Verantwortlich" broken into "Verantwortlic / h" is the defect a
+    # narrow column produces at the body's size.
+    head_size = max(min_readable(), min(
+        [head_size] + [fit_size(word, (wc - 2 * pad) / 1.12, BOLD,
+                                max_size=head_size)
+                       for wc, cell in zip(widths, rows[0])
+                       for word in str(cell).split()]))
     header_h = header_h or row_h
     cy = y
     for r, row in enumerate(rows):
@@ -1544,6 +1614,29 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
         if rule is not None and r > 0:
             hline(doc, page, x, x + sum(widths), cy, rule, 20)
     return cy
+
+
+def _fit_header_widths(widths, header, head_size, pad):
+    """Widen columns too narrow for their longest header word at the floor
+    size, taking the room from columns with more than they need."""
+    size = max(min_readable(), min(head_size, head_size))
+    need = [max([text_width_est(word, size, BOLD) * WRAP_MARGIN + 2 * pad
+                 for word in str(cell).split()] or [0])
+            for cell in header]
+    widths = list(widths)
+    short = sum(max(0, n - w) for n, w in zip(need, widths))
+    if not short:
+        return widths
+    spare = [max(0, w - n) for n, w in zip(need, widths)]
+    if sum(spare) < short:
+        return widths                      # nothing to give: leave as asked
+    out = []
+    for w, n, sp in zip(widths, need, spare):
+        if n > w:
+            out.append(n)
+        else:
+            out.append(w - short * sp / sum(spare))
+    return out
 
 
 #: A cell that is a number: "1.447", "-35%", "~8", "(1.5)", "€ 3,2 Mio.",
@@ -1626,14 +1719,28 @@ def _card_height(item, w, title_size, size, note_size, pad, numbered):
     """Height this card needs for its own content, in 1/100 mm."""
     inner = w - 2 * pad
     total = 2 * pad
-    if numbered or item.get("title"):
-        _, _, _, band_h, gap_h = _head_metrics(item, inner, title_size, numbered)
+    marked = numbered or bool(item.get("icon"))
+    if marked or item.get("title"):
+        _, _, _, band_h, gap_h = _head_metrics(item, inner, title_size, marked)
         total += band_h + gap_h
     if item.get("body"):
         total += _text_height([item["body"]], inner, size)
+    for line in item.get("bullets") or ():
+        total += _text_height([line], inner - BULLET_INDENT, size) + BULLET_GAP
+    if item.get("figure"):
+        value, caption = (tuple(item["figure"]) + ("",))[:2]
+        total += int(size * FIGURE_SCALE * 35.28 * 1.3) + BULLET_GAP
+        if caption:
+            total += _text_height([caption], inner, size)
     if item.get("note"):
         total += int(note_size * 35.28 * 1.5)
     return total
+
+
+#: A card's bullet list: the indent its text sits at, the gap between items.
+BULLET_INDENT, BULLET_GAP = 450, 150
+#: A card's figure is this many times its body size.
+FIGURE_SCALE = 2.0
 
 
 #: How much of its panel the tallest card's content may fill when ``cards``
@@ -1647,7 +1754,8 @@ CARD_TEXT_SHARE = 0.75
 CARD_MIN_SHARE = 0.5
 
 #: ``(body, title)`` roles ``cards`` tries, smallest first.
-CARD_TYPE_LADDER = (("label", "subtitle"), ("body", "subtitle"),
+CARD_TYPE_LADDER = (("caption", "label"), ("label", "subtitle"),
+                    ("body", "subtitle"),
                     ("subtitle", "title"))
 
 
@@ -1706,15 +1814,22 @@ def _draw_card(doc, page, box, item, fill, accent, number, title_size, size,
                 and contrast_ratio(accent, on) >= MIN_ACCENT_CONTRAST
                 else readable_on(on))
 
-    if number is not None or item.get("title"):
+    marked = number is not None or bool(item.get("icon"))
+    if marked or item.get("title"):
         # Measured, not assumed: a two-word title fits one line and a six-word
         # one does not, and a title that overruns a fixed band is drawn
         # straight through the body under it -- which is what the first cut of
         # this function did on every step of a four-step flow.
         chip_w, chip_gap, text_w, band_h, gap_h = _head_metrics(
-            item, inner.w, title_size, number is not None)
+            item, inner.w, title_size, marked)
         band, inner = inner.cut_top(band_h, gap=gap_h)
-        if number is not None:
+        if item.get("icon"):
+            # The icon sits where the number chip would, on the title's first
+            # line, in the card's accent: never on top of the title.
+            side = int(title_size * 35.28 * 1.35)
+            icon(doc, page, Box(band.x, band.y, side, side), item["icon"],
+                 color=head)
+        elif number is not None:
             chip(doc, page,
                  Box(band.x, band.y, chip_w, int(title_size * 35.28 * 1.35)),
                  fill=accent if accent is not None else GREY_DK,
@@ -1730,10 +1845,33 @@ def _draw_card(doc, page, box, item, fill, accent, number, title_size, size,
         text(doc, page, foot, item["note"], size=note_size,
              color=note_color, weight=BOLD, valign="bottom")
 
+    ink = color if color is not None else readable_on(on)
     if item.get("body"):
-        text(doc, page, inner, item["body"], size=size,
-             color=color if color is not None else readable_on(on),
-             valign="top")
+        body_h = _text_height([item["body"]], inner.w, size)
+        if item.get("bullets") or item.get("figure"):
+            band, inner = inner.cut_top(body_h, gap=BULLET_GAP)
+        else:
+            band = inner
+        text(doc, page, band, item["body"], size=size, color=ink, valign="top")
+    for line in item.get("bullets") or ():
+        h = _text_height([line], inner.w - BULLET_INDENT, size)
+        band, inner = inner.cut_top(h, gap=BULLET_GAP)
+        side = int(size * 35.28 * 0.32)
+        rect(doc, page, band.x, band.y + int(size * 35.28 * 0.45), side, side,
+             fill=head)
+        text(doc, page, Box(band.x + BULLET_INDENT, band.y,
+                            band.w - BULLET_INDENT, band.h),
+             line, size=size, color=ink, valign="top", pad=0)
+    if item.get("figure"):
+        value, caption = (tuple(item["figure"]) + ("",))[:2]
+        tone = item.get("figure_color", head)
+        big = size * FIGURE_SCALE
+        band, inner = inner.cut_top(int(big * 35.28 * 1.3), gap=BULLET_GAP // 2)
+        text(doc, page, band, str(value), size=big, weight=BOLD, color=tone,
+             valign="bottom", pad=0)
+        if caption:
+            text(doc, page, inner, caption, size=size, color=ink,
+                 valign="top", pad=0)
     return box
 
 
@@ -1746,8 +1884,18 @@ def cards(doc, page, x, y, w, h, items, cols=None, gap=None, fill=GREY_LT,
     """A row (or grid) of cards, all built the same way.  Returns their boxes.
 
     Each item is a string, a ``(title, body)`` or ``(title, body, note)``
-    tuple, or a dict with any of ``title``, ``body``, ``note``, ``fill`` and
-    ``accent``::
+    tuple, or a dict with any of ``title``, ``body``, ``note``, ``fill``,
+    ``accent``, and:
+
+    - ``icon``: an icon name, drawn on the title's first line in the card's
+      accent -- where the number chip goes, never over the title;
+    - ``bullets``: a list of short lines under the body, square markers in
+      the accent;
+    - ``figure``: ``(value, caption)``, a big number with its caption under
+      the bullets, the evidence a card stands on (``figure_color`` to set it
+      apart, e.g. ``D.color("alert")``).
+
+    ::
 
         D.cards(doc, page, area, [
             ("Inventory", "Classify every agent against A / B / C.",
@@ -2081,6 +2229,447 @@ def statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None,
 
 
 # ------------------------------------------------------------------- venn
+
+# ----------------------------------------------- consulting components
+#
+# The compositions a consulting deck reuses, each laid out completely: type
+# sizes chosen to the space, padding, alignment and balance decided here, so
+# a build script only supplies the content.  Every one of them was drawn by
+# hand, shape by shape, in a field run that placed 570 primitives by page
+# percentage -- and that is where its slides lost their craft: an icon over a
+# heading, two panels of unequal fill, labels overflowing a chevron.
+
+
+def tint(colour, share=0.15):
+    """A pale tint of a palette colour: ``share`` of it on white.
+
+    Not an invented colour -- the brand's own hue, lightened, which is how
+    consulting decks fill panels: one hue family plus its pale tint.  Takes
+    a palette name or an int.
+    """
+    c = color(colour) if isinstance(colour, str) else int(colour)
+    r, g, b = (c >> 16) & 255, (c >> 8) & 255, c & 255
+    mix = [round(255 - (255 - v) * share) for v in (r, g, b)]
+    return (mix[0] << 16) | (mix[1] << 8) | mix[2]
+
+
+def _ink(colour, on=WHITE):
+    """``colour`` where it reads as text on ``on``; else black or white."""
+    return colour if contrast_ratio(colour, on) >= 4.5 else readable_on(on)
+
+
+def _fit_all(labels, width, weight=BOLD, max_size=None, min_size=None):
+    """One size at which every label fits ``width`` on one line."""
+    top = max_size or _role_size("body")
+    low = min_size or min_readable()
+    return max(low, min(fit_size(str(l), width, weight, max_size=top)
+                        for l in labels))
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def tracker(doc, page, x, y, w, h, labels, current=0, done=0):
+    """A phase bar: one chevron per phase, the current one in the accent.
+
+    ``current`` is the 0-based index of the phase the slide is about;
+    ``done`` how many before it to show as completed (a pale accent).  The
+    rest are muted.  Every label is set at one size, the largest at which
+    the longest still fits its chevron on one line.  Give it a band about
+    8-10 mm tall under the title::
+
+        band, area = area.cut_top(mm(9), gap=mm(6))
+        D.tracker(doc, page, band, PHASES, current=2)
+    """
+    if not labels:
+        raise ValueError("tracker(): no labels")
+    area = Box(x, y, w, h)
+    gap = int(area.h * 0.12)
+    notch = int(area.h * 0.3)
+    cells = area.cols(len(labels), gap=gap)
+    room = (cells[0].w - notch - 200) / WRAP_MARGIN
+    size = _fit_all(labels, room, max_size=_role_size("caption", "label"))
+    lines = max(len(wrap_words(str(l), room, size, BOLD)) for l in labels)
+    need = int(lines * size * 35.28 * 1.25 + 200)
+    if need > area.h:
+        raise ValueError(
+            "tracker(): %d labels at %.0f pt need %d line(s) and a band "
+            "%.0f mm tall; this one is %.0f mm. Give it the taller band "
+            "(area.cut_top(mm(%d)))." % (len(labels), size, lines, need / 100,
+                                         area.h / 100, -(-need // 100)))
+    accent = color("accent")
+    for i, (cell, label) in enumerate(zip(cells, labels)):
+        if i == current:
+            fill, weight = accent, BOLD
+        elif current - done <= i < current:
+            fill, weight = tint(accent, 0.35), NORM
+        else:
+            fill, weight = GREY_LT, NORM
+        chevron(doc, page, cell.x, cell.y, cell.w + notch, cell.h,
+                fill=fill, notch=notch)
+        text(doc, page, Box(cell.x + notch // 2, cell.y, cell.w, cell.h),
+             str(label), size=size, weight=weight, color=readable_on(fill)
+             if i == current else GREY_DK, align="center", valign="center",
+             pad=0)
+    return cells
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def pairs(doc, page, x, y, w, h, rows, heads=None, left="alert", right="ok",
+          tags=None):
+    """Rows that pair one thing with its answer: risk -> guardrail.
+
+    ``rows`` are ``(left_title, left_body, right_title, right_body)``;
+    ``tags`` an optional label per row, set as a small outlined tag at the
+    top right of the left box (a risk class).  ``heads`` are the two column
+    headings.  ``left`` and ``right`` are palette roles: each side is a pale
+    tint of its colour, its titles in the colour where that reads.  Every
+    row is the same height and every text the same size, the largest at
+    which the fullest row still fits.
+    """
+    if not rows:
+        raise ValueError("pairs(): no rows")
+    area = Box(x, y, w, h)
+    lc, rc = color(left), color(right)
+    lf, rf = tint(lc, 0.12), tint(rc, 0.14)
+    if heads:
+        hsize = _role_size("label", "caption")
+        band, area = area.cut_top(int(hsize * 35.28 * 1.6), gap=CARD_GAP // 2)
+        lhead, rhead = _pair_cols(band)
+        text(doc, page, lhead, heads[0], size=hsize, weight=BOLD,
+             color=_ink(lc), valign="bottom", pad=0)
+        text(doc, page, rhead, heads[1], size=hsize, weight=BOLD,
+             color=_ink(rc), valign="bottom", pad=0)
+    bands = area.rows(len(rows), gap=CARD_GAP // 2)
+    lbox, _ = _pair_cols(bands[0])
+    tsize = max(min_readable(), _role_size("footnote", "caption"))
+    tag_w = (max(int(text_width_est(str(t), tsize, BOLD) * WRAP_MARGIN) + 400
+                 for t in tags if t) if tags and any(tags) else 0)
+    title_size, size, inline = _pair_type(rows, lbox.w - 2 * PAIR_PAD, tag_w,
+                                          bands[0].h - 2 * PAIR_PAD)
+    if title_size is None:
+        raise ValueError(
+            "pairs(): %d rows of this length do not fit %.0f mm, even at "
+            "%.0f pt, the smallest size this template sets. Split the rows "
+            "over two slides with the same title plus \"(1/2)\" and "
+            "\"(2/2)\", or give it more height, or shorter text."
+            % (len(rows), area.h / 100, min_readable()))
+    for i, (band, row) in enumerate(zip(bands, rows)):
+        lt, lb, rt, rb = (tuple(row) + ("", "", "", ""))[:4]
+        lbox, rbox = _pair_cols(band)
+        mid = Box(lbox.x2, band.y, rbox.x - lbox.x2, band.h)
+        for box, fill, tone, title, body in ((lbox, lf, lc, lt, lb),
+                                             (rbox, rf, rc, rt, rb)):
+            rect(doc, page, box, fill=fill)
+            inner = box.inset(PAIR_PAD)
+            if inline:
+                inner = box.inset(x=PAIR_PAD, y=PAIR_VPAD)
+                if box is lbox and tag_w:
+                    inner, _ = inner.cut_right(tag_w, gap=PAIR_PAD)
+                hb, rest = inner.cut_left(int(inner.w * PAIR_TITLE_SHARE),
+                                          gap=PAIR_PAD)
+                room = hb.w
+            else:
+                room = inner.w - (tag_w + 200 if box is lbox and tag_w else 0)
+                head_h = _text_height([title], room, title_size, BOLD)
+                hb, rest = inner.cut_top(head_h, gap=PAIR_GAP)
+            text(doc, page, Box(hb.x, hb.y, room, hb.h), title,
+                 size=title_size, weight=BOLD, color=_ink(tone, fill),
+                 valign="center" if inline else "top", pad=0)
+            if body:
+                text(doc, page, rest, body, size=size, color=GREY_DK,
+                     valign="center" if inline else "top", pad=0)
+        if tags and i < len(tags) and tags[i]:
+            th = int(tsize * 35.28 * 1.5)
+            if inline:                         # its own column, centred
+                tb = Box(lbox.x2 - PAIR_PAD - tag_w, lbox.cy - th // 2,
+                         tag_w, th)
+            else:
+                tb = Box(lbox.x2 - tag_w - PAIR_PAD, lbox.y + PAIR_PAD,
+                         tag_w, th)
+            rect(doc, page, tb, fill=WHITE, line=lc, line_width=25)
+            text(doc, page, tb, tags[i], size=tsize, weight=BOLD,
+                 color=_ink(lc), align="center", valign="center", pad=0)
+        aw = min(mid.w * 0.6, band.h * 0.5)
+        arrow(doc, page, mid.cx - aw / 2, mid.cy - aw / 2, aw, aw,
+              color=tint("accent", 0.4))
+    return bands
+
+
+#: Inner margin of a pair box, its top/bottom margin in a dense (inline)
+#: row, and the gap between a title and its body.
+PAIR_PAD, PAIR_VPAD, PAIR_GAP = 350, 200, 80
+#: Estimated text heights run short of LibreOffice's real wrapping by up to
+#: this much; layouts that must not overflow reserve it.
+WRAP_MARGIN = 1.12
+
+
+def _pair_cols(band):
+    gutter = int(band.w * 0.06)
+    half = (band.w - gutter) // 2
+    return Box(band.x, band.y, half, band.h), \
+        Box(band.x + half + gutter, band.y, band.w - half - gutter, band.h)
+
+
+#: Share of a pair box the title takes when it sits beside its body.
+PAIR_TITLE_SHARE = 0.4
+
+
+def _pair_type(rows, inner_w, tag_w, row_h):
+    """``(title, body, inline)``: the largest sizes at which every row fits.
+
+    Stacked first -- title over body, the tag beside the title.  When no
+    size down to the template's floor fits, the title moves *beside* its
+    body (``inline``), which halves the height a row needs: dense content on
+    a template with large type is laid out, not shrunk past legibility.
+    ``(None, None, None)`` when neither fits.
+    """
+    floor = min_readable()
+    ladder = [(_role_size("body"), _role_size("label", "caption")),
+              (_role_size("label", "caption"), _role_size("caption", "footnote")),
+              (_role_size("caption", "footnote"), floor), (floor, floor)]
+    for inline in (False, True):
+        for title_size, size in ladder:
+            ok = True
+            for row in rows:
+                lt, lb, rt, rb = (tuple(row) + ("", "", "", ""))[:4]
+                for title, body, tagged in ((lt, lb, True), (rt, rb, False)):
+                    if inline:
+                        room = inner_w - (tag_w + PAIR_PAD if tagged and tag_w
+                                          else 0)
+                        tw = room * PAIR_TITLE_SHARE
+                        need = max(
+                            _text_height([title], tw, title_size, BOLD),
+                            _text_height([body], room - tw - PAIR_PAD, size)
+                            if body else 0) + 2 * (PAIR_PAD - PAIR_VPAD)
+                    else:
+                        extra = tag_w + 200 if tagged and tag_w else 0
+                        need = (_text_height([title], inner_w - extra,
+                                             title_size, BOLD)
+                                + (_text_height([body], inner_w, size)
+                                   if body else 0) + PAIR_GAP) * WRAP_MARGIN
+                    if need > row_h:
+                        ok = False
+            if ok:
+                return title_size, size, inline
+    return None, None, None
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def levels(doc, page, x, y, w, h, items, low=0.55):
+    """Stages that rise left to right: isolation levels, maturity steps.
+
+    ``items`` are dicts with ``label`` ("Ebene 1"), ``title``, ``body``
+    and optional ``plus`` / ``minus`` (a strength and a limit, set at the
+    column's floor with + and -).  Columns share their bottom edge and rise
+    from ``low`` of the height to all of it; the fill deepens from a pale
+    tint to the accent, and text flips to white where it must.  One type
+    size for all columns, the largest at which the shortest column holds its
+    text.
+    """
+    if not items:
+        raise ValueError("levels(): no items")
+    area = Box(x, y, w, h)
+    n = len(items)
+    cols = area.cols(n, gap=CARD_GAP // 2)
+    accent = color("accent")
+    size = _levels_type(items, cols[0].w - CARD_PAD, area.h - CARD_PAD)
+    # The lowest step is as tall as the fullest column's text needs, and the
+    # rest rise from there: a fixed starting share left the first column's
+    # text hanging out under its own box.
+    need = max(_level_need(item, cols[0].w - CARD_PAD, size)
+               for item in items) + CARD_PAD
+    low = min(1.0, max(low, need / area.h))
+    heights = [int(area.h * (low + (1 - low) * i / max(n - 1, 1)))
+               for i in range(n)]
+    for i, (col, item) in enumerate(zip(cols, items)):
+        share = 0.12 + 0.88 * (i / max(n - 1, 1)) ** 1.6
+        fill = tint(accent, share)
+        box = Box(col.x, area.y2 - heights[i], col.w, heights[i])
+        rect(doc, page, box, fill=fill)
+        ink = readable_on(fill)
+        lines = []
+        if item.get("label"):
+            lines.append(para(item["label"], size=size * 0.85, weight=BOLD,
+                              color=ink))
+        if item.get("title"):
+            lines.append(para(item["title"], size=size * 1.1, weight=BOLD,
+                              color=ink))
+        if item.get("body"):
+            lines.append(para(item["body"], size=size, color=ink))
+        if item.get("plus"):
+            lines.append(para("+ " + item["plus"], size=size, color=ink))
+        if item.get("minus"):
+            lines.append(para("– " + item["minus"], size=size, color=ink))
+        # One box, read top to bottom: pinning the +/- lines to the floor
+        # printed them over the body of the shortest column.
+        text(doc, page, box.inset(CARD_PAD // 2), *lines, valign="top", pad=0)
+    return cols
+
+
+def _level_need(item, inner_w, size):
+    return (_text_height([item.get("label", "")], inner_w, size * 0.85, BOLD)
+            + _text_height([item.get("title", "")], inner_w, size * 1.1, BOLD)
+            + _text_height([item.get("body", "")], inner_w, size)
+            + _text_height(["+ " + item.get("plus", ""),
+                            "– " + item.get("minus", "")], inner_w, size)
+            ) * WRAP_MARGIN
+
+
+def _levels_type(items, inner_w, inner_h):
+    """The largest size at which the fullest column fits the full height --
+    with room left for the steps to rise (the tallest column is ``inner_h``,
+    so the fullest one has to fit about 70 % of it)."""
+    for size in (_role_size("body"), _role_size("label", "caption"),
+                 _role_size("caption", "footnote"), min_readable()):
+        if max(_level_need(i, inner_w, size) for i in items) <= inner_h * 0.7:
+            return size
+    return min_readable()
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def matrix2x2(doc, page, x, y, w, h, cells, x_label, y_label, highlight=0):
+    """A 2x2 for placing things by two criteria.
+
+    ``cells`` are four labels (or ``(title, body)``), in reading order: top
+    left, top right, bottom left, bottom right.  ``y_label`` reads up the
+    axis ("Wirkung", labelled above the matrix), ``x_label`` along the
+    bottom ("Aufwand").  The
+    ``highlight`` cell (index) is the accent tint -- the one to act on --
+    and the others are muted.
+    """
+    area = Box(x, y, w, h)
+    lsize = _role_size("label", "caption")
+    axis = int(lsize * 35.28 * 1.8)
+    yband, plot = area.cut_top(axis, gap=100)
+    plot, xband = plot.cut_bottom(axis, gap=100)
+    accent = color("accent")
+    quads = [b for row in plot.grid(2, 2, gap=CARD_GAP // 2) for b in row]
+    tsize = _fit_all([c if isinstance(c, str) else c[0] for c in cells],
+                     (quads[0].w - 2 * CARD_PAD) / WRAP_MARGIN,
+                     max_size=_role_size("subtitle", "body"))
+    for i, (quad, cell) in enumerate(zip(quads, cells)):
+        fill = tint(accent, 0.2) if i == highlight else GREY_LT
+        rect(doc, page, quad, fill=fill)
+        title, body = (cell, "") if isinstance(cell, str) else \
+            (tuple(cell) + ("",))[:2]
+        lines = [para(title, size=tsize, weight=BOLD,
+                      color=_ink(accent, fill) if i == highlight else GREY_DK)]
+        if body:
+            lines.append(para(body, size=_role_size("body"), color=GREY_DK))
+        text(doc, page, quad.inset(CARD_PAD), *lines, valign="top", pad=0)
+    hline(doc, page, plot.x, plot.x2, plot.y2 + 50, GREY_DK, 30)
+    vline(doc, page, plot.x - 50, plot.y, plot.y2 + 50, GREY_DK, 30)
+    text(doc, page, xband, x_label + " →", size=lsize, color=GREY_DK,
+         align="right", valign="top", pad=0)
+    # The vertical axis is labelled above the matrix, reading up: a rotated
+    # label is the one shape LibreOffice positions differently in every
+    # format, and it landed off the slide.
+    text(doc, page, yband, "↑ " + y_label, size=lsize, color=GREY_DK,
+         valign="bottom", pad=0)
+    return quads
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def quote(doc, page, x, y, w, h, words, source=None):
+    """A quotation on a pale accent band, its source under it.
+
+    Sized to its text and set at the top of the box; returns the box left
+    under it.  Quotation marks are added -- pass the words alone.
+    """
+    area = Box(x, y, w, h)
+    size = _role_size("body")
+    csize = _role_size("caption", "footnote")
+    inner_w = area.w - 2 * CARD_PAD
+    need = _text_height([f"„{words}“"], inner_w, size) + (
+        _text_height([source], inner_w, csize) + 100 if source else 0)
+    band, rest = area.cut_top(min(area.h, need + 2 * (CARD_PAD // 2)),
+                              gap=CARD_GAP)
+    fill = tint("accent", 0.1)
+    rect(doc, page, band, fill=fill)
+    lines = [para(f"„{words}“", size=size, italic=True,
+                  color=_ink(color("accent"), fill))]
+    if source:
+        lines.append(para(source, size=csize, color=GREY_DK))
+    text(doc, page, band.inset(CARD_PAD // 2), *lines, valign="center", pad=0)
+    return rest
+
+
+def _template_boxes(page):
+    """Boxes of the shapes on the slide that ``office.draw`` did not make."""
+    out = []
+    for _, shape in walk_shapes(page):
+        if (getattr(shape, "Name", "") or "").startswith(ORIGIN):
+            continue
+        try:
+            pos, size = shape.getPosition(), shape.getSize()
+        except Exception:
+            continue
+        if size.Width and size.Height:
+            out.append(Box(pos.X, pos.Y, size.Width, size.Height))
+    return out
+
+
+def kicker(page, words, size=None):
+    """Write the small line above the title: the section, the phase.
+
+    Finds the template's own text placeholder that sits above the title (on
+    most masters an empty one, which otherwise takes the master's large body
+    style and reads as a second title), writes ``words`` and sets them small,
+    in the accent where that reads.  Returns the shape, or ``None`` when the
+    design has no such placeholder -- then draw the line with ``D.text``.
+    """
+    from .impress import placeholder
+    title = placeholder(page, "Title")
+    if title is None:
+        return None
+    top = title.getPosition().Y
+    above = [s for _, s in walk_shapes(page)
+             if s is not title and hasattr(s, "setString")
+             and not (getattr(s, "Name", "") or "").startswith(ORIGIN)
+             and s.getPosition().Y + s.getSize().Height <= top + 50
+             and s.getSize().Width > title.getSize().Width * 0.4]
+    if not above:
+        return None
+    shape = min(above, key=lambda s: s.getPosition().Y)
+    set_text(shape, words)
+    restyle(shape, CharHeight=float(size or _role_size("footnote", "caption")),
+            CharColor=_strong(), CharWeight=NORM)
+    return shape
+
+
+def sticker(doc, page, label, near=None, fill=None):
+    """A small tag at the top right: "ÜBUNG · 25 MIN", "Illustrativ".
+
+    Placed at the right end of ``near`` (the kicker line, or any band);
+    without it, at the top right inside the slide's margins.  ``fill`` is a
+    palette name or int, default the alert colour.
+    """
+    size = max(min_readable(), _role_size("caption", "footnote"))
+    tone = color(fill or "alert") if not isinstance(fill, int) else fill
+    w = text_width_est(label, size, BOLD) + 600
+    h = int(size * 35.28 * 1.6)
+    if near is None:
+        pb = page_box(page)
+        near = Box(pb.x, pb.y + 700, pb.w - 1400, h)
+    box = Box(near.x2 - w, near.y + (near.h - h) // 2, w, h)
+    # Step left past the template's own furniture in that band -- a logo
+    # sits in the top right corner of most masters.
+    pb = page_box(page)
+    small = [b for b in _template_boxes(page) if b.w < pb.w * 0.25]
+    for _ in range(4):
+        hit = [b for b in small
+               if b.x < box.x2 and box.x < b.x2 and b.y < box.y2 and box.y < b.y2]
+        if not hit:
+            break
+        box = Box(max(pb.x, min(b.x for b in hit) - w - 300), box.y, w, h)
+    chip(doc, page, box, fill=tone, label=label, size=size,
+         color=readable_on(tone), radius=150)
+    return box
+
 
 # ------------------------------------------------- charts, sources, notes
 #
