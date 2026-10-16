@@ -325,6 +325,56 @@ Then:
   use a background tint or an icon.
 
 
+## Consulting components
+
+The compositions consulting decks reuse, each laid out completely. **Reach
+for these before drawing any panel, row or bar by hand.** They choose the
+type size for the space, keep peers on one size and one baseline, and
+balance the fill. When the content cannot fit at the template's smallest
+size, they raise an error that says what to change. Never shrink text past
+the template's smallest size yourself.
+
+```python
+D.kicker(page, "SDLC · Phase 1 von 6 · Planung & Definieren")  # small line above the title
+D.sticker(doc, page, "ÜBUNG · 25 MIN", fill="orange")          # tag top right, clear of the logo
+
+band, area = area.cut_top(mm(13), gap=mm(4))
+D.tracker(doc, page, band, PHASES, current=1, done=1)          # phase bar, current one in the accent
+
+D.pairs(doc, page, area, [(risk, risk_text, guard, guard_text), ...],
+        heads=("RISIKO DURCH KI", "LEITPLANKE / GATE"),
+        tags=["UNSICHERER OUTPUT", ...])                       # risk -> guardrail rows
+D.levels(doc, page, area, [dict(label="Ebene 1", title=..., body=...,
+                                plus=..., minus=...), ...])    # stages rising left to right
+D.matrix2x2(doc, page, area, ["Zuerst", "Planen", "Mitnehmen", "Zurückstellen"],
+            "Aufwand", "Wirkung", highlight=0)
+rest = D.quote(doc, page, area, "Words of the quote", "Author, source")  # returns the area under it
+D.cards(doc, page, area, [
+    {"title": "Erkennung", "icon": "ep:filter", "bullets": [...],
+     "figure": ("> 90 %", "der Abwehrmaßnahmen umgangen"),
+     "figure_color": D.color("alert")},
+    {"title": "Architektur", "icon": "ep:files", "fill": D.tint("ok", 0.14),
+     "accent": D.color("ok"), "bullets": [...]},
+], height="equal")
+```
+
+- **`D.tint(name, share)`** is a pale tint of a palette colour: the panel
+  fill consulting decks use, one hue family plus its tint. It is derived
+  from the palette, not invented.
+- **`D.cards`** items take an `icon` (on the title's first line, never over
+  the title), `bullets` (square markers in the accent) and a `figure`
+  (`(value, caption)`, a big number with its caption).
+- **When a component refuses**, follow its message. Typical ones:
+  - a taller band for the tracker;
+  - the rows split over two slides with "(1/2)" and "(2/2)" in the title;
+  - shorter text.
+
+**Size estimates are calibrated to the font the deck really renders in.**
+The first drawing call measures how wide the template's font sets on this
+machine, regular and bold. Every fitted label and every wrapped line uses
+that measurement, not Arial's widths. A template whose font is substituted
+(not installed) still gets one-line labels that stay on one line.
+
 ## Charts, tables and sources
 
 **Never draw a chart.** The numbers and the chart are the author's: built in
