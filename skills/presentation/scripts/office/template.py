@@ -39,6 +39,7 @@ from office.colors import parse_hex as _hex
 from office.impress import (add_slide, notes_text, placeholder, set_notes,
                             shapes)
 from office.pack import active_pack, active_profile, pack_for
+from office.textenum import enumerate_text, pin
 
 # Properties clone_shape must not copy: identity, or geometry it sets itself.
 # Name is copied deliberately -- duplicates are legal and keep probe.py output
@@ -138,15 +139,11 @@ def read_text(shape):
     mid-line collapses to its first run's -- retext those by hand.
     """
     out = []
-    enum = shape.createEnumeration()
-    while enum.hasMoreElements():
-        para = enum.nextElement()
+    for para in enumerate_text(shape):
         if not hasattr(para, "createEnumeration"):
             continue
         text, cprops, first = "", {}, True
-        runs = para.createEnumeration()
-        while runs.hasMoreElements():
-            run = runs.nextElement()
+        for run in enumerate_text(para):
             text += run.getString()
             if first:
                 cprops = {k: getattr(run, k) for k in CHAR_PROPS if hasattr(run, k)}
@@ -159,17 +156,16 @@ def read_text(shape):
 def write_text(shape, paras):
     """Replace a shape's text with ``[(text, char_props, para_props)]``."""
     shape.setString("\n".join(p[0] for p in paras))
-    enum = shape.createEnumeration()
     i = 0
-    while enum.hasMoreElements() and i < len(paras):
-        para = enum.nextElement()
+    for para in enumerate_text(shape):
+        if i >= len(paras):
+            break
         if not hasattr(para, "createEnumeration"):
             continue
         _, cprops, pprops = paras[i]
         _apply(para, pprops)
-        runs = para.createEnumeration()
-        while runs.hasMoreElements():
-            _apply(runs.nextElement(), cprops)
+        for run in enumerate_text(para):
+            _apply(run, cprops)
         i += 1
 
 
@@ -290,9 +286,9 @@ def text_width(doc, page, text, like):
         tmp.TextLeftDistance = getattr(like, "TextLeftDistance", 0)
         tmp.TextRightDistance = getattr(like, "TextRightDistance", 0)
         tmp.setString(text)
-        runs = tmp.createEnumeration().nextElement().createEnumeration()
-        while runs.hasMoreElements():
-            _apply(runs.nextElement(), cprops)
+        paras = pin(tmp.createEnumeration())
+        for run in enumerate_text(pin(paras.nextElement())):
+            _apply(run, cprops)
         return tmp.Size.Width
     finally:
         page.remove(tmp)
@@ -621,9 +617,7 @@ _PARA_ADJUST = {0: "start", 1: "end", 2: "start", 3: "middle", 4: "start"}
 def _para_adjust(shape):
     """``'start' | 'middle' | 'end'`` across, for a shape's first paragraph."""
     try:
-        enum = shape.createEnumeration()
-        while enum.hasMoreElements():
-            para = enum.nextElement()
+        for para in enumerate_text(shape):
             if hasattr(para, "createEnumeration"):
                 return _PARA_ADJUST.get(int(para.ParaAdjust), "start")
     except Exception:
@@ -1005,19 +999,16 @@ def set_char_color(shape, color, paragraph=None):
         except Exception:
             pass
 
-    enum = shape.createEnumeration()
     index = -1
-    while enum.hasMoreElements():
-        para = enum.nextElement()
+    for para in enumerate_text(shape):
         index += 1
         if paragraph is not None and index != paragraph:
             continue
         paint(para)
         if not hasattr(para, "createEnumeration"):
             continue
-        portions = para.createEnumeration()
-        while portions.hasMoreElements():
-            paint(portions.nextElement())
+        for portion in enumerate_text(para):
+            paint(portion)
 
 
 def shape_by_text(page, prefix):
@@ -1544,21 +1535,16 @@ def _needs_flattening(shape):
 
 def _paragraphs(shape):
     """Every paragraph of a text-bearing shape, as a list."""
-    out = []
     if not hasattr(shape, "createEnumeration"):
-        return out
-    enum = shape.createEnumeration()
-    while enum.hasMoreElements():
-        out.append(enum.nextElement())
-    return out
+        return []
+    return list(enumerate_text(shape))
 
 
 def _first_portion(para):
     """The paragraph's first text run, or None for an empty paragraph."""
     if not hasattr(para, "createEnumeration"):
         return None
-    enum = para.createEnumeration()
-    return enum.nextElement() if enum.hasMoreElements() else None
+    return next(enumerate_text(para), None)
 
 
 def flatten_placeholder(doc, src, dst_page):

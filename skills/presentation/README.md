@@ -315,6 +315,7 @@ machine.
 | My edits to `catalog.md` disappeared | It is generated. Put them in `overrides.md` under an anchor and rebuild. |
 | `--check` reports drift after the template changed | Expected, and the point of it. Re-extract, rebuild, read the diff. |
 | An override block "matched no anchor" | Misspelled, or a `design-N` for a design this template no longer has. Valid names are in stage D. |
+| LibreOffice dies mid-build with `free(): invalid pointer` or `Binary URP bridge disposed` | A LibreOffice 25.2.x race on released text proxies. Rerun with `make_deck.py --pin-text-proxies` (or `PRESENTATION_PIN_TEXT_PROXIES=1`). |
 | The first QA run after touching the template is a minute slower | The template baseline is recomputed and cached under `$XDG_CACHE_HOME/presentation-skill/`. Later runs are about 40 s faster. |
 | The canvas row picked a design you would not have | It picks the largest free area whose canvas keeps the design's chrome. Name the right one in the worksheet's `## Canvas` block (or a `canvas` object in `decision_table.json`), re-import, rebuild. |
 

@@ -66,6 +66,7 @@ from office.deckbuild import (PARTS_ENV, SKIP_QA_ENV,  # noqa: E402
 from office.impress import (PPTX_EXTS, PRESENTATION_EXTS,  # noqa: E402
                             SofficeError, parse_slide_spec, shutdown)
 from office.soffice import isolated  # noqa: E402
+from office.textenum import PIN_ENV, pinning  # noqa: E402
 from office.slots import acquire as acquire_slot  # noqa: E402
 from office.qa import QAResult, check, summary, validate_pptx  # noqa: E402
 from office import review  # noqa: E402
@@ -506,12 +507,22 @@ def main():
                              "loop for fixing a build error. Always follow "
                              "with a full run (no flags) before calling the "
                              "deck done.")
+    parser.add_argument("--pin-text-proxies", action="store_true",
+                        help="Work around a LibreOffice crash (free(): invalid "
+                             "pointer) on unpatched 25.2.x: never release text "
+                             "proxies while soffice runs. Same as "
+                             f"{PIN_ENV}=1")
     parser.add_argument("--require-verdicts", action="store_true",
                         help="Read the report only (no build, no QA, no "
                              "render) and exit 1 unless every slide has a "
                              "verdict and the report matches this deck. Run "
                              "it after writing the verdicts.")
     args = parser.parse_args()
+    if args.pin_text_proxies:
+        os.environ[PIN_ENV] = "1"
+    if pinning():
+        print("[presentation] pinning text proxies (LibreOffice crash "
+              "workaround)", flush=True)
 
     script, deck = None, None
     for item in args.args:

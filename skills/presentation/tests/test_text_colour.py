@@ -6,6 +6,7 @@ writes instead of a plain ``CharColor``.  ``set_char_color`` clears it.  This
 pins both halves, so neither the claim nor the fix can drift unnoticed.
 """
 
+import os
 import re
 import shutil
 import sys
@@ -13,6 +14,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 SKILL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL / "scripts"))
@@ -95,6 +97,25 @@ class TextColourTest(unittest.TestCase):
         self.assertEqual(len(set(found.values())), 1, found)
         self.assertFalse({f'srgbClr val="{c:06x}"' for c in COLOURS}
                          & set(found.values()), found)
+
+
+class PinnedTextColourTest(TextColourTest):
+    """The same results with every text proxy pinned (the crash workaround)."""
+
+    def setUp(self):
+        super().setUp()
+        from office.textenum import PIN_ENV
+        patcher = mock.patch.dict(os.environ, {PIN_ENV: "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _build(self, recolour):
+        from office import impress, textenum
+        found = super()._build(recolour)
+        self.assertTrue(textenum._PINS, "nothing was pinned")
+        impress.shutdown()                    # soffice gone: pins released
+        self.assertEqual(textenum._PINS, [])
+        return found
 
 
 if __name__ == "__main__":

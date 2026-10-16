@@ -7,6 +7,7 @@ import re
 from ..draw import min_readable
 from ..impress import placeholder
 from ..template import walk_shapes
+from ..textenum import enumerate_text
 
 PLACEHOLDER = re.compile(
     r"\b(lorem|ipsum|todo|tbd|fixme|platzhalter|blindtext)\b"
@@ -88,16 +89,13 @@ def _text_sizes(shape):
     """
     out = {}
     try:
-        paragraphs = shape.createEnumeration()
+        paragraphs = list(enumerate_text(shape))
     except Exception:
         return out
-    while paragraphs.hasMoreElements():
-        para = paragraphs.nextElement()
+    for para in paragraphs:
         if not hasattr(para, "createEnumeration"):
             continue
-        runs = para.createEnumeration()
-        while runs.hasMoreElements():
-            run = runs.nextElement()
+        for run in enumerate_text(para):
             try:
                 sample, size = run.getString().strip(), float(run.CharHeight)
             except Exception:

@@ -280,6 +280,8 @@ class _Server:
                 _kill_tree(self.proc)
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     self.proc.wait(timeout=10)
+        from office.textenum import release_pins
+        release_pins()           # soffice is gone; these releases go nowhere
         self._archive_stderr()
         self.proc = None
         if self.profile:
@@ -327,6 +329,10 @@ def kill():
     proc, _SERVER.proc, _SERVER.ctx = _SERVER.proc, None, None
     if proc is not None and proc.poll() is None:
         _kill_tree(proc)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=10)
+    from office.textenum import release_pins
+    release_pins()               # soffice is gone; these releases go nowhere
 
 
 def _kill_tree(proc):

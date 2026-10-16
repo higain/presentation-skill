@@ -147,8 +147,9 @@ call after `soffice.bin` died, so the traceback shows neither the slide nor
 the real cause. The engine keeps soffice's stderr, and after a crash the
 build prints `[impress] soffice exited abnormally (rc); its stderr was
 captured in soffice-stderr-<profile>.log`. Read that file first: it holds
-the actual signature (an abort, `free(): invalid pointer`, a stack). Then
-simply re-run the same command — these crashes are probabilistic and one
+the actual signature (an abort, `free(): invalid pointer`, a stack). If it
+is `free(): invalid pointer`, add `--pin-text-proxies` to the re-run (see
+below). Otherwise simply re-run the same command — these crashes are probabilistic and one
 retry often goes through. If it dies again *at a different slide*, build in
 halves (`--parts`, never get the user to merge separate decks) instead of
 re-running the whole deck. After three full-deck failures at different
@@ -305,5 +306,11 @@ script yourself: `sys.path.insert(0, "<skill>/scripts")`.
   through `slides/_common.py`, loaded by path). Without either tool a warning says so
   and decks that link remote resources are refused;
   `PRESENTATION_NETWORK=allow` is the explicit way past, for trusted decks.
+- If LibreOffice dies mid-build with `free(): invalid pointer` or
+  `Binary URP bridge disposed`, rerun with `make_deck.py --pin-text-proxies`
+  (or `PRESENTATION_PIN_TEXT_PROXIES=1` for any script). Unpatched
+  LibreOffice 25.2.x frees a text paragraph twice when a client drops it
+  while re-reading the same shape; with the flag no text proxy is released
+  until LibreOffice has exited. Costs a few MB per deck; off by default.
 - On a slow or shared mount, build into a local directory and copy the
   finished deck across.

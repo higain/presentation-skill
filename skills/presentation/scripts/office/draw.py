@@ -43,6 +43,7 @@ from .template import (  # noqa: F401
     walk_shapes,
 )
 from .template import _is_group, _walk as _template_walk
+from .textenum import enumerate_text
 
 # Enums and structs are resolved by name rather than imported: a
 # ``from com.sun.star...`` import only works once a UNO bridge exists, and this
@@ -1005,15 +1006,10 @@ def restyle(shape, **props):
 def _paragraphs(shape):
     """The shape's paragraphs, in order; none if it holds no text."""
     try:
-        enum = shape.createEnumeration()
+        return [para for para in enumerate_text(shape)
+                if hasattr(para, "createEnumeration")]
     except Exception:
         return []
-    out = []
-    while enum.hasMoreElements():
-        para = enum.nextElement()
-        if hasattr(para, "createEnumeration"):
-            out.append(para)
-    return out
 
 
 def _restyle_paragraph(para, props):
@@ -1022,9 +1018,7 @@ def _restyle_paragraph(para, props):
             setattr(para, k, v)
         except Exception:
             pass
-    runs = para.createEnumeration()
-    while runs.hasMoreElements():
-        run = runs.nextElement()
+    for run in enumerate_text(para):
         for k, v in props.items():
             try:
                 setattr(run, k, v)
