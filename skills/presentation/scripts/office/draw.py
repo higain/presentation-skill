@@ -1348,11 +1348,14 @@ def calibrate(doc, page, font=None):
             tmp.TextWordWrap = False
             tmp.TextAutoGrowWidth = True
             tmp.TextLeftDistance = tmp.TextRightDistance = 0
+            # Formatted through the shape itself, which applies to all of its
+            # text: no paragraph proxy is ever taken -- taking one and then
+            # removing the shape is the pattern behind LibreOffice 25.2's
+            # free(): invalid pointer crash.
             tmp.setString(CALIBRATION_TEXT)
-            for para in _paragraphs(tmp):
-                _restyle_paragraph(para, {"CharFontName": font,
-                                          "CharHeight": 20.0,
-                                          "CharWeight": weight})
+            tmp.CharFontName = font
+            tmp.CharHeight = 20.0
+            tmp.CharWeight = float(weight)
             real = tmp.Size.Width
         except Exception:
             real = 0

@@ -70,7 +70,7 @@ Constants: `COLLISION`=0.25, `MIN_COLLISION_CHARS`=4
 
 `from office import draw as D`
 
-Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150, `BLACK`=0, `WHITE`=16777215, `GREY_DK`=4868682, `GREY`=9079434, `GREY_BD`=13158600, `GREY_MD`=14474460, `GREY_LT`=15921906, `DEFAULT_FONT`='Arial', `LABEL_MAX_PT`=18, `CENTRE_MAX_PT`=16, `MIN_READABLE_PT`=9, `ORIGIN`='D:', `MIN_COL_W`=800, `CARD_PAD`=500, `CARD_GAP`=600, `MIN_ACCENT_CONTRAST`=3, `WRAP_SLACK`=0.94, `CARD_FILL`=0.6, `CARD_TEXT_SHARE`=0.75, `CARD_MIN_SHARE`=0.5, `CHART_SHARE`=0.67, `VENN_LABEL_GAP`=0.08
+Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150, `BLACK`=0, `WHITE`=16777215, `GREY_DK`=4868682, `GREY`=9079434, `GREY_BD`=13158600, `GREY_MD`=14474460, `GREY_LT`=15921906, `DEFAULT_FONT`='Arial', `LABEL_MAX_PT`=18, `CENTRE_MAX_PT`=16, `MIN_READABLE_PT`=9, `ORIGIN`='D:', `CALIBRATION_TEXT`='Planung Implementierung Verantwortlich Zurückstellen Threat Model 0123456789 % – Agent', `MIN_COL_W`=800, `CARD_PAD`=500, `CARD_GAP`=600, `MIN_ACCENT_CONTRAST`=3, `WRAP_SLACK`=0.94, `BULLET_INDENT`=450, `BULLET_GAP`=150, `FIGURE_SCALE`=2, `CARD_FILL`=0.6, `CARD_TEXT_SHARE`=0.75, `CARD_MIN_SHARE`=0.5, `PAIR_PAD`=350, `PAIR_VPAD`=200, `PAIR_GAP`=80, `WRAP_MARGIN`=1.12, `PAIR_TITLE_SHARE`=0.4, `CHART_SHARE`=0.67, `VENN_LABEL_GAP`=0.08
 
 - **`Point(x, y)`** -- (undocumented)
 - **`Size(w, h)`** -- (undocumented)
@@ -121,7 +121,8 @@ Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150
 - **`text(doc, page, x, y, w, h=None, *lines, **kw)`** -- A styled text box. One positional string per paragraph. Keywords: ``role``, ``size`` (pt), ``color``, ``weight`` (``BOLD``/``NORM``), ``align`` (left/center/right/justify), ``valign`` (top/center/bottom), ``font``, ``italic``, ``strike``, ``underline``, ``pad`` (inner margin), ``wrap``, ``grow`` (autogrow height), and the ``fill``/``line``/ ``transparence``/``line_width``/``radius`` of ``rect()`` for a boxed label.
 - **`chip(doc, page, x, y, w, h, fill, label='', color=16777215, size=10.0, weight=150.0, radius=None, line=None)`** -- A small filled block with a centred label -- legend keys, badges, tags.
 - **`bullets(doc, page, x, y, w, items, size=12.5, color=0, marker_color=None, marker=None, gap=420, line_h=None, marker_size=170, font=None)`** -- A bulleted list, one text box per item, with a square marker.
-- **`advance_em(s, weight=100.0)`** -- Mean glyph advance of ``s``, in em, for Arial at ``weight``.
+- **`calibrate(doc, page, font=None)`** -- Measure how wide ``font`` (default: the pack's body font) really sets.
+- **`advance_em(s, weight=100.0)`** -- Mean glyph advance of ``s``, in em, for Arial at ``weight``, scaled to the font the deck really renders in (:func:`calibrate`).
 - **`text_width_est(s, size, weight=100.0)`** -- Estimated rendered width of ``s`` at ``size`` pt, in 1/100 mm.
 - **`fit_size(s, width, weight=100.0, max_size=44.0, min_size=7.0, slack=0.94)`** -- Largest point size at which ``s`` fits ``width`` on one line.
 - **`wrap_words(s, width, size, weight=100.0)`** -- Greedy word wrap of ``s`` to ``width`` at ``size`` pt. ``[line, ...]``.
@@ -133,6 +134,14 @@ Constants: `STRIKE_SINGLE`=1, `STRIKE_NONE`=0, `THIN`=50, `NORM`=100, `BOLD`=150
 - **`kpis(doc, page, x, y, w, h, items, color=None, caption_color=4868682, gap=None, max_size=54.0, caption_size=None, align='center')`** -- A row of big numbers with captions under them. Returns their boxes.
 - **`balance_lines(s, width, size, weight=100.0, max_lines=None)`** -- Wrap ``s`` to ``width`` with the lines evened up. ``[line, ...]``.
 - **`statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None, max_size=44.0, min_size=16.0, weight=150.0, color=None, align='center', valign='center', font=None)`** -- One sentence, as large as it fits, broken where it reads. The shape.
+- **`tint(colour, share=0.15)`** -- A pale tint of a palette colour: ``share`` of it on white.
+- **`tracker(doc, page, x, y, w, h, labels, current=0, done=0)`** -- A phase bar: one chevron per phase, the current one in the accent.
+- **`pairs(doc, page, x, y, w, h, rows, heads=None, left='alert', right='ok', tags=None)`** -- Rows that pair one thing with its answer: risk -> guardrail.
+- **`levels(doc, page, x, y, w, h, items, low=0.55)`** -- Stages that rise left to right: isolation levels, maturity steps.
+- **`matrix2x2(doc, page, x, y, w, h, cells, x_label, y_label, highlight=0)`** -- A 2x2 for placing things by two criteria.
+- **`quote(doc, page, x, y, w, h, words, source=None)`** -- A quotation on a pale accent band, its source under it.
+- **`kicker(page, words, size=None)`** -- Write the small line above the title: the section, the phase.
+- **`sticker(doc, page, label, near=None, fill=None)`** -- A small tag at the top right: "ÜBUNG · 25 MIN", "Illustrativ".
 - **`chart_placeholder(doc, page, x, y, w, h, metric, unit=None, brief=())`** -- A reserved place for a chart made in Excel, with its header line.
 - **`chart_with_comment(doc, page, x, y, w, h, metric, points, unit=None, brief=(), heading=None, share=0.67)`** -- A chart placeholder with its comment column beside it.
 - **`source(doc, page, x, y, w, h, line, notes=())`** -- Footnotes and the source line at the bottom of an area.
