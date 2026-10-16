@@ -30,6 +30,7 @@ after it, never before.
 from __future__ import annotations
 
 import functools
+import re
 import inspect
 import sys
 
@@ -1450,7 +1451,7 @@ def _column_widths(widths, box, x, page):
 def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
           row_h=None, header_h=None,
           head_fill=GREY_DK, head_color=WHITE, size=12.0, head_size=12.0,
-          zebra=GREY_LT, body_fill=WHITE, align=None, pad=200,
+          zebra=None, body_fill=WHITE, align=None, pad=200,
           cell_colors=None, cell_weights=None, row_heights=None,
           rule=GREY_BD, font=None, box=None, **kw):
     """Draw a table out of rectangles and text.  ``rows[0]`` is the header.
@@ -1474,6 +1475,13 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
 
     ``cell_colors``/``cell_weights`` are ``{(row, col): value}`` with row 1 the
     first body row.  Returns the y just past the last row.
+
+    **The default is the consulting table**: a solid header row, a hairline
+    under every body row, no stripes and no vertical rules, and every column
+    whose cells are all numbers aligned right, header included.  Measured on
+    48 consulting decks, where tables are built from horizontal rules only.
+    ``zebra=GREY_LT`` brings the stripes back; ``align=[...]`` overrides the
+    alignment per column.
     """
     # The pre-box signature was ``table(doc, page, x, y, widths, rows, ...)``,
     # so a sequence in the ``w`` slot is that call, not a width.
@@ -1512,7 +1520,7 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
         # Fill the box: a table drawn to two-thirds of its area and a dead
         # band underneath is the commonest composition defect in a built deck.
         row_h = box.h / max(len(rows), 1)
-    align = align or ["left"] * len(widths)
+    align = align or _column_alignment(rows, len(widths))
     header_h = header_h or row_h
     cy = y
     for r, row in enumerate(rows):
@@ -1533,9 +1541,28 @@ def table(doc, page, x=None, y=None, w=None, h=None, widths=(), rows=(),
                  align=align[c], valign="center", pad=pad, font=font)
             cx += w
         cy += h
-    if rule is not None:
-        hline(doc, page, x, x + sum(widths), cy, rule, 30)
+        if rule is not None and r > 0:
+            hline(doc, page, x, x + sum(widths), cy, rule, 20)
     return cy
+
+
+#: A cell that is a number: "1.447", "-35%", "~8", "(1.5)", "€ 3,2 Mio.",
+#: "+8pp", "2.4x", "94–104".  Ranges and signs included; words are not.
+_NUMBER = re.compile(
+    r"^[\s~≈<>+\-−–(]*[$€£]?\s*\d[\d.,\s]*"
+    r"(?:[–-]\s*\d[\d.,]*)?\s*"
+    r"(?:%|pp|x|k|m|bn|mn|tsd\.?|mio\.?|mrd\.?|[$€£])?\)?\s*$", re.I)
+
+
+def _column_alignment(rows, cols):
+    """``"right"`` for a column whose body cells are all numbers, else left."""
+    out = []
+    for c in range(cols):
+        cells = [str(row[c]).strip() for row in rows[1:]
+                 if c < len(row) and str(row[c]).strip()]
+        numeric = bool(cells) and all(_NUMBER.match(cell) for cell in cells)
+        out.append("right" if numeric else "left")
+    return out
 
 
 # ------------------------------------------------------------ composition
@@ -2054,6 +2081,150 @@ def statement(doc, page, x, y, w, h, *paragraphs, max_lines=3, size=None,
 
 
 # ------------------------------------------------------------------- venn
+
+# ------------------------------------------------- charts, sources, notes
+#
+# Charts are not drawn here, by design: the numbers and the chart are the
+# author's, made in Excel and pasted in.  What a build does is everything a
+# consulting deck puts *around* a chart -- measured on 48 of them: a header
+# line naming the metric, unit and period (on about 45), a comment column
+# beside the chart (28+), a source line at the bottom left (70 % of pages
+# carrying ten or more numbers) -- and a reserved place of the right size.
+
+#: Share of the width the chart takes beside its comment column: the decks
+#: measured put the chart on 65-70 % and the comment on 25-33 %.
+CHART_SHARE = 0.67
+
+
+def _role_size(*roles):
+    for role in roles:
+        try:
+            return size_for(role)
+        except ValueError:
+            continue
+    return 10.0
+
+
+def _quiet():
+    """The palette's neutral grey, or a plain one without a palette."""
+    try:
+        return color("neutral")
+    except Exception:
+        return GREY_DK
+
+
+def _strong():
+    """The accent, where it reads as text on white; black where it does not."""
+    try:
+        accent = color("accent")
+    except Exception:
+        return BLACK
+    return accent if contrast_ratio(accent, WHITE) >= 4.5 else BLACK
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def chart_placeholder(doc, page, x, y, w, h, metric, unit=None, brief=()):
+    """A reserved place for a chart made in Excel, with its header line.
+
+    ``metric`` is what the chart measures ("Umsatz je Region"), ``unit`` the
+    unit, scope and period ("Mio. €, 2020-2025"): the two-line header every
+    consulting chart carries, so the chart itself needs no title and no unit
+    on its axis.  ``brief`` is what the author is to build, one line each,
+    in the deck's language -- the chart type and data, the bar or series the
+    slide's title talks about, the sort order::
+
+        area = D.chart_placeholder(doc, page, box, "Umsatz je Region",
+            "Mio. €, 2020-2025",
+            ["Balken, horizontal, je Region", "Hervorheben: APAC",
+             "absteigend sortiert, Werte an den Balken"])
+
+    The reserved area is a dashed frame with the brief in it; the author
+    replaces the frame with the chart.  Returns that area.  QA lists the
+    slide as one to fill, never as a defect.
+    """
+    if not brief:
+        raise ValueError(
+            "chart_placeholder(): give a brief -- the lines that tell the "
+            "author which chart goes here, which bar or series to highlight, "
+            "and how to sort -- in the deck's language")
+    area = Box(x, y, w, h)
+    head_size = _role_size("body")
+    unit_size = _role_size("caption", "footnote")
+    head_h = _text_height([metric], area.w, head_size, BOLD)
+    unit_h = _text_height([unit], area.w, unit_size) if unit else 0
+    band_h = head_h + unit_h + int(unit_size * 35.28 * 0.6)
+    head, rest = area.cut_top(band_h)
+    lines = [para(metric, size=head_size, weight=BOLD, color=_strong())]
+    if unit:
+        lines.append(para(unit, size=unit_size, color=_quiet()))
+    text(doc, page, head, *lines, valign="top", pad=0)
+    frame = rect(doc, page, rest, fill=GREY_LT, line=GREY_BD, dashed=True)
+    try:
+        frame.Name = ORIGIN + "chart_placeholder"
+    except Exception:
+        pass
+    text(doc, page, rest.inset(rest.w // 10), *brief,
+         size=_role_size("caption", "footnote"), color=_quiet(),
+         align="center", valign="center")
+    return rest
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def chart_with_comment(doc, page, x, y, w, h, metric, points, unit=None,
+                       brief=(), heading=None, share=CHART_SHARE):
+    """A chart placeholder with its comment column beside it.
+
+    The chart takes the left ``share`` of the area (about two thirds), the
+    comment column the rest: an optional bold ``heading`` ("Key takeaways",
+    "Kernaussagen") over 3-5 short ``points`` that say what the chart shows.
+    Returns ``(chart_area, comment_area)``.
+    """
+    if not points:
+        raise ValueError("chart_with_comment(): no points for the comment "
+                         "column -- that column is the reason to use this")
+    area = Box(x, y, w, h)
+    left, right = area.cut_left(int(area.w * share), gap=CARD_GAP * 2)
+    chart = chart_placeholder(doc, page, left, metric, unit, brief)
+    body = _role_size("body")
+    column = right
+    if heading:
+        band = _text_height([heading], right.w, body, BOLD) + CARD_GAP // 2
+        top, column = right.cut_top(band)
+        text(doc, page, top, heading, size=body, weight=BOLD,
+             color=_strong(), valign="top", pad=0)
+    bullets(doc, page, column.x, column.y, column.w, list(points),
+            size=body, marker_color=_strong())
+    return chart, right
+
+
+@_composite
+@takes_box("x", "y", "w", "h")
+def source(doc, page, x, y, w, h, line, notes=()):
+    """Footnotes and the source line at the bottom of an area.
+
+    ``line`` is the whole source line in the deck's language ("Quelle:
+    Statistisches Bundesamt, 2025"); ``notes`` are numbered footnotes
+    stacked above it ("1) ohne Sondereffekte").  Small, grey, bottom left --
+    where 48 consulting decks put it.  Returns the area **above** it, so the
+    rest of the slide is laid out from what is left::
+
+        area = D.source(doc, page, area, "Quelle: Pilotauswertung, 2026")
+        D.chart_with_comment(doc, page, area, ...)
+
+    When the design keeps a source line of its own (the catalog names it),
+    retext that one instead.
+    """
+    area = Box(x, y, w, h)
+    size = _role_size("footnote", "caption")
+    lines = list(notes) + [line]
+    band = _text_height(lines, area.w, size) + int(size * 35.28 * 0.5)
+    rest, foot = area.cut_bottom(band, gap=CARD_GAP)
+    text(doc, page, foot, *lines, size=size, color=_quiet(),
+         valign="bottom", pad=0)
+    return rest
+
 
 def venn_geometry(cx, cy, r, n=3):
     """Circle centres for a symmetric Venn of radius ``r`` about ``(cx, cy)``.

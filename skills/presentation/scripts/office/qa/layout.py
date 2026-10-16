@@ -251,6 +251,43 @@ def hand_placed_note(page):
             f"rows and columns line up")
 
 
+#: Text that is a source or a note line, in the languages decks arrive in.
+SOURCE_LINE = re.compile(
+    r"\b(quellen?|source[sn]?|notes?|anmerkungs?|fußnoten?|basis|stand)\b"
+    r"|beispieldaten|illustrati|sample data|example data", re.I)
+#: A figure worth a source: a percentage, a currency amount, a decimal, or a
+#: number of three digits or more that is not a year.  Step numbers and page
+#: numbers are not figures.
+FIGURE = re.compile(
+    r"[$€£]\s?\d|\d\s?(%|pp|€|\$|£)|\d[.,]\d|\b(?!(?:19|20)\d\d\b)\d{3,}\b")
+#: This many figures on a slide, and no source line: worth a look.
+SOURCED_FIGURES = 3
+
+
+def look_notes(page, texts):
+    """Reasons to look at a slide first -- never findings.
+
+    ``texts`` are the slide's ``(address, text)`` pairs.  A slide drawn shape
+    by shape, a chart placeholder the author still has to fill, figures
+    without a source line: each goes into the verdict table, where the
+    vision-agent reads it, and none fails a build.
+    """
+    notes = []
+    hand = hand_placed_note(page)
+    if hand:
+        notes.append(hand)
+    if any((getattr(shape, "Name", "") or "") == "D:chart_placeholder"
+           for _, shape in walk_shapes(page)):
+        notes.append("chart placeholder: the author pastes the Excel chart "
+                     "here -- not a defect")
+    words = " ".join(text for _, text in texts)
+    figures = len(FIGURE.findall(words))
+    if figures >= SOURCED_FIGURES and not SOURCE_LINE.search(words):
+        notes.append(f"{figures} figures and no source line: say where the "
+                     f"numbers come from (`D.source`)")
+    return "; ".join(notes) or None
+
+
 def _peers(a, b):
     if a[1] != b[1]:
         return False

@@ -57,19 +57,20 @@ CLOSING_WASTE = re.compile(
 #
 # A machine cannot see whether a sentence carries a claim -- that needs the
 # evidence on the slide and the argument around it.  What it can see is the
-# shape of the string, and three signals hold in German and English alike:
+# shape of the string, and two signals hold in German and English alike:
 #
 #   * a label is short.  "Marktgröße", "Next Steps", "Ausblick" are one to three
 #     words; a sentence with a subject and a verb is rarely under four.
-#   * a sentence ends with a period.  A label never does.  This is prescriptive
-#     rather than descriptive -- language.md makes the period the convention
-#     precisely so that the check is possible.
 #   * a title that ends in a question mark is a question, and a title answers.
 #
-# Titles above the cap are the opposite defect: two lines at title size is the
-# budget, and 14 words overruns it in English and sooner in German.
+# The period is not one of them.  It used to be prescribed so that a label
+# could be told from a sentence, but 48 consulting decks measured end 7 % of
+# their titles with one: the convention is no period.
+#
+# Titles above the cap are the opposite defect.  The same decks wrap their
+# sentence titles to two lines: a median of 15 words, 89 % at 22 or fewer.
 TITLE_MIN_WORDS = 4
-TITLE_MAX_WORDS = 14
+TITLE_MAX_WORDS = 20
 
 
 def _slide_title(page):
@@ -135,12 +136,6 @@ def _title_findings(number, address, text):
             f"slide {number} [{address}]: title {text[:60]!r} names a topic "
             f"rather than making a point. Correct on a section divider; "
             f"anywhere else, write the so-what as a sentence"
-        )
-    elif not text.endswith("."):
-        out.append(
-            f"slide {number} [{address}]: title {text[:60]!r} does not end in "
-            f"a period, so it is probably a label rather than a claim "
-            f"(references/language.md §1)"
         )
     return out
 
@@ -223,19 +218,6 @@ def prose_findings(doc, wanted=None, baseline=frozenset()):
                     f"{text[:60]!r}. Say the specific thing, or keep it and "
                     f"move on"
                 )
-
-    # Same bargain for the period: a deck written without them -- the norm in
-    # German business slides -- is one convention, not nine label findings.
-    # Per slide only when the deck mixes the two, where the odd ones out are
-    # the likely labels.
-    no_period = [f for f in findings if "does not end in a period" in f]
-    if len(no_period) >= 3:
-        findings = [f for f in findings if f not in no_period]
-        findings.append(
-            f"{len(no_period)} titles end without a period. If they are "
-            f"sentences, that is a convention, not a defect; if they are "
-            f"labels, rewrite them as the slide's conclusion "
-            f"(references/language.md §1)")
 
     # One line for the whole deck, naming the worst: a house style that runs
     # long runs long everywhere, and sixteen identical lines are read as

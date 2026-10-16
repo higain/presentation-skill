@@ -194,6 +194,17 @@ share edges and gaps by construction (`references/drawing.md`). An offset that
 is meant — a staggered row — is acknowledged as kind `alignment`, content
 `near-miss`, with a reason.
 
+### Chart placeholders and unsourced figures
+
+Two more lines can appear under *slides to look at*. Neither fails a build:
+- **chart placeholder**: the slide reserves a place for the author's Excel
+  chart (`D.chart_placeholder`). Expected, and the verdict table tells the
+  vision-agent so.
+- **figures and no source line**: three or more percentages, amounts,
+  decimals or large numbers, and no "Quelle", "Source", "Note" or
+  "Beispieldaten" anywhere on the slide. Add `D.source`, or retext the
+  design's own source line.
+
 ### The allowlist: how correct content gets a clean report
 
 A finding is a defect this build introduced. **Correct content that merely

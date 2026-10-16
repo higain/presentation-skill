@@ -698,14 +698,15 @@ class ActionTitles(unittest.TestCase):
         self.assertIn("asks a question",
                       self._reasons("Warum ist das ein Problem?"))
 
-    def test_the_missing_period_is_what_gives_a_label_away(self):
-        self.assertIn("does not end in a period",
-                      self._reasons("Growth trends over the last quarters"))
+    def test_a_sentence_without_a_period_is_clean(self):
+        """Consulting decks end 7 % of their titles with a period."""
+        self.assertEqual(
+            self.find(3, "title",
+                      "Q3 revenue beat forecast by 15%, driven by APAC"), [])
 
     def test_length_is_not_reported_per_slide(self):
         """A house style runs long everywhere; ``prose_findings`` says so once."""
-        self.assertEqual(self.find(3, "title", " ".join(["word"] * 20) + "."),
-                         [])
+        self.assertEqual(self.find(3, "title", " ".join(["word"] * 24)), [])
 
 
 class BannedWords(unittest.TestCase):

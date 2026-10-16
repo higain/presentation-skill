@@ -325,6 +325,53 @@ Then:
   use a background tint or an icon.
 
 
+## Charts, tables and sources
+
+**Never draw a chart.** The numbers and the chart are the author's: built in
+Excel and pasted into the slide. What a build does is everything consulting
+decks put around a chart (measured on 48 of them), plus a reserved place of
+the right size:
+
+```python
+area = D.canvas(page, keep=(0, 1, 2))
+area = D.source(doc, page, area, "Quelle: Pilotauswertung, 2026",
+                notes=["1) ohne Sondereffekte"])   # returns the area above it
+D.chart_with_comment(doc, page, area, "Review-Zeit je Pull Request",
+    points=["Plattform-Team halbiert die Wartezeit", "Kein Team wird langsamer"],
+    unit="Median in Stunden, vor und nach dem Pilot",
+    brief=["Gruppierte Balken: vorher / nachher je Team",
+           "Hervorheben: Plattform-Team (Akzentfarbe), Rest grau",
+           "Werte an den Balken, keine Gitterlinien"],
+    heading="Kernaussagen")
+```
+
+- **`D.chart_placeholder`** draws the two-line chart header, with the metric
+  in bold and unit, scope and period in grey. The chart itself then needs no
+  title and no unit on its axis. Below it is a dashed frame holding the
+  `brief`: what the author is to build, written so that the chart argues:
+  - the chart type and the data;
+  - the one bar or series the slide's title talks about, in the accent
+    colour with everything else grey;
+  - bars sorted, values written on the bars, no gridlines, no legend box
+    where a direct label fits.
+
+  QA lists the slide as *a chart placeholder to fill*, never as a defect.
+- **`D.chart_with_comment`** puts the placeholder on the left two thirds and
+  a comment column on the right third: an optional bold heading over 3-5
+  short points saying what the chart shows. That split is what the decks
+  use (chart 65-70 %, comment 25-33 %).
+- **`D.source`** puts footnotes and the source line small and grey at the
+  bottom left of an area, and returns the area above it. Every slide with
+  figures needs one. QA lists a slide with three or more figures and no
+  source line. When the design keeps a source line of its own (the catalog
+  warns about it), retext that one instead.
+- **`D.table`** draws the consulting table by default:
+  - a solid header row;
+  - a hairline under every body row, no zebra stripes, no vertical rules;
+  - every column of numbers right-aligned, its header too.
+
+  `zebra=` brings the stripes back.
+
 ## Icons
 
 ```python

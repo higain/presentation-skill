@@ -17,10 +17,10 @@ here; §5 says which parts it cannot, and those stay yours.
 | Rule | |
 |---|---|
 | A full sentence | subject and an active verb |
-| **Ends with a period** | this is the convention that makes the rest checkable |
 | One idea | the title asserts it; the slide proves it |
 | Quantified | wherever the evidence allows a number |
-| ≤ 14 words | two lines at title size, no more |
+| ≤ 20 words | two lines at title size, no more — consulting decks run 8–20, median 15 |
+| No period needed | 7 % of consulting titles end with one; whichever you choose, the same on every slide |
 | Never a label | "Marktgröße", "Q3 Overview", "Nächste Schritte" |
 | Never a question | a title answers; the speaker asks |
 | Never a hedge | "Einige Überlegungen zu…", "Some considerations regarding…" |
@@ -34,8 +34,8 @@ here; §5 says which parts it cannot, and those stay yours.
 | "Abhängigkeiten" | "Auf 42 geprüfte Bibliotheken kommen 1.447 installierte." |
 | "Nächste Schritte" | "Drei Maßnahmen starten im Oktober, je mit benanntem Owner." |
 
-**German titles follow the same rules**, period included. German runs ~20% longer than
-English, so the 14-word cap bites sooner — cut the noun stacks first
+**German titles follow the same rules.** German runs ~20% longer than
+English, so the 20-word cap bites sooner — cut the noun stacks first
 ("Optimierungspotenzialanalyse" is not a word anybody says out loud).
 
 **Exempt from all of this:** the title slide, section dividers, and a single-statement
@@ -117,7 +117,7 @@ pass even under a small model.
 4. **Deletion test** — if deleting the line changes nothing, delete it. Whitespace beats
    filler.
 
-**What `qa.py` can check:** the period, the word count, questions as titles, the banned
+**What `qa.py` can check:** the word count, questions as titles, the banned
 list, a missing title, a "Thank you" ending, and the ghost-deck listing.
 
 **What it cannot, and you must:** whether the titles flow, whether the claim is true,

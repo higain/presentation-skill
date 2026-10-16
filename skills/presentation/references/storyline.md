@@ -152,8 +152,8 @@ proof:  42 direct → 1,447 installed  [source: SBOM, build 2291]
 visual: area-compare — small block left, large block right, one red node deep right
 ```
 
-- `title` — an **action title**: a complete sentence stating the conclusion, ending in a
-  period. `references/language.md` §1 is the specification and `qa.py` enforces the
+- `title` — an **action title**: a complete sentence stating the conclusion.
+  `references/language.md` §1 is the specification and `qa.py` enforces the
   mechanical half. If you write a label here, this stage has failed and no amount of
   layout work later recovers it.
 - `proof` — **one** fact, number, quote or comparison, with its source in brackets. Not

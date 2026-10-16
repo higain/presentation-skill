@@ -121,9 +121,13 @@ build_deck("acme", "out.pptx", [4, 2], fill=fill,
 - **The footer** is a page property: set it with `footer=` in `build_deck`.
 - **Draw with the composition helpers**, laid out from the `Box` that
   `D.canvas` returns: `D.cards`, `D.steps`, `D.kpis`, `D.statement`, `D.table`,
-  `D.venn`, `D.bullets`. Colours by name (`D.color("accent")`, `D.series(3)`),
+  `D.venn`, `D.bullets`, `D.chart_with_comment`, `D.source`. Colours by name (`D.color("accent")`, `D.series(3)`),
   sizes by role (`role="body"`). Never hardcode millimetre offsets or hex.
   Details: `references/drawing.md`.
+- **Never draw a chart.** Reserve its place with `D.chart_placeholder` or
+  `D.chart_with_comment`: header line, the brief for the author's Excel
+  chart, comment column. Every slide with figures gets a source line,
+  `D.source` (`references/drawing.md` §Charts, tables and sources).
 - **Icons with `D.icon(doc, page, box, "name")`** — the pack's own (listed in
   `catalog.md`, *Icons*) first; `scripts/icons.py search <word>` finds more
   in the shipped Element Plus set (`"ep:name"`).

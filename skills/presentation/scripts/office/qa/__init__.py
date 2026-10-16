@@ -27,7 +27,7 @@ from .allowlist import _acknowledged, load_allowlist, stale_acknowledgements
 from .baseline import _collision_key, _template_baseline
 from .colour import buried_text_issues, contrast_issues, occlusion_issues
 from .layout import (_catalog_size, alignment_issues, balance_findings,
-                     design_note, hand_placed_note, sparse_slides,
+                     design_note, look_notes, sparse_slides,
                      stray_template_images, variety_findings)
 from .prose import lost_plan_titles, prose_findings
 from .text import (PLACEHOLDER, _page_texts, emoji_issues, markdown_issues,
@@ -131,7 +131,7 @@ def _check(path, template, wanted):
 
     doc = load_document(path, read_only=True)
     designs = []
-    hand = {}                # slide -> reason it was drawn shape by shape
+    hand = {}                # slide -> reasons to look at it first
     try:
         pages = slides(doc)
         recorded = recorded_designs(doc)
@@ -215,7 +215,7 @@ def _check(path, template, wanted):
                 add(text)
             for text, key in alignment_issues(page, number):
                 add(text, key)
-            hand[number] = hand_placed_note(page)
+            hand[number] = look_notes(page, _page_texts(page))
             if print_:
                 packs = [[slide_cache.pack_finding(number, text, key)
                           for text, key in part]

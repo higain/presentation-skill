@@ -105,3 +105,34 @@ class MisalignmentTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LookNotesTest(unittest.TestCase):
+    def notes(self, texts, names=()):
+        with mock.patch.object(layout, "walk_shapes", lambda p: page(*names)):
+            return layout.look_notes(None, [("0", t) for t in texts]) or ""
+
+    def test_figures_without_a_source_are_noted(self):
+        self.assertIn("3 figures and no source line",
+                      self.notes(["Umsatz +35%", "€ 3,2 Mio.", "1.447 Pakete"]))
+
+    def test_a_source_line_clears_it(self):
+        self.assertEqual(self.notes(["Umsatz +35%", "€ 3,2 Mio.", "1.447",
+                                     "Quelle: Destatis 2025"]), "")
+
+    def test_years_and_step_numbers_are_not_figures(self):
+        self.assertEqual(self.notes(["Schritt 1", "2", "3", "im Jahr 2026"]), "")
+
+    def test_a_chart_placeholder_is_named_not_failed(self):
+        self.assertIn("chart placeholder", self.notes([], ["D:chart_placeholder"]))
+
+
+class TableAlignmentTest(unittest.TestCase):
+    def test_number_columns_align_right(self):
+        from office.draw import _column_alignment
+        rows = [("Tool", "Anteil", "Wert", "Status"),
+                ("A", "35%", "€ 3,2 Mio.", "offen"),
+                ("B", "-1.5%", "1.447", "ja"),
+                ("C", "(2.0)", "94–104", "-")]
+        self.assertEqual(_column_alignment(rows, 4),
+                         ["left", "right", "right", "left"])
