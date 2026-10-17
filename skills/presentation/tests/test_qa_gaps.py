@@ -84,3 +84,25 @@ class StraddleTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StrikeTest(unittest.TestCase):
+    def check(self, bar_y):
+        para = shape("text", 1000, 6000, 9000, 4000, "Aus der SDLC-Matrix priorisiert")
+        bar = shape("D:rectangle", 1000, bar_y, 30000, 300)
+        page = NS()
+        with mock.patch.object(colour, "shapes", lambda p: [para, bar]), \
+                mock.patch.object(colour, "_is_picture", lambda s: False), \
+                mock.patch.object(colour, "_fill_layer",
+                                  lambda s: (0x0066CC, 1.0) if s is bar else None), \
+                mock.patch("office.template.ink_box",
+                           lambda d, p, s: (1000, 6000, 9000, 4000, s.getString())):
+            return colour.strike_issues(None, page, 1)
+
+    def test_a_bar_through_a_paragraph_is_reported(self):
+        found = self.check(8000)
+        self.assertEqual(len(found), 1)
+        self.assertIn("drawn over the text", found[0])
+
+    def test_a_bar_below_the_text_is_fine(self):
+        self.assertEqual(self.check(11000), [])

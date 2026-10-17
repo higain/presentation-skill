@@ -191,9 +191,12 @@ def balance_findings(doc, wanted=None):
                 (number, f"top-heavy: paints {area:.0%}, then {band / height:.0%} "
                          f"of the slide's height is one empty band from "
                          f"{at / height:.0%} down. Content is packed against "
-                         f"the title with the bottom bare -- lay it out from "
-                         f"the `Box` `D.canvas` returns so it fills the slide "
-                         f"(`references/drawing.md` §Composition)")
+                         f"the title with the bottom bare -- give the content "
+                         f"that is there more room: larger type, more space "
+                         f"between items, taller boxes, laid out from the "
+                         f"`Box` `D.canvas` returns. Never add text, lines or "
+                         f"decoration to fill the space: content that is not "
+                         f"in the source is invented")
             )
     return out
 

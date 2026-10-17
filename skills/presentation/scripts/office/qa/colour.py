@@ -306,3 +306,56 @@ def buried_text_issues(page, number):
                     f"design's own label), never into the one beneath it")
                 break
     return out
+
+
+#: Share of a text block's ink a shape on top of it may cover before it is
+#: reported: a hairline rule brushing a block's edge is not a strike-through.
+STRIKE = 0.02
+
+
+def strike_issues(doc, page, number):
+    """An opaque, textless shape drawn *on top of* text, crossing its ink.
+
+    The occlusion check above looks for one shape swallowing another.  A bar
+    laid through the middle of a paragraph swallows nothing: it covers a
+    strip of three text blocks, every word is still in the file, and the
+    render shows a blue line struck through "Verantwortlichen und Termin".
+    """
+    from ..template import ink_box
+    tops = list(shapes(page))
+    out = []
+    for i, low in enumerate(tops):
+        try:
+            if not _norm(low.getString()):
+                continue
+        except Exception:
+            continue
+        ink = ink_box(doc, page, low)
+        if ink is None:
+            continue
+        ix, iy, iw, ih = ink[:4]
+        for j in range(i + 1, len(tops)):
+            top = tops[j]
+            if _is_picture(top):
+                continue
+            try:
+                if _norm(top.getString()):
+                    continue
+            except Exception:
+                pass
+            layer = _fill_layer(top)
+            if layer is None or layer[1] < 0.5:
+                continue
+            geo = _geometry(top)
+            if geo is None:
+                continue
+            gx, gy, gw, gh = geo
+            ow = min(ix + iw, gx + gw) - max(ix, gx)
+            oh = min(iy + ih, gy + gh) - max(iy, gy)
+            if ow <= 0 or oh <= 0 or ow * oh < STRIKE * iw * ih:
+                continue
+            out.append(f"slide {number} shape [{j}]: a #{layer[0]:06X} shape is "
+                       f"drawn over the text of shape [{i}] ({ink[4][:30]!r}) "
+                       f"-- move it, or put it behind the text")
+            break
+    return out

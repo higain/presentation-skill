@@ -722,14 +722,32 @@ def main():
         waiting = sorted(set(state["unseen"]) | set(state["open"]))
         if waiting:
             unseen_exit = True
+            # Hand over the next action itself, not a description of it:
+            # two runs that read "the remaining step is the vision review"
+            # wrote exactly that sentence and stopped.  The briefs are
+            # written here, so the delegation below is one call away.
+            first = None
+            try:
+                from vision_brief import write_slide_briefs
+                _, pending = write_slide_briefs(deck, outdir, "")
+                first = pending[0] if pending else None
+            except (SystemExit, Exception):
+                first = None
             print(f"\nNOT DONE: {len(state['unseen'])} of {result.checked} "
                   f"slide(s) not yet seen by the vision-agent"
                   + (f", {len(state['open'])} with an open finding"
                      if state["open"] else "")
-                  + f". The automated checks are clean; the deck is not "
-                  f"finished until step 6 is: `vision_brief.py slides {deck}`,"
-                  f" one vision-agent call per slide, then `make_deck.py "
-                  f"{deck} --require-verdicts`. (exit 3)")
+                  + ". The automated checks are clean. (exit 3)")
+            if first is not None:
+                print("\nYOUR NEXT ACTION -- call the vision subagent now, "
+                      "one call per slide, starting with:\n\n"
+                      f"    Read the brief at {first} and follow it exactly.\n\n"
+                      f"Save its whole reply as "
+                      f"{first.with_name(first.name.replace('.brief.md', '.answer.md'))}. "
+                      f"`vision_brief.py slides {deck}` lists every slide "
+                      f"still to send; then `make_deck.py {deck} "
+                      f"--require-verdicts`. Do not end the session before "
+                      f"that passes.")
 
     shutdown()
     return 1 if failed else (3 if unseen_exit else 0)

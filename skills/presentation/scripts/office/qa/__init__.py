@@ -25,7 +25,8 @@ from ..template import (_bleed_key, colliding, footer_text, measure_cache,
 from . import cache as slide_cache
 from .allowlist import _acknowledged, load_allowlist, stale_acknowledgements
 from .baseline import _collision_key, _template_baseline
-from .colour import buried_text_issues, contrast_issues, occlusion_issues
+from .colour import (buried_text_issues, contrast_issues, occlusion_issues,
+                     strike_issues)
 from .layout import (_catalog_size, alignment_issues, balance_findings,
                      design_note, look_notes, sparse_slides, straddle_issues,
                      stray_template_images, variety_findings)
@@ -213,7 +214,8 @@ def _check(path, template, wanted):
                          + contrast_issues(page, number, base.contrast)
                          + occlusion_issues(page, number, base.occlusion)
                          + buried_text_issues(page, number)
-                         + headline_rival_issues(page, number)):
+                         + headline_rival_issues(page, number)
+                         + strike_issues(doc, page, number)):
                 add(text)
             for text, key in straddle_issues(doc, page, number):
                 add(text, key)

@@ -213,6 +213,8 @@ had defects a glance shows. These checks now catch them:
 - **Text across panels** (kind `straddle`): a line lying across two or more
   drawn panels, such as a source line in a box the height of the content
   area. Text belongs inside one panel or outside all of them.
+- **A shape over text:** an opaque, textless shape stacked above a block of
+  text and crossing its letters, such as a bar laid through three columns.
 - **A rival headline:** text above the title, or in the footer band, set as
   large as the title. Typically a kicker written into an empty placeholder,
   which takes the master's body style. Use `D.kicker`.
@@ -222,7 +224,9 @@ had defects a glance shows. These checks now catch them:
 `make_deck.py` exits **3** when every automated check is clean but slides
 have not been seen by the vision-agent, and prints `NOT DONE: …`. A run
 that stopped at a clean gate and reported a finished deck had shown its
-slides to nothing. Exit 0 means clean *and* seen. `--parts` and `--slides`
+slides to nothing. On exit 3 it writes the briefs itself and prints the
+exact delegation for the first unseen slide: the next action, not a
+description of it. Exit 0 means clean *and* seen. `--parts` and `--slides`
 runs are partial and keep exit 0.
 
 ### Chart placeholders and unsourced figures
