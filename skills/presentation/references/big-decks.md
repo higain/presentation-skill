@@ -126,7 +126,10 @@ Send the brief below with the placeholders filled in. Keep their reports,
 not their code: you do not need to read the slide files.
 
 **5. Assemble and gate.** Run `scripts/make_deck.py build.py deck.pptx
---template acme`, the full gate of `SKILL.md` step 5. If a part raises, the
+--template acme --source <the source document>`, the full gate of `SKILL.md`
+step 5. `--source` checks that every text and speaker note of the source is
+on the slides as written, and nothing is invented (`references/qa.md`
+§Fidelity). If a part raises, the
 build reports **every** failing slide with its file and traceback, not just
 the first. Then do the vision review of step 6, one slide per call, as
 always. For each finding, send the builder of that slide (or a new one) the

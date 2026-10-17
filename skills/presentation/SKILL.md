@@ -146,6 +146,7 @@ about ten minutes cold, so budget the whole run, not one command.
 ```bash
 scripts/make_deck.py build.py out.pptx --build-only               # fix build errors (instant)
 scripts/make_deck.py build.py out.pptx --template acme            # the gate: QA, schema, renders
+scripts/make_deck.py build.py out.pptx --template acme --source content.md   # built from a document: also nothing dropped or invented
 ```
 
 Never pipe the output into `grep`, `head` or `tail`: its last lines say

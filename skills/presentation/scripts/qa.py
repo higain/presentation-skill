@@ -75,6 +75,8 @@ def main():
         help="The deck this was built from; flags text still shared with it",
     )
     parser.add_argument("--slides", help="Only these slides, e.g. 4,7-9")
+    parser.add_argument("--source", help="The Markdown the deck was built "
+                        "from: checks nothing was dropped, changed or invented")
     parser.add_argument(
         "--skip-validate", action="store_true",
         help="Skip the .pptx schema check",
@@ -107,7 +109,7 @@ def main():
             return 2
 
     try:
-        result = check(path, args.template, wanted)
+        result = check(path, args.template, wanted, args.source)
     except (SofficeError, FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

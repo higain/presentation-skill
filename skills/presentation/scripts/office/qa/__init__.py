@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..deckbuild import recorded_designs
-from ..impress import PPTX_EXTS, load_document, slides
+from ..impress import PPTX_EXTS, load_document, notes_text, slides
 from ..pack import active
 from ..template import (_bleed_key, colliding, footer_text, measure_cache,
                         offslide, overflowing)
@@ -54,7 +54,7 @@ class QAResult:
     acknowledged: list = field(default_factory=list)
 
 
-def check(path, template=None, wanted=None) -> QAResult:
+def check(path, template=None, wanted=None, source=None) -> QAResult:
     """Every automated check on ``path``, gated by the deck's allowlist.
 
     An acknowledged finding (``<deck>-allowlist.json``) is moved from
@@ -65,7 +65,8 @@ def check(path, template=None, wanted=None) -> QAResult:
     # palette a contrast check compares against -- has to read *this* deck's,
     # not whichever pack happens to be installed.
     with active(template), measure_cache():
-        findings, checked, sparse, notes, prose = _check(path, template, wanted)
+        findings, checked, sparse, notes, prose = _check(path, template, wanted,
+                                                         source)
 
     result = QAResult(checked=checked, sparse=sparse, notes=notes,
                       prose_issues=list(prose[0]), titles=list(prose[1]))
@@ -110,7 +111,7 @@ def _fresh_page_checks(page, number, add, deck_texts, leftovers, footers,
         footers.setdefault(foot, []).append(number)
 
 
-def _check(path, template, wanted):
+def _check(path, template, wanted, source=None):
     findings = []            # (text, allowlist key or None), in report order
     leftovers, footers, deck_texts = {}, {}, []
 
@@ -272,6 +273,21 @@ def _check(path, template, wanted):
             for text in lost:
                 add(text)
             prose = (prose[0] + reworded, prose[1])
+            # The source the deck was built from: nothing dropped, nothing
+            # changed, nothing invented.  Whole decks only, like the titles.
+            if source:
+                from .fidelity import fidelity_findings
+                texts, spoken = [], []
+                for number, page in enumerate(pages, start=1):
+                    texts.append((number, [t for _, t in _page_texts(page)]))
+                    try:
+                        spoken.append(notes_text(page))
+                    except Exception:
+                        spoken.append("")
+                markdown = Path(source).read_text(encoding="utf-8")
+                for text, key in fidelity_findings(markdown, texts, spoken,
+                                                   tpl_strings):
+                    add(text, key)
     finally:
         doc.close(False)
 

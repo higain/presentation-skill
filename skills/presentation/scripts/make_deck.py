@@ -475,6 +475,11 @@ def main():
         "args", nargs="+", metavar="[build.py] deck.pptx",
         help="The deck to check, optionally preceded by the script that builds it",
     )
+    parser.add_argument("--source", help="The Markdown the deck was built "
+                        "from (content.md, the specification): every quote, "
+                        "table cell, list item and speaker-note line must be "
+                        "in the deck as written, and nothing on a slide may "
+                        "be invented. Findings fail the gate.")
     parser.add_argument("--template", help="The deck this was built from; flags "
                                            "text still shared with it")
     # Deliberately not "render": a relative default resolves against the
@@ -639,7 +644,7 @@ def main():
                     render_proc.kill()
                 return 2
         try:
-            result = check(deck, args.template, wanted)
+            result = check(deck, args.template, wanted, args.source)
         except (SofficeError, FileNotFoundError, ValueError) as e:
             print(f"Error: {e}", file=sys.stderr)
             if render_proc is not None:

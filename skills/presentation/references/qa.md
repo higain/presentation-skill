@@ -229,6 +229,28 @@ exact delegation for the first unseen slide: the next action, not a
 description of it. Exit 0 means clean *and* seen. `--parts` and `--slides`
 runs are partial and keep exit 0.
 
+### Fidelity to the source: `--source`
+
+When the deck was built from a document (a content file, a slide
+specification), pass it: `make_deck.py build.py deck.pptx --template acme
+--source content.md`. Then two more things fail the gate (allowlist kind
+`content`):
+
+- **Dropped or changed:** every piece of the source that is content must be
+  on the slides as written. Each quote („…“), table cell, plain list item and
+  slide heading counts, numbers included; each `>` line must be in that
+  slide's speaker notes. A shortened quote, a dropped "> 90 %" or abbreviated
+  labels are reported with the source section they come from.
+- **Invented:** a statement of four words or more on a slide whose word
+  pairs mostly do not occur in the source. Built from the source's own
+  vocabulary in a new order, it is still invented; a gap in the source is
+  "[OFFEN: what is missing]", not a sentence of your own.
+
+List items that open with a bold label ending in a colon (`**Struktur:** …`)
+are instructions to the builder, not slide text. Only the quotes inside them
+count, as do table header rows and icon columns. `scripts/fidelity.py deck.pptx
+content.md --template acme` runs the check on its own.
+
 ### Chart placeholders and unsourced figures
 
 Two more lines can appear under *slides to look at*. Neither fails a build:

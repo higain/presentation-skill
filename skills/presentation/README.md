@@ -399,6 +399,7 @@ python3 scripts/catalog_build.py templates/acme/catalog
 | `scripts/vision_brief.py` | Writes the tested vision-agent brief beside every render or design, and collects the saved answers into the report or the worksheet | runtime + build-time |
 | `scripts/split_source.py` | A long source (a slide spec) as one file per slide, for big decks built from parts (`references/big-decks.md`) | runtime |
 | `scripts/api_ref.py` | The build API from the code; `--write` regenerates `references/api.md` (a test fails when it is stale) | runtime + build-time |
+| `scripts/fidelity.py` | A deck against the Markdown it was built from: nothing dropped, changed or invented (also `make_deck.py --source`) | runtime |
 | `scripts/wireframe.py` | A render as a text ink-map, no model; the fallback when the vision-agent is unavailable | runtime |
 | `references/catalog.example.md` | The generated format, annotated | reference |
 | `templates/README.md` | What a pack is and how one is chosen | reference |
