@@ -380,7 +380,10 @@ scripts/vision_brief.py collect deck.pptx                   # fills the verdict 
 
 **Every answer carries proof that eyes saw the slide.** The brief points at
 `render/review/slide-N.png`: the render with a strip under it that prints a
-random review code, which the answer has to return in its JSON. The ledger
+random review code, which the answer has to return in its JSON, and the
+slide's four quarters enlarged beneath it (A–D). With the full slide alone,
+gemma-4-31b called a bar struck through a paragraph "ok"; with the quarters
+it reported it. The ledger
 beside it (`render/review/ledger.json`) keeps only the code's SHA-256, so
 nothing that reads files can produce it. An answer without the right code is
 "not seen", however plausible it reads. That closes the failure this exists

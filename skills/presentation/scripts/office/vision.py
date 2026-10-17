@@ -51,6 +51,9 @@ SLIDE_QUESTIONS = {
 SLIDE_BRIEF = """\
 You are a strict presentation designer checking ONE rendered slide before it is \
 shown to senior management. Open the image with your read tool: {image}
+The image shows the whole slide at the top, then its four quarters enlarged: \
+A top-left, B top-right, C bottom-left, D bottom-right. Use the enlarged \
+quarters to check details; judge the layout on the whole slide.
 If you cannot open that image, reply with exactly CANNOT SEE IMAGE and \
 nothing else. Never answer from the text of this brief alone, and never hand \
 this task to another agent.
@@ -84,12 +87,18 @@ Q3 EMPTY: Is a whole band (top, middle or bottom third) or a left/right third \
 empty while the content is small or crowded elsewhere?
 Q4 OFF-CENTRE: Is the content block clearly closer to one side, leaving the \
 other side much emptier?
-Q5 OVERLAP: Does any text or box sit on top of another text or box and cover \
-part of it?
+Q5 OVERLAP: Look at each enlarged quarter. (a) Do letters of two texts touch \
+or print over each other? (b) Does a line, bar or box run through text, \
+crossing letters? (c) Does an icon or circle sit on top of letters? Any yes \
+is a yes, with the quarter letter.
 Q6 PEERS: Among repeated items (cards, boxes, steps, columns), does one look \
-different - colour, size, height, alignment or text style?
+different - colour, size, height, alignment or text style? A deliberate \
+progression is not a defect: shades deepening step by step along a \
+sequence, or the current step highlighted in a row of steps.
 Q7 HOLLOW: Do boxes or cards consist mostly of empty space, or is a diagram \
-tiny compared with the space it has?
+tiny compared with the space it has? A form the audience fills in during \
+the session - a table with numbered empty rows, a matrix to place items in \
+- is not hollow.
 Q8 BROKEN WORD: Is a word split in the middle across two lines (e.g. \
 "Manage / ment")?
 Q9 LANGUAGE: Is a whole phrase or sentence in a language other than the deck \

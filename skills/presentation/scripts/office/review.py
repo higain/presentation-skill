@@ -126,11 +126,16 @@ def _font(size):
     return ImageFont.load_default(size=size)
 
 
-def stamp(png: Path, code: str, dest: Path) -> Path:
+def stamp(png: Path, code: str, dest: Path, zoom: bool = False) -> Path:
     """Write ``png`` with a strip *below* it carrying ``code``.
 
     Below, not over: the strip must not cover any of the slide, or the
     reviewer would be judging a different picture from the one that ships.
+
+    ``zoom`` adds the slide's four quarters under the strip, each enlarged to
+    half the image width and labelled A-D.  Measured with gemma-4-31b on a
+    deck with planted-by-accident defects: on the full slide alone it called
+    a bar struck through a paragraph "ok"; with the quarters it reported it.
     """
     from PIL import Image, ImageDraw
     slide = Image.open(png).convert("RGB")
@@ -146,9 +151,33 @@ def stamp(png: Path, code: str, dest: Path) -> Path:
     draw.text(((w - (right - left)) // 2 - left,
                h + (strip - (bottom - top)) // 2 - top),
               text, fill=(0, 0, 0), font=font)
+    if zoom:
+        out = _with_quarters(out, slide)
     dest.parent.mkdir(parents=True, exist_ok=True)
     out.save(dest)
     return dest
+
+
+def _with_quarters(top, slide):
+    """``top``, then ``slide``'s quarters A-D enlarged beneath it."""
+    from PIL import Image, ImageDraw
+    w = top.width
+    qw, qh = slide.width // 2, slide.height // 2
+    tile_w = w // 2
+    tile_h = int(qh * tile_w / qw)
+    gap = max(12, top.height // 60)
+    out = Image.new("RGB", (w, top.height + gap + 2 * tile_h), (255, 255, 255))
+    out.paste(top, (0, 0))
+    font = _font(max(16, tile_h // 12))
+    for k, (label, (x, y)) in enumerate(zip("ABCD", [(0, 0), (qw, 0),
+                                                    (0, qh), (qw, qh)])):
+        tile = slide.crop((x, y, x + qw, y + qh)).resize((tile_w, tile_h))
+        draw = ImageDraw.Draw(tile)
+        box = draw.textbbox((0, 0), label, font=font)
+        draw.rectangle((0, 0, box[2] + 16, box[3] + 12), fill=(0, 0, 0))
+        draw.text((8, 4), label, fill=(255, 255, 255), font=font)
+        out.paste(tile, ((k % 2) * tile_w, top.height + gap + (k // 2) * tile_h))
+    return out
 
 
 def _forget(outdir: Path, number: int) -> None:
@@ -214,7 +243,8 @@ def sync(outdir: Path) -> dict:
             "reset": sorted(reset)}
 
 
-def _issue(png: Path, image: Path, answer: Path, entry) -> tuple:
+def _issue(png: Path, image: Path, answer: Path, entry,
+           zoom: bool = False) -> tuple:
     """``(entry, fresh)``: keep ``entry`` if it still describes ``png``.
 
     Otherwise stamp a new code onto ``image`` and delete ``answer``, which
@@ -224,7 +254,7 @@ def _issue(png: Path, image: Path, answer: Path, entry) -> tuple:
     if entry and entry["render"] == digest and image.is_file():
         return entry, False
     code = new_code()
-    stamp(png, code, image)
+    stamp(png, code, image, zoom=zoom)
     answer.unlink(missing_ok=True)
     return {"render": digest, "code": code_hash(code)}, True
 
@@ -243,7 +273,7 @@ def prepare(outdir: Path) -> dict:
     for number, png in sorted(renders(outdir).items()):
         image = review_image(outdir, number)
         ledger[number], fresh = _issue(png, image, answer_path(outdir, number),
-                                       ledger.get(number))
+                                       ledger.get(number), zoom=True)
         out[number] = (image, fresh)
     for number in set(ledger) - set(out):
         del ledger[number]
